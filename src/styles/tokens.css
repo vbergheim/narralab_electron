@@ -1,0 +1,12 @@
+:root {
+  --bg: 225 23% 8%;
+  --panel: 225 18% 12%;
+  --panel-muted: 225 16% 16%;
+  --border: 221 13% 24%;
+  --foreground: 210 20% 96%;
+  --muted: 218 11% 68%;
+  --accent: 196 66% 56%;
+  --danger: 355 52% 45%;
+  --success: 148 38% 42%;
+  --warning: 35 68% 55%;
+}
