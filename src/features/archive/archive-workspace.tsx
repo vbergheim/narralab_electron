@@ -15,7 +15,7 @@ import {
 
 import { Button } from '@/components/ui/button'
 import { ContextMenu, type ContextMenuItem } from '@/components/ui/context-menu'
-import { Input } from '@/components/ui/input'
+import { InlineNameEditor } from '@/components/ui/inline-name-editor'
 import { Panel } from '@/components/ui/panel'
 import { usePersistedStringArray } from '@/hooks/use-persisted-string-array'
 import { cn } from '@/lib/cn'
@@ -118,9 +118,7 @@ export function ArchiveWorkspace({
       setDraggedFolderId(null)
       return
     }
-    const paths = Array.from(event.dataTransfer.files)
-      .map((file) => (file as File & { path?: string }).path ?? '')
-      .filter(Boolean)
+    const paths = window.docudoc.archive.items.resolveDroppedPaths(Array.from(event.dataTransfer.files))
     if (paths.length > 0) {
       onAddFiles(paths, folderId)
       return
@@ -142,7 +140,7 @@ export function ArchiveWorkspace({
 
   return (
     <div className="grid min-h-0 gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
-      <Panel className="min-h-0 overflow-y-auto p-4">
+      <Panel className="min-h-0 overflow-y-auto overscroll-contain p-4">
         <div className="flex items-center justify-between">
           <div className="font-display text-lg font-semibold text-foreground">Archive</div>
           <Button variant="ghost" size="sm" onClick={() => setShowFolderForm((current) => !current)}>
@@ -152,24 +150,18 @@ export function ArchiveWorkspace({
         </div>
 
         {showFolderForm ? (
-          <div className="mt-3 flex items-center gap-2">
-            <Input
+          <div className="mt-3 px-1">
+            <InlineNameEditor
+              autoFocus
               value={folderDraft}
-              onChange={(event) => setFolderDraft(event.target.value)}
               placeholder="New archive folder"
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  event.preventDefault()
-                  submitNewFolder()
-                }
+              onChange={setFolderDraft}
+              onSubmit={submitNewFolder}
+              onCancel={() => {
+                setFolderDraft('')
+                setShowFolderForm(false)
               }}
             />
-            <Button
-              size="sm"
-              onClick={submitNewFolder}
-            >
-              Add
-            </Button>
           </div>
         ) : null}
 
@@ -189,6 +181,10 @@ export function ArchiveWorkspace({
               onClick={() => onSelectFolder(null)}
               onDragEnter={() => setDragOverFolderId('root')}
               onDragLeave={() => setDragOverFolderId((current) => (current === 'root' ? null : current))}
+              onDragOver={(event) => {
+                event.preventDefault()
+                event.dataTransfer.dropEffect = draggedFolderId ? 'move' : 'copy'
+              }}
               onDrop={(event) => handleDropFiles(event, null)}
             />
           </div>
@@ -203,31 +199,25 @@ export function ArchiveWorkspace({
               )}
             >
               {editingFolderId === folder.id ? (
-                <div className="space-y-2 px-4 py-1">
-                  <div className="flex items-center gap-2">
-                    <Input
-                      autoFocus
-                      value={editingFolderDraft}
-                      onChange={(event) => setEditingFolderDraft(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter') {
-                          event.preventDefault()
-                          const nextName = editingFolderDraft.trim()
-                          if (nextName) {
-                            onUpdateFolder(folder.id, { name: nextName, color: editingFolderColor })
-                          }
-                          setEditingFolderId(null)
-                          setEditingFolderDraft('')
-                        }
-                        if (event.key === 'Escape') {
-                          event.preventDefault()
-                          setEditingFolderId(null)
-                          setEditingFolderDraft('')
-                        }
-                      }}
-                      className="h-7 text-xs"
-                    />
-                  </div>
+                <div data-inline-edit-scope="true" className="space-y-2 px-4 py-1">
+                  <InlineNameEditor
+                    autoFocus
+                    value={editingFolderDraft}
+                    onChange={setEditingFolderDraft}
+                    onSubmit={() => {
+                      const nextName = editingFolderDraft.trim()
+                      if (nextName) {
+                        onUpdateFolder(folder.id, { name: nextName, color: editingFolderColor })
+                      }
+                      setEditingFolderId(null)
+                      setEditingFolderDraft('')
+                    }}
+                    onCancel={() => {
+                      setEditingFolderId(null)
+                      setEditingFolderDraft('')
+                    }}
+                    className="h-7 text-xs"
+                  />
                   <div className="flex flex-wrap gap-1">
                     {sceneColors.map((color) => (
                       <button
@@ -276,6 +266,10 @@ export function ArchiveWorkspace({
                   onDragEnd={() => setDraggedFolderId(null)}
                   onDragEnter={() => setDragOverFolderId(folder.id)}
                   onDragLeave={() => setDragOverFolderId((current) => (current === folder.id ? null : current))}
+                  onDragOver={(event) => {
+                    event.preventDefault()
+                    event.dataTransfer.dropEffect = draggedFolderId ? 'move' : 'copy'
+                  }}
                   onDrop={(event) => handleDropFiles(event, folder.id)}
                 />
               )}
@@ -286,7 +280,10 @@ export function ArchiveWorkspace({
 
       <Panel
         className="flex min-h-0 flex-col overflow-hidden"
-        onDragOver={(event) => event.preventDefault()}
+        onDragOver={(event) => {
+          event.preventDefault()
+          event.dataTransfer.dropEffect = draggedFolderId ? 'move' : 'copy'
+        }}
         onDrop={(event) => handleDropFiles(event, selectedFolderId)}
       >
         <div className="flex items-center justify-between border-b border-border/90 px-5 py-4">
@@ -304,7 +301,7 @@ export function ArchiveWorkspace({
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4">
           {filteredItems.length === 0 ? (
             <div className="flex h-full items-center justify-center">
               <div className="max-w-md rounded-3xl border border-dashed border-border/90 bg-panelMuted/30 px-8 py-10 text-center">
@@ -381,6 +378,7 @@ function FolderButton({
   onDragStart,
   onDragEnd,
   onDragEnter,
+  onDragOver,
   onDragLeave,
   onDrop,
 }: {
@@ -399,6 +397,7 @@ function FolderButton({
   onDragStart?(): void
   onDragEnd?(): void
   onDragEnter?(): void
+  onDragOver?(event: DragEvent<HTMLDivElement>): void
   onDragLeave?(): void
   onDrop(event: DragEvent<HTMLDivElement>): void
 }) {
@@ -406,12 +405,12 @@ function FolderButton({
     <div
       draggable={Boolean(onDragStart)}
       className={cn(
-        'flex min-h-8 items-center gap-2 rounded-lg px-1 py-0.5 transition',
+        'flex min-h-8 items-center gap-2 rounded-lg px-1 py-0.5 transition text-muted',
         dropActive
           ? 'bg-accent/12 ring-1 ring-accent/45'
           : active
-            ? 'bg-white/[0.05]'
-            : 'hover:bg-panelMuted/50',
+            ? 'bg-white/[0.05] text-foreground'
+            : 'hover:bg-panelMuted/50 hover:text-foreground',
       )}
       onDragEnter={(event) => {
         event.preventDefault()
@@ -423,7 +422,10 @@ function FolderButton({
         if (nextTarget && event.currentTarget.contains(nextTarget as Node)) return
         onDragLeave?.()
       }}
-      onDragOver={(event) => event.preventDefault()}
+      onDragOver={(event) => {
+        event.preventDefault()
+        onDragOver?.(event)
+      }}
       onDrop={onDrop}
       onContextMenu={onContextMenu}
       onDragStart={onDragStart}
@@ -451,9 +453,11 @@ function FolderButton({
         onClick={onClick}
         onDoubleClick={onDoubleClick}
       >
-        <span className="truncate font-medium text-foreground">{formatFolderLabel(label)}</span>
+        <span className="block truncate text-[11px] font-semibold uppercase tracking-[0.18em]">
+          {formatFolderLabel(label)}
+        </span>
       </button>
-      <div className="ml-2 flex shrink-0 items-center gap-2 text-xs text-muted">
+      <div className="ml-2 flex shrink-0 items-center gap-2 text-[10px] text-muted/80">
         <span className="min-w-4 text-right">{count}</span>
       </div>
     </div>

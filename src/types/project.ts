@@ -4,10 +4,14 @@ import type {
   AppSettingsUpdateInput,
   ConsultantChatInput,
   ConsultantChatResult,
+  SavedWindowLayout,
+  WindowWorkspace,
 } from './ai'
 import type {
   AddSceneToBoardResult,
   Board,
+  BoardDropPosition,
+  BoardViewMode,
   BoardFolder,
   BoardItem,
   BoardItemKind,
@@ -16,7 +20,7 @@ import type {
   BoardItemUpdateInput,
   BoardTextItem,
 } from './board'
-import type { Scene, SceneFolder, SceneUpdateInput } from './scene'
+import type { Scene, SceneBeat, SceneBeatUpdateInput, SceneFolder, SceneUpdateInput } from './scene'
 import type { Tag, TagType } from './tag'
 
 export type ProjectMeta = {
@@ -24,10 +28,48 @@ export type ProjectMeta = {
   name: string
 }
 
+export type ProjectSettings = {
+  title: string
+  genre: string
+  format: string
+  targetRuntimeMinutes: number
+  logline: string
+  defaultBoardView: BoardViewMode
+  enabledBlockKinds: Array<Exclude<BoardItemKind, 'scene'>>
+  blockKindOrder: Array<Exclude<BoardItemKind, 'scene'>>
+}
+
+export type ProjectSettingsUpdateInput = Partial<ProjectSettings>
+
 export type NotebookDocument = {
   content: string
   updatedAt: string | null
 }
+
+export type GlobalUiState = {
+  activeBoardId: string | null
+  selectedBoardId: string | null
+  selectedSceneId: string | null
+  selectedSceneIds: string[]
+  selectedBoardItemId: string | null
+  selectedArchiveFolderId: string | null
+}
+
+export type WindowContext = {
+  windowId: number
+  role: 'main' | 'detached'
+  workspace: WindowWorkspace | 'main'
+  boardId: string | null
+  viewMode: BoardViewMode
+  sceneDensity: import('./view').SceneDensity
+}
+
+export type WindowDragSession =
+  | {
+      kind: 'scene'
+      sceneIds: string[]
+    }
+  | null
 
 export type BoardScriptExportFormat = 'txt-formatted' | 'txt-plain' | 'md' | 'html-screenplay' | 'doc-screenplay'
 
@@ -78,7 +120,35 @@ export type ProjectSnapshotV4 = {
   notebook: NotebookDocument
 }
 
-export type ProjectSnapshot = ProjectSnapshotV1 | ProjectSnapshotV2 | ProjectSnapshotV3 | ProjectSnapshotV4
+export type ProjectSnapshotV5 = {
+  schemaVersion: 5
+  exportedAt: string
+  project: ProjectMeta | null
+  projectSettings: ProjectSettings
+  scenes: Scene[]
+  tags: Tag[]
+  boards: Board[]
+  notebook: NotebookDocument
+}
+
+export type ProjectSnapshotV6 = {
+  schemaVersion: 6
+  exportedAt: string
+  project: ProjectMeta | null
+  projectSettings: ProjectSettings
+  scenes: Scene[]
+  tags: Tag[]
+  boards: Board[]
+  notebook: NotebookDocument
+}
+
+export type ProjectSnapshot =
+  | ProjectSnapshotV1
+  | ProjectSnapshotV2
+  | ProjectSnapshotV3
+  | ProjectSnapshotV4
+  | ProjectSnapshotV5
+  | ProjectSnapshotV6
 
 export interface DocuDocApi {
   project: {
@@ -89,6 +159,8 @@ export interface DocuDocApi {
     exportBoardScript(boardId: string, path?: string | null, format?: BoardScriptExportFormat): Promise<string | null>
     importJson(path?: string | null): Promise<ProjectMeta | null>
     getMeta(): Promise<ProjectMeta | null>
+    getSettings(): Promise<ProjectSettings>
+    updateSettings(input: ProjectSettingsUpdateInput): Promise<ProjectSettings>
   }
   notebook: {
     get(): Promise<NotebookDocument>
@@ -105,6 +177,7 @@ export interface DocuDocApi {
     items: {
       list(): Promise<ArchiveItem[]>
       add(filePaths?: string[] | null, folderId?: string | null): Promise<ArchiveItem[]>
+      resolveDroppedPaths(files: File[]): string[]
       update(input: ArchiveItemUpdateInput): Promise<ArchiveItem>
       delete(itemId: string): Promise<void>
       open(itemId: string): Promise<void>
@@ -117,6 +190,12 @@ export interface DocuDocApi {
     update(input: SceneUpdateInput): Promise<Scene>
     delete(id: string): Promise<void>
     reorder(sceneIds: string[]): Promise<Scene[]>
+  }
+  sceneBeats: {
+    create(sceneId: string, afterBeatId?: string | null): Promise<SceneBeat>
+    update(input: SceneBeatUpdateInput): Promise<SceneBeat>
+    delete(id: string): Promise<void>
+    reorder(sceneId: string, beatIds: string[]): Promise<SceneBeat[]>
   }
   sceneFolders: {
     list(): Promise<SceneFolder[]>
@@ -131,7 +210,7 @@ export interface DocuDocApi {
     delete(boardId: string): Promise<Board[]>
     updateBoard(input: BoardUpdateInput): Promise<Board>
     reorderBoards(boardIds: string[]): Promise<Board[]>
-    addScene(boardId: string, sceneId: string, afterItemId?: string | null): Promise<AddSceneToBoardResult>
+    addScene(boardId: string, sceneId: string, afterItemId?: string | null, boardPosition?: BoardDropPosition | null): Promise<AddSceneToBoardResult>
     addBlock(boardId: string, kind: Exclude<BoardItemKind, 'scene'>, afterItemId?: string | null): Promise<BoardTextItem>
     duplicateItem(itemId: string): Promise<BoardItem>
     removeItem(itemId: string): Promise<void>
@@ -153,6 +232,27 @@ export interface DocuDocApi {
   settings: {
     get(): Promise<AppSettings>
     update(input: AppSettingsUpdateInput): Promise<AppSettings>
+  }
+  windows: {
+    getContext(): Promise<WindowContext>
+    openWorkspace(workspace: WindowWorkspace, options?: Partial<WindowContext>): Promise<WindowContext>
+    updateContext(input: Partial<Pick<WindowContext, 'boardId' | 'viewMode' | 'sceneDensity'>>): Promise<WindowContext>
+    getDragSession(): WindowDragSession
+    readDragSession(): Promise<WindowDragSession>
+    setDragSession(session: WindowDragSession): Promise<WindowDragSession>
+    getGlobalUiState(): Promise<GlobalUiState>
+    updateGlobalUiState(input: Partial<GlobalUiState>): Promise<GlobalUiState>
+    listLayouts(): Promise<SavedWindowLayout[]>
+    saveLayout(name: string): Promise<SavedWindowLayout>
+    applyLayout(layoutId: string): Promise<SavedWindowLayout | null>
+    deleteLayout(layoutId: string): Promise<SavedWindowLayout[]>
+    subscribe(
+      listener: (event:
+        | { type: 'project-changed' }
+        | { type: 'window-context'; payload: WindowContext }
+        | { type: 'global-ui-state'; payload: GlobalUiState }
+        | { type: 'drag-session'; payload: WindowDragSession }) => void,
+    ): () => void
   }
   consultant: {
     chat(input: ConsultantChatInput): Promise<ConsultantChatResult>

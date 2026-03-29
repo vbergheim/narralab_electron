@@ -25,6 +25,10 @@ type BoardItemRow = {
   body: string
   color: string
   position: number
+  boardX: number
+  boardY: number
+  boardW: number
+  boardH: number
   createdAt: string
   updatedAt: string
 }
@@ -57,6 +61,10 @@ export class BoardRepository {
           body,
           color,
           position,
+          board_x AS boardX,
+          board_y AS boardY,
+          board_w AS boardW,
+          board_h AS boardH,
           created_at AS createdAt,
           updated_at AS updatedAt
         FROM board_items
@@ -98,7 +106,8 @@ export class BoardRepository {
     const insert = this.db.prepare(`
       INSERT INTO board_items (
         id, board_id, scene_id, kind, title, body, color, position, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        , board_x, board_y, board_w, board_h
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
     source.items.forEach((item, index) => {
@@ -112,6 +121,10 @@ export class BoardRepository {
         item.kind === 'scene' ? '' : item.body,
         item.kind === 'scene' ? 'charcoal' : item.color,
         index,
+        item.boardX,
+        item.boardY,
+        item.boardW,
+        item.boardH,
         timestamp,
         timestamp,
       )
@@ -185,7 +198,7 @@ export class BoardRepository {
     return this.list()
   }
 
-  addScene(boardId: string, sceneId: string, afterItemId?: string | null): AddSceneToBoardResult {
+  addScene(boardId: string, sceneId: string, afterItemId?: string | null, boardPosition?: { x: number; y: number } | null): AddSceneToBoardResult {
     const existing = this.db
       .prepare('SELECT id FROM board_items WHERE board_id = ? AND kind = ? AND scene_id = ?')
       .get(boardId, 'scene', sceneId) as { id: string } | undefined
@@ -206,6 +219,10 @@ export class BoardRepository {
       kind: 'scene',
       sceneId,
       position,
+      boardX: boardPosition?.x ?? position * 320,
+      boardY: boardPosition?.y ?? 0,
+      boardW: 300,
+      boardH: 132,
       createdAt: nowIso(),
       updatedAt: nowIso(),
     }
@@ -215,9 +232,9 @@ export class BoardRepository {
     this.db
       .prepare(`
         INSERT INTO board_items (
-          id, board_id, scene_id, kind, title, body, color, position, created_at, updated_at
+          id, board_id, scene_id, kind, title, body, color, position, board_x, board_y, board_w, board_h, created_at, updated_at
         ) VALUES (
-          @id, @boardId, @sceneId, @kind, '', '', 'charcoal', @position, @createdAt, @updatedAt
+          @id, @boardId, @sceneId, @kind, '', '', 'charcoal', @position, @boardX, @boardY, @boardW, @boardH, @createdAt, @updatedAt
         )
       `)
       .run(item)
@@ -238,6 +255,10 @@ export class BoardRepository {
       body: defaults.defaultBody,
       color: defaults.defaultColor,
       position,
+      boardX: position * 320,
+      boardY: 0,
+      boardW: 260,
+      boardH: 108,
       createdAt: nowIso(),
       updatedAt: nowIso(),
     }
@@ -247,9 +268,9 @@ export class BoardRepository {
     this.db
       .prepare(`
         INSERT INTO board_items (
-          id, board_id, scene_id, kind, title, body, color, position, created_at, updated_at
+          id, board_id, scene_id, kind, title, body, color, position, board_x, board_y, board_w, board_h, created_at, updated_at
         ) VALUES (
-          @id, @boardId, NULL, @kind, @title, @body, @color, @position, @createdAt, @updatedAt
+          @id, @boardId, NULL, @kind, @title, @body, @color, @position, @boardX, @boardY, @boardW, @boardH, @createdAt, @updatedAt
         )
       `)
       .run(item)
@@ -284,9 +305,9 @@ export class BoardRepository {
     this.db
       .prepare(`
         INSERT INTO board_items (
-          id, board_id, scene_id, kind, title, body, color, position, created_at, updated_at
+          id, board_id, scene_id, kind, title, body, color, position, board_x, board_y, board_w, board_h, created_at, updated_at
         ) VALUES (
-          @id, @boardId, NULL, @kind, @title, @body, @color, @position, @createdAt, @updatedAt
+          @id, @boardId, NULL, @kind, @title, @body, @color, @position, @boardX, @boardY, @boardW, @boardH, @createdAt, @updatedAt
         )
       `)
       .run(item)
@@ -335,7 +356,25 @@ export class BoardRepository {
     }
 
     if (current.kind === 'scene') {
-      return current
+      const next: BoardSceneItem = {
+        ...current,
+        boardX: input.boardX ?? current.boardX,
+        boardY: input.boardY ?? current.boardY,
+        boardW: input.boardW ?? current.boardW,
+        boardH: input.boardH ?? current.boardH,
+        updatedAt: nowIso(),
+      }
+
+      this.db
+        .prepare(`
+          UPDATE board_items
+          SET board_x = ?, board_y = ?, board_w = ?, board_h = ?, updated_at = ?
+          WHERE id = ?
+        `)
+        .run(next.boardX, next.boardY, next.boardW, next.boardH, next.updatedAt, next.id)
+
+      this.touchBoard(next.boardId)
+      return next
     }
 
     const next: BoardTextItem = {
@@ -344,16 +383,31 @@ export class BoardRepository {
       title: input.title ?? current.title,
       body: input.body ?? current.body,
       color: getBlockDefaults(input.kind ?? current.kind).defaultColor,
+      boardX: input.boardX ?? current.boardX,
+      boardY: input.boardY ?? current.boardY,
+      boardW: input.boardW ?? current.boardW,
+      boardH: input.boardH ?? current.boardH,
       updatedAt: nowIso(),
     }
 
     this.db
       .prepare(`
         UPDATE board_items
-        SET kind = ?, title = ?, body = ?, color = ?, updated_at = ?
+        SET kind = ?, title = ?, body = ?, color = ?, board_x = ?, board_y = ?, board_w = ?, board_h = ?, updated_at = ?
         WHERE id = ?
       `)
-      .run(next.kind, next.title, next.body, next.color, next.updatedAt, next.id)
+      .run(
+        next.kind,
+        next.title,
+        next.body,
+        next.color,
+        next.boardX,
+        next.boardY,
+        next.boardW,
+        next.boardH,
+        next.updatedAt,
+        next.id,
+      )
 
     this.touchBoard(next.boardId)
     return next
@@ -411,6 +465,10 @@ function mapBoardItemRow(row: BoardItemRow): BoardItem {
       kind: 'scene',
       sceneId: row.sceneId,
       position: row.position,
+      boardX: row.boardX,
+      boardY: row.boardY,
+      boardW: row.boardW,
+      boardH: row.boardH,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     }
@@ -424,6 +482,10 @@ function mapBoardItemRow(row: BoardItemRow): BoardItem {
     body: row.body,
     color: row.color as BoardTextItem['color'],
     position: row.position,
+    boardX: row.boardX,
+    boardY: row.boardY,
+    boardW: row.boardW,
+    boardH: row.boardH,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   }

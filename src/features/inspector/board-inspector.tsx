@@ -1,11 +1,12 @@
 import type { Dispatch, ReactNode, SetStateAction } from 'react'
 import { useEffect, useMemo, useState } from 'react'
-import { Clapperboard } from 'lucide-react'
+import { Clapperboard, PanelRightClose } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Panel } from '@/components/ui/panel'
 import { Textarea } from '@/components/ui/textarea'
+import { InspectorEmptyState } from '@/features/inspector/inspector-empty-state'
 import { sceneColors } from '@/lib/constants'
 import { formatDateTime } from '@/lib/dates'
 import type { Board, BoardUpdateInput } from '@/types/board'
@@ -14,10 +15,11 @@ type Draft = Pick<Board, 'id' | 'name' | 'description' | 'color' | 'folder'>
 
 type Props = {
   board: Board | null
+  onCollapse?(): void
   onSave(input: BoardUpdateInput): void
 }
 
-export function BoardInspector({ board, onSave }: Props) {
+export function BoardInspector({ board, onCollapse, onSave }: Props) {
   const [draft, setDraft] = useState<Draft | null>(() => (board ? toDraft(board) : null))
 
   const payload = useMemo(() => (draft ? toPayload(draft) : null), [draft])
@@ -38,27 +40,40 @@ export function BoardInspector({ board, onSave }: Props) {
 
   if (!board || !draft) {
     return (
-      <Panel className="flex h-full items-center justify-center p-8 text-center">
-        <div>
-          <div className="font-display text-lg font-semibold text-foreground">Board Inspector</div>
-          <div className="mt-2 text-sm text-muted">
-            Select a board to edit its name, description, and outline color.
-          </div>
-        </div>
-      </Panel>
+      <InspectorEmptyState
+        title="Board"
+        description="Outline settings autosave while you work."
+        body="Select a board to edit its name, description, and outline color."
+        onCollapse={onCollapse}
+      />
     )
   }
 
   return (
-    <Panel className="h-full overflow-hidden">
+    <Panel className="flex h-full flex-col overflow-hidden">
       <div className="border-b border-border/90 px-4 py-4">
-        <div className="font-display text-sm font-semibold uppercase tracking-[0.16em] text-foreground">
-          Board
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="font-display text-sm font-semibold uppercase tracking-[0.16em] text-foreground">
+              Board
+            </div>
+            <div className="mt-1 text-sm text-muted">Outline settings autosave while you work.</div>
+          </div>
+          {onCollapse ? (
+            <button
+              type="button"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-transparent text-muted transition hover:border-border hover:bg-panelMuted hover:text-foreground"
+              onClick={onCollapse}
+              title="Collapse inspector"
+              aria-label="Collapse inspector"
+            >
+              <PanelRightClose className="h-4 w-4" />
+            </button>
+          ) : null}
         </div>
-        <div className="mt-1 text-sm text-muted">Outline settings autosave while you work.</div>
       </div>
 
-      <div className="h-[calc(100%-78px)] overflow-y-auto p-4">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
         <InspectorField label="Name">
           <Input value={draft.name} onChange={(event) => updateDraft(setDraft, 'name', event.target.value)} />
         </InspectorField>

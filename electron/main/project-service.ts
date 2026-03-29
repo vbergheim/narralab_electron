@@ -20,11 +20,13 @@ import type {
   BoardScriptExportFormat,
   NotebookDocument,
   ProjectMeta,
+  ProjectSettings,
+  ProjectSettingsUpdateInput,
   ProjectSnapshot,
   ProjectSnapshotV1,
-  ProjectSnapshotV4,
+  ProjectSnapshotV6,
 } from '@/types/project'
-import type { Scene, SceneFolder, SceneUpdateInput } from '@/types/scene'
+import type { Scene, SceneBeat, SceneBeatUpdateInput, SceneFolder, SceneUpdateInput } from '@/types/scene'
 import type { Tag, TagType } from '@/types/tag'
 
 import { openProjectDatabase, type ProjectDatabase } from './db/connection'
@@ -157,6 +159,98 @@ export class ProjectService {
     }
   }
 
+  getProjectSettings(): ProjectSettings {
+    const db = this.ensureDatabase()
+    const row = db
+      .prepare(
+        `
+          SELECT
+            title,
+            genre,
+            format,
+            target_runtime_minutes AS targetRuntimeMinutes,
+            logline,
+            default_board_view AS defaultBoardView,
+            enabled_block_kinds AS enabledBlockKinds,
+            block_kind_order AS blockKindOrder
+          FROM project_settings
+          WHERE id = 1
+        `,
+      )
+      .get() as
+      | {
+          title: string
+          genre: string
+          format: string
+          targetRuntimeMinutes: number
+          logline: string
+          defaultBoardView: string
+          enabledBlockKinds: string
+          blockKindOrder: string
+        }
+      | undefined
+
+    if (!row) {
+      return defaultProjectSettings()
+    }
+
+    return {
+      title: row.title ?? '',
+      genre: row.genre ?? '',
+      format: row.format ?? '',
+      targetRuntimeMinutes: Number.isFinite(row.targetRuntimeMinutes) ? row.targetRuntimeMinutes : 90,
+      logline: row.logline ?? '',
+      defaultBoardView: normalizeStoredBoardView(row.defaultBoardView),
+      enabledBlockKinds: parseBlockKindList(row.enabledBlockKinds),
+      blockKindOrder: parseBlockKindList(row.blockKindOrder),
+    }
+  }
+
+  updateProjectSettings(input: ProjectSettingsUpdateInput): ProjectSettings {
+    const current = this.getProjectSettings()
+    const next: ProjectSettings = {
+      title: input.title ?? current.title,
+      genre: input.genre ?? current.genre,
+      format: input.format ?? current.format,
+      targetRuntimeMinutes: input.targetRuntimeMinutes ?? current.targetRuntimeMinutes,
+      logline: input.logline ?? current.logline,
+      defaultBoardView: normalizeStoredBoardView(input.defaultBoardView ?? current.defaultBoardView),
+      enabledBlockKinds: normalizeBlockKindList(input.enabledBlockKinds ?? current.enabledBlockKinds),
+      blockKindOrder: normalizeBlockKindList(input.blockKindOrder ?? current.blockKindOrder),
+    }
+
+    this.ensureDatabase()
+      .prepare(
+        `
+          UPDATE project_settings
+          SET
+            title = ?,
+            genre = ?,
+            format = ?,
+            target_runtime_minutes = ?,
+            logline = ?,
+            default_board_view = ?,
+            enabled_block_kinds = ?,
+            block_kind_order = ?,
+            updated_at = ?
+          WHERE id = 1
+        `,
+      )
+      .run(
+        next.title,
+        next.genre,
+        next.format,
+        next.targetRuntimeMinutes,
+        next.logline,
+        next.defaultBoardView,
+        JSON.stringify(next.enabledBlockKinds),
+        JSON.stringify(next.blockKindOrder),
+        new Date().toISOString(),
+      )
+
+    return next
+  }
+
   listScenes(): Scene[] {
     return this.ensureRepositories().scenes.list()
   }
@@ -241,6 +335,22 @@ export class ProjectService {
 
   reorderScenes(sceneIds: string[]): Scene[] {
     return this.ensureRepositories().scenes.reorder(sceneIds)
+  }
+
+  createSceneBeat(sceneId: string, afterBeatId?: string | null): SceneBeat {
+    return this.ensureRepositories().scenes.createBeat(sceneId, afterBeatId)
+  }
+
+  updateSceneBeat(input: SceneBeatUpdateInput): SceneBeat {
+    return this.ensureRepositories().scenes.updateBeat(input)
+  }
+
+  deleteSceneBeat(id: string) {
+    this.ensureRepositories().scenes.deleteBeat(id)
+  }
+
+  reorderSceneBeats(sceneId: string, beatIds: string[]): SceneBeat[] {
+    return this.ensureRepositories().scenes.reorderBeats(sceneId, beatIds)
   }
 
   listSceneFolders(): SceneFolder[] {
@@ -632,8 +742,8 @@ export class ProjectService {
     return nextFolders
   }
 
-  addSceneToBoard(boardId: string, sceneId: string, afterItemId?: string | null): AddSceneToBoardResult {
-    return this.ensureRepositories().boards.addScene(boardId, sceneId, afterItemId)
+  addSceneToBoard(boardId: string, sceneId: string, afterItemId?: string | null, boardPosition?: { x: number; y: number } | null): AddSceneToBoardResult {
+    return this.ensureRepositories().boards.addScene(boardId, sceneId, afterItemId, boardPosition)
   }
 
   addBlockToBoard(boardId: string, kind: BoardTextItemKind, afterItemId?: string | null): BoardTextItem {
@@ -656,11 +766,12 @@ export class ProjectService {
     return this.ensureRepositories().boards.updateItem(input)
   }
 
-  getSnapshot(): ProjectSnapshotV4 {
+  getSnapshot(): ProjectSnapshotV6 {
     return {
-      schemaVersion: 4,
+      schemaVersion: 6,
       exportedAt: new Date().toISOString(),
       project: this.getMeta(),
+      projectSettings: this.getProjectSettings(),
       scenes: this.listScenes(),
       tags: this.listTags(),
       boards: this.listBoards(),
@@ -732,6 +843,7 @@ export class ProjectService {
     const replace = db.transaction(() => {
       db.exec(`
         DELETE FROM scene_tags;
+        DELETE FROM scene_beats;
         DELETE FROM board_items;
         DELETE FROM boards;
         DELETE FROM tags;
@@ -752,14 +864,21 @@ export class ProjectService {
 
       const insertTag = db.prepare('INSERT INTO tags (id, name, type) VALUES (@id, @name, @type)')
       const insertSceneTag = db.prepare('INSERT INTO scene_tags (scene_id, tag_id) VALUES (?, ?)')
+      const insertSceneBeat = db.prepare(`
+        INSERT INTO scene_beats (
+          id, scene_id, sort_order, text, created_at, updated_at
+        ) VALUES (
+          @id, @sceneId, @sortOrder, @text, @createdAt, @updatedAt
+        )
+      `)
       const insertBoard = db.prepare(
         'INSERT INTO boards (id, name, description, color, folder, sort_order, created_at, updated_at) VALUES (@id, @name, @description, @color, @folder, @sortOrder, @createdAt, @updatedAt)',
       )
       const insertBoardItem = db.prepare(`
         INSERT INTO board_items (
-          id, board_id, scene_id, kind, title, body, color, position, created_at, updated_at
+          id, board_id, scene_id, kind, title, body, color, position, board_x, board_y, board_w, board_h, created_at, updated_at
         ) VALUES (
-          @id, @boardId, @sceneId, @kind, @title, @body, @color, @position, @createdAt, @updatedAt
+          @id, @boardId, @sceneId, @kind, @title, @body, @color, @position, @boardX, @boardY, @boardW, @boardH, @createdAt, @updatedAt
         )
       `)
 
@@ -774,6 +893,16 @@ export class ProjectService {
         scene.tagIds.forEach((tagId) => {
           insertSceneTag.run(scene.id, tagId)
         })
+        scene.beats.forEach((beat, beatIndex) => {
+          insertSceneBeat.run({
+            ...beat,
+            sceneId: scene.id,
+            sortOrder: beat.sortOrder ?? beatIndex,
+            text: beat.text ?? '',
+            createdAt: beat.createdAt ?? scene.createdAt,
+            updatedAt: beat.updatedAt ?? scene.updatedAt,
+          })
+        })
       })
 
       snapshot.tags.forEach((tag) => insertTag.run(tag))
@@ -786,11 +915,16 @@ export class ProjectService {
             title: item.kind === 'scene' ? '' : item.title,
             body: item.kind === 'scene' ? '' : item.body,
             color: item.kind === 'scene' ? 'charcoal' : item.color,
+            boardX: item.boardX ?? item.position * 320,
+            boardY: item.boardY ?? 0,
+            boardW: item.boardW ?? (item.kind === 'scene' ? 300 : 260),
+            boardH: item.boardH ?? (item.kind === 'scene' ? 132 : 108),
           })
         })
       })
 
       this.setNotebook(snapshot.notebook.content, snapshot.notebook.updatedAt)
+      this.updateProjectSettings(snapshot.projectSettings)
     })
 
     replace()
@@ -944,16 +1078,43 @@ function toProjectDisplayName(filePath: string) {
     .replace(/\.sqlite$/i, '')
 }
 
-function normalizeSnapshot(snapshot: ProjectSnapshot): ProjectSnapshotV4 {
+function normalizeSnapshot(snapshot: ProjectSnapshot): ProjectSnapshotV6 {
+  if (snapshot.schemaVersion === 6) {
+    return {
+      ...snapshot,
+      scenes: snapshot.scenes.map(normalizeSnapshotScene),
+      projectSettings: normalizeProjectSettings(snapshot.projectSettings),
+      boards: snapshot.boards.map(normalizeBoardSnapshot),
+    }
+  }
+
+  if (snapshot.schemaVersion === 5) {
+    return {
+      ...snapshot,
+      schemaVersion: 6,
+      scenes: snapshot.scenes.map(normalizeSnapshotScene),
+      projectSettings: normalizeProjectSettings(snapshot.projectSettings),
+      boards: snapshot.boards.map(normalizeBoardSnapshot),
+    }
+  }
+
   if (snapshot.schemaVersion === 4) {
-    return snapshot
+    return {
+      ...snapshot,
+      schemaVersion: 6,
+      scenes: snapshot.scenes.map(normalizeSnapshotScene),
+      projectSettings: defaultProjectSettings(),
+      boards: snapshot.boards.map(normalizeBoardSnapshot),
+    }
   }
 
   if (snapshot.schemaVersion === 3) {
     return {
       ...snapshot,
-      schemaVersion: 4,
-      boards: snapshot.boards.map((board) => ({
+      schemaVersion: 6,
+      scenes: snapshot.scenes.map(normalizeSnapshotScene),
+      projectSettings: defaultProjectSettings(),
+      boards: snapshot.boards.map((board) => normalizeBoardSnapshot({
         ...board,
         description: 'description' in board ? board.description : '',
         color: 'color' in board ? board.color : 'charcoal',
@@ -966,8 +1127,10 @@ function normalizeSnapshot(snapshot: ProjectSnapshot): ProjectSnapshotV4 {
   if (snapshot.schemaVersion === 2) {
     return {
       ...snapshot,
-      schemaVersion: 4,
-      boards: snapshot.boards.map((board) => ({
+      schemaVersion: 6,
+      scenes: snapshot.scenes.map(normalizeSnapshotScene),
+      projectSettings: defaultProjectSettings(),
+      boards: snapshot.boards.map((board) => normalizeBoardSnapshot({
         ...board,
         description: '',
         color: 'charcoal',
@@ -979,12 +1142,13 @@ function normalizeSnapshot(snapshot: ProjectSnapshot): ProjectSnapshotV4 {
   }
 
   return {
-    schemaVersion: 4,
+    schemaVersion: 6,
     exportedAt: snapshot.exportedAt,
     project: snapshot.project,
-    scenes: snapshot.scenes,
+    projectSettings: defaultProjectSettings(),
+    scenes: snapshot.scenes.map(normalizeSnapshotScene),
     tags: snapshot.tags,
-    boards: snapshot.boards.map((board) => ({
+    boards: snapshot.boards.map((board) => normalizeBoardSnapshot({
       ...board,
       description: '',
       color: 'charcoal',
@@ -993,6 +1157,35 @@ function normalizeSnapshot(snapshot: ProjectSnapshot): ProjectSnapshotV4 {
       items: board.items.map(normalizeSnapshotBoardItem),
     })),
     notebook: { content: '', updatedAt: null },
+  }
+}
+
+function normalizeSnapshotScene(scene: Scene) {
+  return {
+    ...scene,
+    beats: Array.isArray(scene.beats)
+      ? scene.beats.map((beat, index) => ({
+          id: typeof beat.id === 'string' ? beat.id : `beat_${Math.random().toString(36).slice(2, 10)}`,
+          sceneId: scene.id,
+          sortOrder: typeof beat.sortOrder === 'number' ? beat.sortOrder : index,
+          text: typeof beat.text === 'string' ? beat.text : '',
+          createdAt: typeof beat.createdAt === 'string' ? beat.createdAt : scene.createdAt,
+          updatedAt: typeof beat.updatedAt === 'string' ? beat.updatedAt : scene.updatedAt,
+        }))
+      : [],
+  }
+}
+
+function normalizeBoardSnapshot(board: Board): Board {
+  return {
+    ...board,
+    items: board.items.map((item) => ({
+      ...item,
+      boardX: item.boardX ?? item.position * 320,
+      boardY: item.boardY ?? 0,
+      boardW: item.boardW ?? (item.kind === 'scene' ? 300 : 260),
+      boardH: item.boardH ?? (item.kind === 'scene' ? 132 : 108),
+    })),
   }
 }
 
@@ -1235,6 +1428,80 @@ function normalizeBlockTemplates(templates: BlockTemplate[]) {
     .sort((left, right) => left.name.localeCompare(right.name))
 }
 
+function defaultProjectSettings(): ProjectSettings {
+  return {
+    title: '',
+    genre: '',
+    format: '',
+    targetRuntimeMinutes: 90,
+    logline: '',
+    defaultBoardView: 'outline',
+    enabledBlockKinds: ['chapter', 'voiceover', 'narration', 'text-card', 'note'],
+    blockKindOrder: ['chapter', 'voiceover', 'narration', 'text-card', 'note'],
+  }
+}
+
+function normalizeProjectSettings(value?: Partial<ProjectSettings> | null): ProjectSettings {
+  const defaults = defaultProjectSettings()
+  return {
+    title: value?.title?.trim() ?? defaults.title,
+    genre: value?.genre?.trim() ?? defaults.genre,
+    format: value?.format?.trim() ?? defaults.format,
+    targetRuntimeMinutes:
+      typeof value?.targetRuntimeMinutes === 'number' && Number.isFinite(value.targetRuntimeMinutes)
+        ? value.targetRuntimeMinutes
+        : defaults.targetRuntimeMinutes,
+    logline: value?.logline ?? defaults.logline,
+    defaultBoardView: normalizeStoredBoardView(value?.defaultBoardView ?? defaults.defaultBoardView),
+    enabledBlockKinds: normalizeBlockKindList(value?.enabledBlockKinds ?? defaults.enabledBlockKinds),
+    blockKindOrder: normalizeBlockKindList(value?.blockKindOrder ?? defaults.blockKindOrder),
+  }
+}
+
+function parseBlockKindList(value: string): ProjectSettings['enabledBlockKinds'] {
+  try {
+    const parsed = JSON.parse(value)
+    if (!Array.isArray(parsed)) {
+      return defaultProjectSettings().enabledBlockKinds
+    }
+    return normalizeBlockKindList(parsed)
+  } catch {
+    return defaultProjectSettings().enabledBlockKinds
+  }
+}
+
+function normalizeBlockKindList(value: unknown): ProjectSettings['enabledBlockKinds'] {
+  const allowed: Array<ProjectSettings['enabledBlockKinds'][number]> = [
+    'chapter',
+    'voiceover',
+    'narration',
+    'text-card',
+    'note',
+  ]
+
+  if (!Array.isArray(value)) {
+    return [...allowed]
+  }
+
+  const next = value.filter((entry): entry is ProjectSettings['enabledBlockKinds'][number] =>
+    typeof entry === 'string' && allowed.includes(entry as ProjectSettings['enabledBlockKinds'][number]),
+  )
+
+  return next.length > 0 ? Array.from(new Set(next)) : [...allowed]
+}
+
+function isBoardView(value: unknown): value is ProjectSettings['defaultBoardView'] {
+  return value === 'outline' || value === 'timeline' || value === 'board'
+}
+
+function normalizeStoredBoardView(value: unknown): ProjectSettings['defaultBoardView'] {
+  if (!isBoardView(value)) {
+    return 'outline'
+  }
+
+  return value === 'timeline' ? 'outline' : value
+}
+
 function normalizeSnapshotBoardItem(item: ProjectSnapshotV1['boards'][number]['items'][number]): BoardItem {
   if (item.kind && item.kind !== 'scene') {
     return {
@@ -1245,6 +1512,10 @@ function normalizeSnapshotBoardItem(item: ProjectSnapshotV1['boards'][number]['i
       body: item.body ?? '',
       color: item.color ?? 'charcoal',
       position: item.position,
+      boardX: 'boardX' in item && typeof item.boardX === 'number' ? item.boardX : item.position * 320,
+      boardY: 'boardY' in item && typeof item.boardY === 'number' ? item.boardY : 0,
+      boardW: 'boardW' in item && typeof item.boardW === 'number' ? item.boardW : 260,
+      boardH: 'boardH' in item && typeof item.boardH === 'number' ? item.boardH : 108,
       createdAt: item.createdAt,
       updatedAt: item.updatedAt,
     }
@@ -1256,6 +1527,10 @@ function normalizeSnapshotBoardItem(item: ProjectSnapshotV1['boards'][number]['i
     kind: 'scene',
     sceneId: item.sceneId ?? '',
     position: item.position,
+    boardX: 'boardX' in item && typeof item.boardX === 'number' ? item.boardX : item.position * 320,
+    boardY: 'boardY' in item && typeof item.boardY === 'number' ? item.boardY : 0,
+    boardW: 'boardW' in item && typeof item.boardW === 'number' ? item.boardW : 300,
+    boardH: 'boardH' in item && typeof item.boardH === 'number' ? item.boardH : 132,
     createdAt: item.createdAt,
     updatedAt: item.updatedAt,
   }

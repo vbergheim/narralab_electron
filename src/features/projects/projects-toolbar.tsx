@@ -6,20 +6,27 @@ import {
   FileCode2,
   FileJson2,
   FileText,
+  Files,
   FolderOpen,
   FolderPlus,
+  LayoutTemplate,
+  MonitorUp,
   Settings2,
+  Trash2,
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/cn'
 import { useFilterStore } from '@/stores/filter-store'
+import type { SavedWindowLayout, WindowWorkspace } from '@/types/ai'
 import type { BoardScriptExportFormat, ProjectMeta } from '@/types/project'
 
 type Props = {
   projectMeta: ProjectMeta | null
   busy: boolean
+  projectTitle?: string
+  savedLayouts: SavedWindowLayout[]
   onCreateProject(): void
   onOpenProject(): void
   onSaveAs(): void
@@ -27,12 +34,18 @@ type Props = {
   onExportJson(): void
   onExportScript(format: BoardScriptExportFormat): void
   onOpenSettings(): void
+  onOpenWorkspaceWindow(workspace: WindowWorkspace): void
+  onSaveLayout(): void
+  onApplyLayout(layoutId: string): void
+  onDeleteLayout(layoutId: string): void
   searchRef: RefObject<HTMLInputElement | null>
 }
 
 export function ProjectsToolbar({
   projectMeta,
   busy,
+  projectTitle,
+  savedLayouts,
   onCreateProject,
   onOpenProject,
   onSaveAs,
@@ -40,23 +53,32 @@ export function ProjectsToolbar({
   onExportJson,
   onExportScript,
   onOpenSettings,
+  onOpenWorkspaceWindow,
+  onSaveLayout,
+  onApplyLayout,
+  onDeleteLayout,
   searchRef,
 }: Props) {
   const search = useFilterStore((state) => state.search)
   const setSearch = useFilterStore((state) => state.setSearch)
-  const [projectMenuOpen, setProjectMenuOpen] = useState(false)
+  const [fileMenuOpen, setFileMenuOpen] = useState(false)
   const [scriptMenuOpen, setScriptMenuOpen] = useState(false)
-  const projectMenuRef = useRef<HTMLDivElement | null>(null)
+  const [windowMenuOpen, setWindowMenuOpen] = useState(false)
+  const fileMenuRef = useRef<HTMLDivElement | null>(null)
   const scriptMenuRef = useRef<HTMLDivElement | null>(null)
+  const windowMenuRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     const onPointerDown = (event: PointerEvent) => {
       const target = event.target as Node
-      if (!projectMenuRef.current?.contains(target)) {
-        setProjectMenuOpen(false)
+      if (!fileMenuRef.current?.contains(target)) {
+        setFileMenuOpen(false)
       }
       if (!scriptMenuRef.current?.contains(target)) {
         setScriptMenuOpen(false)
+      }
+      if (!windowMenuRef.current?.contains(target)) {
+        setWindowMenuOpen(false)
       }
     }
 
@@ -65,17 +87,17 @@ export function ProjectsToolbar({
   }, [])
 
   return (
-    <div className="flex items-center justify-between gap-4 border-b border-border/90 px-5 py-4 pl-24">
+    <div className="app-drag flex items-center justify-between gap-4 border-b border-border/90 px-5 py-4 pl-24">
       <div>
         <div className="font-display text-lg font-semibold text-foreground">
-          {projectMeta?.name ?? 'DocuDoc'}
+          {projectTitle || projectMeta?.name || 'DocuDoc'}
         </div>
         <div className="text-sm text-muted">
           {projectMeta?.path ?? 'Create or open a local project file to start outlining.'}
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="app-no-drag flex items-center gap-2">
         <div className="w-64">
           <Input
             ref={searchRef}
@@ -84,18 +106,68 @@ export function ProjectsToolbar({
             onChange={(event) => setSearch(event.target.value)}
           />
         </div>
-        <Button variant="ghost" size="sm" onClick={onCreateProject} disabled={busy}>
-          <FolderPlus className="h-4 w-4" />
-          New
-        </Button>
-        <Button variant="ghost" size="sm" onClick={onOpenProject} disabled={busy}>
-          <FolderOpen className="h-4 w-4" />
-          Open
-        </Button>
-        <Button variant="ghost" size="sm" onClick={onSaveAs} disabled={busy || !projectMeta}>
-          <Download className="h-4 w-4" />
-          Save As
-        </Button>
+        <div ref={fileMenuRef} className="relative">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setFileMenuOpen((current) => !current)
+              setScriptMenuOpen(false)
+              setWindowMenuOpen(false)
+            }}
+            disabled={busy}
+          >
+            <Files className="h-4 w-4" />
+            File
+            <ChevronDown className="h-4 w-4" />
+          </Button>
+          {fileMenuOpen ? (
+            <div className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-56 rounded-2xl border border-border/90 bg-panel p-2 shadow-panel">
+              <ToolbarMenuButton
+                icon={<FolderPlus className="h-4 w-4" />}
+                label="New Project"
+                onClick={() => {
+                  onCreateProject()
+                  setFileMenuOpen(false)
+                }}
+              />
+              <ToolbarMenuButton
+                icon={<FolderOpen className="h-4 w-4" />}
+                label="Open Project"
+                onClick={() => {
+                  onOpenProject()
+                  setFileMenuOpen(false)
+                }}
+              />
+              <ToolbarMenuButton
+                icon={<Download className="h-4 w-4" />}
+                label="Save As"
+                description="Save the current project to a new file."
+                onClick={() => {
+                  onSaveAs()
+                  setFileMenuOpen(false)
+                }}
+              />
+              <div className="my-2 h-px bg-border/80" />
+              <ToolbarMenuButton
+                icon={<FileJson2 className="h-4 w-4" />}
+                label="Import JSON"
+                onClick={() => {
+                  onImportJson()
+                  setFileMenuOpen(false)
+                }}
+              />
+              <ToolbarMenuButton
+                icon={<FileJson2 className="h-4 w-4" />}
+                label="Export JSON"
+                onClick={() => {
+                  onExportJson()
+                  setFileMenuOpen(false)
+                }}
+              />
+            </div>
+          ) : null}
+        </div>
 
         <div ref={scriptMenuRef} className="relative">
           <Button
@@ -103,7 +175,8 @@ export function ProjectsToolbar({
             size="sm"
             onClick={() => {
               setScriptMenuOpen((current) => !current)
-              setProjectMenuOpen(false)
+              setFileMenuOpen(false)
+              setWindowMenuOpen(false)
             }}
             disabled={busy || !projectMeta}
           >
@@ -162,38 +235,77 @@ export function ProjectsToolbar({
           ) : null}
         </div>
 
-        <div ref={projectMenuRef} className="relative">
+        <div ref={windowMenuRef} className="relative">
           <Button
             variant="ghost"
             size="sm"
             onClick={() => {
-              setProjectMenuOpen((current) => !current)
+              setWindowMenuOpen((current) => !current)
               setScriptMenuOpen(false)
+              setFileMenuOpen(false)
             }}
             disabled={busy || !projectMeta}
           >
-            <FileJson2 className="h-4 w-4" />
-            Project
+            <MonitorUp className="h-4 w-4" />
+            Window
             <ChevronDown className="h-4 w-4" />
           </Button>
-          {projectMenuOpen ? (
-            <div className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-52 rounded-2xl border border-border/90 bg-panel p-2 shadow-panel">
+          {windowMenuOpen ? (
+            <div className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-64 rounded-2xl border border-border/90 bg-panel p-2 shadow-panel">
+              {([
+                ['outline', 'Open Outline'],
+                ['bank', 'Open Scene Bank'],
+                ['inspector', 'Open Inspector'],
+                ['notebook', 'Open Notebook'],
+                ['archive', 'Open Archive'],
+              ] as Array<[WindowWorkspace, string]>).map(([workspace, label]) => (
+                <ToolbarMenuButton
+                  key={workspace}
+                  icon={<MonitorUp className="h-4 w-4" />}
+                  label={label}
+                  onClick={() => {
+                    onOpenWorkspaceWindow(workspace)
+                    setWindowMenuOpen(false)
+                  }}
+                />
+              ))}
+              <div className="my-2 h-px bg-border/80" />
               <ToolbarMenuButton
-                icon={<FileJson2 className="h-4 w-4" />}
-                label="Import JSON"
+                icon={<LayoutTemplate className="h-4 w-4" />}
+                label="Save Current Layout"
                 onClick={() => {
-                  onImportJson()
-                  setProjectMenuOpen(false)
+                  onSaveLayout()
+                  setWindowMenuOpen(false)
                 }}
               />
-              <ToolbarMenuButton
-                icon={<FileJson2 className="h-4 w-4" />}
-                label="Export JSON"
-                onClick={() => {
-                  onExportJson()
-                  setProjectMenuOpen(false)
-                }}
-              />
+              {savedLayouts.length > 0 ? <div className="my-2 h-px bg-border/80" /> : null}
+              {savedLayouts.map((layout) => (
+                <div key={layout.id} className="flex items-center gap-2 rounded-xl px-1 py-1 hover:bg-panelMuted">
+                  <button
+                    type="button"
+                    className="min-w-0 flex-1 rounded-xl px-2 py-1.5 text-left"
+                    onClick={() => {
+                      onApplyLayout(layout.id)
+                      setWindowMenuOpen(false)
+                    }}
+                  >
+                    <div className="truncate text-sm font-medium text-foreground">{layout.name}</div>
+                    <div className="text-xs text-muted">{layout.windows.length} windows</div>
+                  </button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      onDeleteLayout(layout.id)
+                      setWindowMenuOpen(false)
+                    }}
+                    title="Delete layout"
+                    aria-label={`Delete ${layout.name}`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
             </div>
           ) : null}
         </div>

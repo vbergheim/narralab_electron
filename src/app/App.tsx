@@ -9,11 +9,10 @@ import {
   GripVertical,
   LayoutGrid,
   Loader2,
+  Maximize2,
   MessageCircle,
   NotebookText,
-  PanelLeftClose,
   PanelLeftOpen,
-  PanelRightClose,
   PanelRightOpen,
   Rows3,
   X,
@@ -35,10 +34,14 @@ import { Button } from '@/components/ui/button'
 import { ContextMenu, type ContextMenuItem } from '@/components/ui/context-menu'
 import { Panel } from '@/components/ui/panel'
 import { usePanelResize } from '@/hooks/use-panel-resize'
+import { cn } from '@/lib/cn'
 import { nextKeyRating } from '@/lib/scene-rating'
 import { useAppStore } from '@/stores/app-store'
 import { useFilterStore } from '@/stores/filter-store'
 import { isTextBoardItem } from '@/types/board'
+import type { BoardViewMode } from '@/types/board'
+import type { SavedWindowLayout, WindowWorkspace } from '@/types/ai'
+import type { WindowContext } from '@/types/project'
 import type { Scene } from '@/types/scene'
 import type { SceneDensity } from '@/types/view'
 
@@ -56,8 +59,12 @@ export function App() {
   const [rightCollapsed, setRightCollapsed] = useState(false)
   const [consultantDockOpen, setConsultantDockOpen] = useState(false)
   const [sceneDensity, setSceneDensity] = useState<SceneDensity>('compact')
+  const [boardViewMode, setBoardViewMode] = useState<BoardViewMode>('outline')
   const [viewMenuOpen, setViewMenuOpen] = useState(false)
   const [viewMenuPosition, setViewMenuPosition] = useState({ x: 0, y: 0 })
+  const [windowContext, setWindowContext] = useState<WindowContext | null>(null)
+  const [savedLayouts, setSavedLayouts] = useState<SavedWindowLayout[]>([])
+  const [outlineImmersive, setOutlineImmersive] = useState(false)
   const inspectorResize = usePanelResize({ initial: 420, min: 320, max: 620 })
   const {
     ready,
@@ -65,6 +72,7 @@ export function App() {
     consultantBusy,
     error,
     projectMeta,
+    projectSettings,
     appSettings,
     notebook,
     archiveFolders,
@@ -84,7 +92,9 @@ export function App() {
     consultantMessages,
     consultantContextMode,
     workspaceMode,
+    applyGlobalUiState,
     updateAppSettings,
+    updateProjectSettings,
     sendConsultantMessage,
     setConsultantContextMode,
     clearConsultantConversation,
@@ -104,8 +114,11 @@ export function App() {
     exportJson,
     exportActiveBoardScript,
     createScene,
+    createSceneBeat,
     createSceneFolder,
+    deleteSceneBeat,
     updateSceneFolder,
+    reorderSceneBeats,
     deleteSceneFolder,
     moveScenesToFolder,
     reorderScenes,
@@ -117,6 +130,7 @@ export function App() {
     deleteScene,
     deleteScenes,
     persistSceneDraft,
+    updateSceneBeat,
     bulkUpdateScenes,
     persistBoardItemDraft,
     updateNotebookDraft,
@@ -151,6 +165,96 @@ export function App() {
   useEffect(() => {
     void initialize()
   }, [initialize])
+
+  useEffect(() => {
+    const loadWindowState = async () => {
+      const [context, layouts] = await Promise.all([
+        window.docudoc.windows.getContext(),
+        window.docudoc.windows.listLayouts(),
+      ])
+      setWindowContext(context)
+      setSavedLayouts(layouts)
+      if (context.role === 'detached') {
+        setSceneDensity(context.sceneDensity)
+        setBoardViewMode(normalizeBoardViewMode(context.viewMode))
+      }
+    }
+
+    void loadWindowState()
+
+    const dispose = window.docudoc.windows.subscribe((event) => {
+      if (event.type === 'project-changed') {
+        void initialize()
+        void window.docudoc.windows.listLayouts().then(setSavedLayouts)
+        return
+      }
+
+      if (event.type === 'global-ui-state') {
+        applyGlobalUiState(event.payload)
+        return
+      }
+
+      if (
+        event.type === 'window-context' &&
+        event.payload.windowId === windowContext?.windowId &&
+        event.payload.role === 'detached'
+      ) {
+        setWindowContext(event.payload)
+        setSceneDensity(event.payload.sceneDensity)
+        setBoardViewMode(normalizeBoardViewMode(event.payload.viewMode))
+      }
+    })
+
+    return dispose
+  }, [applyGlobalUiState, initialize, windowContext?.windowId])
+
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      setOutlineImmersive(Boolean(document.fullscreenElement))
+    }
+
+    document.addEventListener('fullscreenchange', onFullscreenChange)
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange)
+  }, [])
+
+  const detachedWorkspace =
+    windowContext?.role === 'detached' && windowContext.workspace !== 'main'
+      ? windowContext.workspace
+      : null
+  const boardIdForWindow =
+    detachedWorkspace && windowContext?.boardId
+      ? windowContext.boardId
+      : activeBoardId
+
+  useEffect(() => {
+    const detachedWindowId = windowContext?.role === 'detached' ? windowContext.windowId : null
+    const detachedContextBoardId = windowContext?.role === 'detached' ? windowContext.boardId : null
+    const detachedContextViewMode = windowContext?.role === 'detached' ? windowContext.viewMode : null
+    const detachedContextSceneDensity = windowContext?.role === 'detached' ? windowContext.sceneDensity : null
+
+    if (!detachedWindowId) {
+      return
+    }
+
+    if (
+      detachedContextBoardId === boardIdForWindow &&
+      detachedContextViewMode === boardViewMode &&
+      detachedContextSceneDensity === sceneDensity
+    ) {
+      return
+    }
+
+    void window.docudoc.windows.updateContext({
+      boardId: boardIdForWindow,
+      viewMode: normalizeBoardViewMode(boardViewMode),
+      sceneDensity,
+    })
+  }, [
+    boardIdForWindow,
+    boardViewMode,
+    sceneDensity,
+    windowContext,
+  ])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -215,7 +319,7 @@ export function App() {
     selectScene,
   ])
 
-  const activeBoard = boards.find((board) => board.id === activeBoardId) ?? null
+  const activeBoard = boards.find((board) => board.id === boardIdForWindow) ?? null
   const selectedBoard = boards.find((board) => board.id === selectedBoardId) ?? null
 
   const openInspector = (sceneId: string | null, boardItemId?: string | null) => {
@@ -235,6 +339,29 @@ export function App() {
       ...scene,
       keyRating: nextKeyRating(scene.keyRating),
       tagNames,
+    })
+  }
+
+  const inlineUpdateScene = (sceneId: string, input: { title: string; synopsis: string }) => {
+    const scene = scenes.find((entry) => entry.id === sceneId)
+    if (!scene) {
+      return
+    }
+
+    const tagNames = tags.filter((tag) => scene.tagIds.includes(tag.id)).map((tag) => tag.name)
+    void persistSceneDraft({
+      ...scene,
+      title: input.title,
+      synopsis: input.synopsis,
+      tagNames,
+    })
+  }
+
+  const inlineUpdateBlock = (itemId: string, input: { title: string; body: string }) => {
+    void persistBoardItemDraft({
+      id: itemId,
+      title: input.title,
+      body: input.body,
     })
   }
 
@@ -280,6 +407,112 @@ export function App() {
       })),
     [],
   )
+  const effectiveBoardViewMode = normalizeBoardViewMode(boardViewMode)
+  const projectTitle = projectSettings?.title?.trim() || projectMeta?.name || 'DocuDoc'
+
+  const addSceneToCurrentBoard = async (
+    sceneId: string,
+    afterItemId?: string | null,
+    boardPosition?: { x: number; y: number } | null,
+  ) => {
+    const targetBoardId = boardIdForWindow
+    if (!targetBoardId) {
+      return null
+    }
+
+    if (targetBoardId === activeBoardId) {
+      return addSceneToActiveBoard(sceneId, afterItemId, boardPosition)
+    }
+
+    const result = await window.docudoc.boards.addScene(targetBoardId, sceneId, afterItemId, boardPosition)
+    await initialize()
+    selectScene(sceneId, result.item.id)
+    return result
+  }
+
+  const saveCurrentLayout = async () => {
+    const name = window.prompt('Layout name')
+    if (!name?.trim()) {
+      return
+    }
+    const layout = await window.docudoc.windows.saveLayout(name.trim())
+    setSavedLayouts((current) => [...current.filter((entry) => entry.id !== layout.id), layout])
+  }
+
+  const applyLayout = async (layoutId: string) => {
+    await window.docudoc.windows.applyLayout(layoutId)
+    setSavedLayouts(await window.docudoc.windows.listLayouts())
+  }
+
+  const deleteLayout = async (layoutId: string) => {
+    setSavedLayouts(await window.docudoc.windows.deleteLayout(layoutId))
+  }
+
+  const openWorkspaceWindow = async (workspace: WindowWorkspace) => {
+    await window.docudoc.windows.openWorkspace(workspace, {
+      boardId: activeBoardId,
+      viewMode: effectiveBoardViewMode,
+      sceneDensity,
+    })
+  }
+  const toggleOutlineImmersive = async () => {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen()
+      return
+    }
+
+    await document.documentElement.requestFullscreen()
+  }
+  const inspectorContent = selectedBlock ? (
+    <BoardItemInspector
+      key={selectedBlock.id}
+      item={selectedBlock}
+      onCollapse={() => setRightCollapsed(true)}
+      onSave={(item) => void persistBoardItemDraft(item)}
+      onSaveTemplate={(input) => void saveBlockTemplate(input)}
+      onDelete={(itemId) => void removeBoardItem(itemId)}
+    />
+  ) : selectedBoard ? (
+    <BoardInspector
+      key={selectedBoard.id}
+      board={selectedBoard}
+      onCollapse={() => setRightCollapsed(true)}
+      onSave={(board) => void updateBoardDraft(board)}
+    />
+  ) : multiSelectedSceneCount > 1 ? (
+    <BulkSceneInspector
+      key={`bulk-${selectedSceneIds.join('-')}`}
+      count={multiSelectedSceneCount}
+      onCollapse={() => setRightCollapsed(true)}
+      onApply={(input) =>
+        void bulkUpdateScenes({
+          sceneIds: selectedSceneIds,
+          ...input,
+        })
+      }
+      onDelete={() => void deleteScenes(selectedSceneIds)}
+      onClear={clearSceneSelection}
+    />
+  ) : (
+    <SceneInspector
+      key={selectedSceneId ?? 'empty'}
+      scene={selectedSceneId ? selectedScene ?? null : null}
+      tags={tags}
+      onCollapse={() => setRightCollapsed(true)}
+      onSave={(scene) => void persistSceneDraft(scene)}
+      onCreateBeat={(sceneId, afterBeatId) => void createSceneBeat(sceneId, afterBeatId)}
+      onUpdateBeat={(input) => void updateSceneBeat(input)}
+      onDeleteBeat={(beatId) => void deleteSceneBeat(beatId)}
+      onReorderBeats={(sceneId, beatIds) => void reorderSceneBeats(sceneId, beatIds)}
+      onDelete={(sceneId) => void deleteScene(sceneId)}
+    />
+  )
+
+  const boardBlockKindsForProject = useMemo(() => {
+    const enabled = projectSettings?.enabledBlockKinds ?? ['chapter', 'voiceover', 'narration', 'text-card', 'note']
+    const order = projectSettings?.blockKindOrder ?? enabled
+    return order.filter((kind) => enabled.includes(kind))
+  }, [projectSettings])
 
   if (!ready) {
     return (
@@ -289,11 +522,151 @@ export function App() {
     )
   }
 
+  if (detachedWorkspace) {
+    return (
+      <div className="flex h-screen min-h-0 flex-col overflow-hidden bg-[radial-gradient(circle_at_top,#1a1f2d_0%,#10131c_32%,#0b0d12_100%)] text-foreground">
+        {!outlineImmersive ? (
+          <div className="app-drag flex items-center justify-between border-b border-border/90 px-5 py-3 pl-24">
+            <div>
+              <div className="font-display text-lg font-semibold text-foreground">{projectTitle}</div>
+              <div className="text-sm text-muted">{detachedLabel(detachedWorkspace)}</div>
+            </div>
+            <div className="app-no-drag flex items-center gap-2">
+              {detachedWorkspace === 'outline' ? (
+                <Button variant="ghost" size="sm" onClick={() => void toggleOutlineImmersive()} title="Fullscreen focus" aria-label="Fullscreen focus">
+                  <Maximize2 className="h-4 w-4" />
+                  <span className="hidden lg:inline">Focus</span>
+                </Button>
+              ) : null}
+              {detachedWorkspace === 'outline' || detachedWorkspace === 'bank' ? (
+                <button
+                  ref={viewButtonRef}
+                  type="button"
+                  className="inline-flex h-9 shrink-0 items-center gap-2 rounded-xl border border-border bg-panel px-2.5 text-sm font-medium text-foreground transition hover:bg-panelMuted lg:px-3"
+                  onClick={() => {
+                    const rect = viewButtonRef.current?.getBoundingClientRect()
+                    if (!rect) return
+                    setViewMenuPosition({ x: rect.left, y: rect.bottom + 8 })
+                    setViewMenuOpen(true)
+                  }}
+                >
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">View</span>
+                  <densityOption.icon className="h-4 w-4" />
+                  <ChevronDown className="h-4 w-4 text-muted" />
+                </button>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+        <div className={cn('min-h-0 flex-1 overflow-hidden', outlineImmersive ? 'p-0' : 'p-4')}>
+          {!projectMeta ? (
+            <WelcomePanel onCreate={() => void createProject()} onOpen={() => void openProject()} />
+          ) : detachedWorkspace === 'outline' && activeBoard ? (
+            <OutlineWorkspace
+              board={activeBoard}
+              allBoards={boards}
+              scenes={scenes}
+              sceneFolders={sceneFolders}
+              blockTemplates={blockTemplates}
+              filteredSceneIds={filteredSceneIds}
+              tags={tags}
+              density={sceneDensity}
+              viewMode={effectiveBoardViewMode}
+              availableBlockKinds={boardBlockKindsForProject}
+              immersive={outlineImmersive}
+              onToggleImmersive={() => void toggleOutlineImmersive()}
+              onChangeViewMode={(mode) => setBoardViewMode(normalizeBoardViewMode(mode))}
+              selectedSceneId={selectedSceneId}
+              selectedBoardItemId={selectedBoardItemId}
+              onSelect={(sceneId, boardItemId) => selectScene(sceneId, boardItemId)}
+              onOpenInspector={openInspector}
+              onToggleKeyScene={toggleKeyScene}
+              onDuplicateScene={(sceneId, afterItemId) =>
+                void duplicateScene(sceneId, { addToBoardAfterItemId: afterItemId ?? null })}
+              onAddScene={(sceneId, afterItemId, boardPosition) => void addSceneToCurrentBoard(sceneId, afterItemId, boardPosition)}
+              onAddBlock={(kind, afterItemId) => void addBlockToActiveBoard(kind, afterItemId)}
+              onAddTemplate={(templateId, afterItemId) => void addBlockTemplateToActiveBoard(templateId, afterItemId)}
+              onSaveTemplate={(input) => void saveBlockTemplate(input)}
+              onDeleteTemplate={(templateId) => void deleteBlockTemplate(templateId)}
+              onCopyBlockToBoard={(itemId, boardId) => void copyBlockToBoard(itemId, boardId)}
+              onDuplicateBlock={(itemId) => void duplicateBoardItem(itemId)}
+              onRemoveBoardItem={(itemId) => void removeBoardItem(itemId)}
+              onReorder={(itemIds) => void reorderActiveBoard(itemIds)}
+              onUpdateItemPosition={(itemId, boardX, boardY) => void persistBoardItemDraft({ id: itemId, boardX, boardY })}
+              onInlineUpdateScene={inlineUpdateScene}
+              onInlineUpdateBlock={inlineUpdateBlock}
+              onCreateBeat={(sceneId, afterBeatId) => void createSceneBeat(sceneId, afterBeatId)}
+              onUpdateBeat={(input) => void updateSceneBeat(input)}
+              onDeleteBeat={(beatId) => void deleteSceneBeat(beatId)}
+              onReorderBeats={(sceneId, beatIds) => void reorderSceneBeats(sceneId, beatIds)}
+            />
+          ) : detachedWorkspace === 'bank' && activeBoard ? (
+            <SceneBankView
+              scenes={filteredScenes}
+              allScenes={scenes}
+              folders={sceneFolders}
+              tags={tags}
+              board={activeBoard}
+              density={sceneDensity}
+              selectedSceneId={selectedSceneId}
+              selectedSceneIds={selectedSceneIds}
+              onSelect={(sceneId) => selectScene(sceneId)}
+              onToggleSelection={toggleSceneSelection}
+              onSelectAllVisible={setSceneSelection}
+              onClearSelection={clearSceneSelection}
+              onOpenInspector={openInspector}
+              onInlineUpdateScene={inlineUpdateScene}
+              onToggleKeyScene={toggleKeyScene}
+              onCreateScene={() => void createScene()}
+              onCreateFolder={(name, parentPath) => void createSceneFolder(name, parentPath)}
+              onUpdateFolder={(currentPath, input) => void updateSceneFolder(currentPath, input)}
+              onDeleteFolder={(currentPath) => void deleteSceneFolder(currentPath)}
+              onMoveToFolder={(sceneIds, folder) => void moveScenesToFolder(sceneIds, folder)}
+              onReorderScenes={(sceneIds) => void reorderScenes(sceneIds)}
+              onDuplicate={(sceneId) => void duplicateScene(sceneId)}
+              onDelete={(sceneId) => void deleteScene(sceneId)}
+              onDeleteSelected={() => void deleteScenes(selectedSceneIds)}
+              onAdd={(sceneId) => void addSceneToCurrentBoard(sceneId, selectedBoardItemId)}
+            />
+          ) : detachedWorkspace === 'notebook' ? (
+            <NotebookEditor notebook={notebook} onChange={updateNotebookDraft} onSave={(content) => void persistNotebook(content)} />
+          ) : detachedWorkspace === 'archive' ? (
+            <ArchiveWorkspace
+              folders={archiveFolders}
+              items={archiveItems}
+              selectedFolderId={selectedArchiveFolderId}
+              onSelectFolder={setSelectedArchiveFolder}
+              onCreateFolder={(name, parentId) => void createArchiveFolder(name, parentId)}
+              onUpdateFolder={(folderId, input) => void updateArchiveFolder(folderId, input)}
+              onDeleteFolder={(folderId) => void deleteArchiveFolder(folderId)}
+              onAddFiles={(filePaths, folderId) => void addArchiveFiles(filePaths, folderId)}
+              onMoveItem={(itemId, folderId) => void moveArchiveItem(itemId, folderId)}
+              onOpenItem={(itemId) => void openArchiveItem(itemId)}
+              onRevealItem={(itemId) => void revealArchiveItem(itemId)}
+              onDeleteItem={(itemId) => void deleteArchiveItem(itemId)}
+            />
+          ) : detachedWorkspace === 'inspector' ? (
+            <Panel className="h-full overflow-y-auto overscroll-contain">{inspectorContent}</Panel>
+          ) : null}
+        </div>
+        <ContextMenu
+          open={viewMenuOpen}
+          x={viewMenuPosition.x}
+          y={viewMenuPosition.y}
+          items={densityMenuItems}
+          onClose={() => setViewMenuOpen(false)}
+        />
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,#1a1f2d_0%,#10131c_32%,#0b0d12_100%)] text-foreground">
       <ProjectsToolbar
         projectMeta={projectMeta}
+        projectTitle={projectTitle}
         busy={busy}
+        savedLayouts={savedLayouts}
         onCreateProject={() => void createProject()}
         onOpenProject={() => void openProject()}
         onSaveAs={() => void saveProjectAs()}
@@ -301,6 +674,10 @@ export function App() {
         onExportJson={() => void exportJson()}
         onExportScript={(format) => void exportActiveBoardScript(format)}
         onOpenSettings={() => setWorkspaceMode('settings')}
+        onOpenWorkspaceWindow={(workspace) => void openWorkspaceWindow(workspace)}
+        onSaveLayout={() => void saveCurrentLayout()}
+        onApplyLayout={(layoutId) => void applyLayout(layoutId)}
+        onDeleteLayout={(layoutId) => void deleteLayout(layoutId)}
         searchRef={searchRef}
       />
 
@@ -317,9 +694,9 @@ export function App() {
           </Panel>
         ) : null}
 
-        <Panel className="px-4 py-3">
+        <Panel className="app-drag px-4 py-3">
           <div className="flex min-w-0 items-center gap-3 overflow-hidden">
-            <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="app-no-drag flex min-w-0 flex-1 items-center gap-2 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {workspaceTabs.map((tab) => {
                 const Icon = tab.icon
 
@@ -380,19 +757,16 @@ export function App() {
           <CollapsedRail side="left" title="Filters" onExpand={() => setLeftCollapsed(false)} />
         ) : (
           <Panel className="min-h-0 overflow-hidden">
-            <div className="flex items-center justify-end border-b border-border/90 px-3 py-2">
-              <Button variant="ghost" size="sm" onClick={() => setLeftCollapsed(true)}>
-                <PanelLeftClose className="h-4 w-4" />
-              </Button>
-            </div>
             <FiltersSidebar
               boards={boards}
               folders={boardFolders}
               scenes={scenes}
               tags={tags}
               activeBoardId={activeBoardId}
+              onCollapse={() => setLeftCollapsed(true)}
               onSelectBoard={setActiveBoard}
               onOpenBoardInspector={openBoardDetails}
+              onInlineUpdateBoard={(boardId, input) => void updateBoardDraft({ id: boardId, ...input })}
               onDuplicateBoard={(boardId) => void cloneBoard(boardId)}
               onCreateBoard={(folder) => void createBoard('New Board', folder)}
               onCreateFolder={(name, parentPath) => void createBoardFolder(name, parentPath)}
@@ -409,19 +783,11 @@ export function App() {
           <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4">
             {workspaceMode === 'settings' ? (
               <SettingsWorkspace
-                key={[
-                  appSettings.ai.provider,
-                  appSettings.ai.openAiModel,
-                  appSettings.ai.geminiModel,
-                  appSettings.ai.systemPrompt,
-                  appSettings.ai.extraInstructions,
-                  appSettings.ai.responseStyle,
-                  Number(appSettings.ai.hasOpenAiApiKey),
-                  Number(appSettings.ai.hasGeminiApiKey),
-                ].join(':')}
                 settings={appSettings}
+                projectSettings={projectSettings}
                 busy={busy}
-                onSave={(input) => void updateAppSettings(input)}
+                onSaveApp={(input) => void updateAppSettings(input)}
+                onSaveProject={(input) => void updateProjectSettings(input)}
               />
             ) : workspaceMode === 'consultant' ? (
               <ConsultantWorkspace
@@ -461,13 +827,16 @@ export function App() {
                   filteredSceneIds={filteredSceneIds}
                   tags={tags}
                   density={sceneDensity}
+                      viewMode={effectiveBoardViewMode}
+                  availableBlockKinds={boardBlockKindsForProject}
+                  onChangeViewMode={(mode) => setBoardViewMode(normalizeBoardViewMode(mode))}
                   selectedSceneId={selectedSceneId}
                   selectedBoardItemId={selectedBoardItemId}
                   onSelect={(sceneId, boardItemId) => selectScene(sceneId, boardItemId)}
                   onOpenInspector={openInspector}
                   onToggleKeyScene={toggleKeyScene}
                   onDuplicateScene={(sceneId, afterItemId) => void duplicateScene(sceneId, { addToBoardAfterItemId: afterItemId ?? null })}
-                  onAddScene={(sceneId, afterItemId) => void addSceneToActiveBoard(sceneId, afterItemId)}
+                  onAddScene={(sceneId, afterItemId, boardPosition) => void addSceneToCurrentBoard(sceneId, afterItemId, boardPosition)}
                   onAddBlock={(kind, afterItemId) => void addBlockToActiveBoard(kind, afterItemId)}
                   onAddTemplate={(templateId, afterItemId) => void addBlockTemplateToActiveBoard(templateId, afterItemId)}
                   onSaveTemplate={(input) => void saveBlockTemplate(input)}
@@ -476,6 +845,13 @@ export function App() {
                   onDuplicateBlock={(itemId) => void duplicateBoardItem(itemId)}
                   onRemoveBoardItem={(itemId) => void removeBoardItem(itemId)}
                   onReorder={(itemIds) => void reorderActiveBoard(itemIds)}
+                  onUpdateItemPosition={(itemId, boardX, boardY) => void persistBoardItemDraft({ id: itemId, boardX, boardY })}
+                  onInlineUpdateScene={inlineUpdateScene}
+                  onInlineUpdateBlock={inlineUpdateBlock}
+                  onCreateBeat={(sceneId, afterBeatId) => void createSceneBeat(sceneId, afterBeatId)}
+                  onUpdateBeat={(input) => void updateSceneBeat(input)}
+                  onDeleteBeat={(beatId) => void deleteSceneBeat(beatId)}
+                  onReorderBeats={(sceneId, beatIds) => void reorderSceneBeats(sceneId, beatIds)}
                 />
               ) : workspaceMode === 'notebook' ? (
                 <NotebookEditor
@@ -498,6 +874,7 @@ export function App() {
                   onSelectAllVisible={setSceneSelection}
                   onClearSelection={clearSceneSelection}
                   onOpenInspector={openInspector}
+                  onInlineUpdateScene={inlineUpdateScene}
                   onToggleKeyScene={toggleKeyScene}
                   onCreateScene={() => void createScene()}
                   onCreateFolder={(name, parentPath) => void createSceneFolder(name, parentPath)}
@@ -508,7 +885,7 @@ export function App() {
                   onDuplicate={(sceneId) => void duplicateScene(sceneId)}
                   onDelete={(sceneId) => void deleteScene(sceneId)}
                   onDeleteSelected={() => void deleteScenes(selectedSceneIds)}
-                  onAdd={(sceneId) => void addSceneToActiveBoard(sceneId, selectedBoardItemId)}
+                  onAdd={(sceneId) => void addSceneToCurrentBoard(sceneId, selectedBoardItemId)}
                 />
               )
             ) : (
@@ -534,48 +911,8 @@ export function App() {
           {showInspector && !rightCollapsed ? (
             <div className="min-h-0 shrink-0 overflow-hidden" style={{ width: inspectorResize.size }}>
               <Panel className="flex h-full flex-col overflow-hidden">
-                <div className="flex items-center justify-end border-b border-border/90 px-3 py-2">
-                  <Button variant="ghost" size="sm" onClick={() => setRightCollapsed(true)}>
-                    <PanelRightClose className="h-4 w-4" />
-                  </Button>
-                </div>
-                <div className="min-h-0 flex-1 overflow-y-auto p-0">
-                  {selectedBlock ? (
-                    <BoardItemInspector
-                      key={selectedBlock.id}
-                      item={selectedBlock}
-                      onSave={(item) => void persistBoardItemDraft(item)}
-                      onSaveTemplate={(input) => void saveBlockTemplate(input)}
-                      onDelete={(itemId) => void removeBoardItem(itemId)}
-                    />
-                  ) : selectedBoard ? (
-                    <BoardInspector
-                      key={selectedBoard.id}
-                      board={selectedBoard}
-                      onSave={(board) => void updateBoardDraft(board)}
-                    />
-                  ) : multiSelectedSceneCount > 1 ? (
-                    <BulkSceneInspector
-                      key={`bulk-${selectedSceneIds.join('-')}`}
-                      count={multiSelectedSceneCount}
-                      onApply={(input) =>
-                        void bulkUpdateScenes({
-                          sceneIds: selectedSceneIds,
-                          ...input,
-                        })
-                      }
-                      onDelete={() => void deleteScenes(selectedSceneIds)}
-                      onClear={clearSceneSelection}
-                    />
-                  ) : (
-                    <SceneInspector
-                      key={selectedSceneId ?? 'empty'}
-                      scene={selectedSceneId ? selectedScene ?? null : null}
-                      tags={tags}
-                      onSave={(scene) => void persistSceneDraft(scene)}
-                      onDelete={(sceneId) => void deleteScene(sceneId)}
-                    />
-                  )}
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-0">
+                  {inspectorContent}
                 </div>
               </Panel>
             </div>
@@ -702,16 +1039,24 @@ function CollapsedRail({
   onExpand(): void
 }) {
   return (
-    <Panel className="flex h-full flex-col items-center gap-3 px-2 py-3">
-      <Button variant="ghost" size="sm" onClick={onExpand}>
-        {side === 'left' ? <PanelLeftOpen className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
-      </Button>
-      <div
-        className="mt-4 text-xs font-semibold uppercase tracking-[0.18em] text-muted"
-        style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+    <Panel className="h-full overflow-hidden px-0 py-0">
+      <button
+        type="button"
+        onClick={onExpand}
+        title={`Open ${title}`}
+        aria-label={`Open ${title}`}
+        className="flex h-full w-full items-start justify-center rounded-[inherit] px-2 py-4 text-muted transition hover:bg-panelMuted hover:text-foreground"
       >
-        {title}
-      </div>
+        <div className="flex flex-col items-center gap-3">
+          {side === 'left' ? <PanelLeftOpen className="h-4 w-4 shrink-0" /> : <PanelRightOpen className="h-4 w-4 shrink-0" />}
+          <span
+            className="text-xs font-semibold uppercase tracking-[0.18em]"
+            style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+          >
+            {title}
+          </span>
+        </div>
+      </button>
     </Panel>
   )
 }
@@ -753,6 +1098,14 @@ function isTextInputTarget(target: EventTarget | null) {
   )
 }
 
+function detachedLabel(workspace: WindowWorkspace) {
+  if (workspace === 'bank') return 'Scene Bank Window'
+  if (workspace === 'inspector') return 'Inspector Window'
+  if (workspace === 'notebook') return 'Notebook Window'
+  if (workspace === 'archive') return 'Archive Window'
+  return 'Outline Window'
+}
+
 const densityOptions: Array<{
   value: SceneDensity
   label: string
@@ -762,3 +1115,7 @@ const densityOptions: Array<{
   { value: 'compact', label: 'Compact', icon: Rows3 },
   { value: 'detailed', label: 'Detailed', icon: LayoutGrid },
 ]
+
+function normalizeBoardViewMode(mode: BoardViewMode): BoardViewMode {
+  return mode === 'timeline' ? 'outline' : mode
+}

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { AlertTriangle, Layers3, Trash2 } from 'lucide-react'
+import { AlertTriangle, Layers3, PanelRightClose, Trash2 } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -10,6 +10,7 @@ import type { Scene } from '@/types/scene'
 
 type Props = {
   count: number
+  onCollapse?(): void
   onApply(input: {
     category?: string
     status?: Scene['status']
@@ -19,13 +20,13 @@ type Props = {
   onClear(): void
 }
 
-export function BulkSceneInspector({ count, onApply, onDelete, onClear }: Props) {
+export function BulkSceneInspector({ count, onCollapse, onApply, onDelete, onClear }: Props) {
   const [category, setCategory] = useState('')
   const [status, setStatus] = useState<Scene['status'] | ''>('')
   const [color, setColor] = useState<Scene['color'] | ''>('')
 
   return (
-    <Panel className="h-full overflow-hidden">
+    <Panel className="flex h-full flex-col overflow-hidden">
       <div className="flex items-center justify-between border-b border-border/90 px-4 py-4">
         <div>
           <div className="font-display text-sm font-semibold uppercase tracking-[0.16em] text-foreground">
@@ -33,12 +34,19 @@ export function BulkSceneInspector({ count, onApply, onDelete, onClear }: Props)
           </div>
           <div className="mt-1 text-sm text-muted">Apply shared settings to the selected scene bank rows.</div>
         </div>
-        <Button variant="ghost" size="sm" onClick={onClear}>
-          Clear Selection
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={onClear}>
+            Clear Selection
+          </Button>
+          {onCollapse ? (
+            <Button variant="ghost" size="sm" onClick={onCollapse} title="Collapse inspector" aria-label="Collapse inspector">
+              <PanelRightClose className="h-4 w-4" />
+            </Button>
+          ) : null}
+        </div>
       </div>
 
-      <div className="h-[calc(100%-78px)] overflow-y-auto p-4">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
         <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
           <div className="flex items-start gap-3">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />

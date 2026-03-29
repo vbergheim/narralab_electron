@@ -7,6 +7,7 @@ import {
   Folder,
   FolderPlus,
   GripVertical,
+  PanelRightOpen,
   Plus,
   Trash2,
   X,
@@ -17,10 +18,11 @@ import { Panel } from '@/components/ui/panel'
 import { SceneCard } from '@/components/cards/scene-card'
 import { Button } from '@/components/ui/button'
 import { ContextMenu, type ContextMenuItem } from '@/components/ui/context-menu'
-import { Input } from '@/components/ui/input'
+import { InlineNameEditor, InlineTextareaEditor } from '@/components/ui/inline-name-editor'
 import { KeyRatingButton } from '@/components/ui/key-rating-button'
 import { usePersistedStringArray } from '@/hooks/use-persisted-string-array'
 import { sceneColors } from '@/lib/constants'
+import { readSceneDragData, writeSceneDragData } from '@/lib/scene-drag'
 import type { Board } from '@/types/board'
 import { isSceneBoardItem } from '@/types/board'
 import type { Scene, SceneFolder } from '@/types/scene'
@@ -41,6 +43,7 @@ type Props = {
   onSelectAllVisible(sceneIds: string[]): void
   onClearSelection(): void
   onOpenInspector(sceneId: string): void
+  onInlineUpdateScene(sceneId: string, input: { title: string; synopsis: string }): void
   onToggleKeyScene(scene: Scene): void
   onCreateScene(): void
   onCreateFolder(name: string, parentPath?: string | null): void
@@ -68,6 +71,7 @@ export function SceneBankView({
   onSelectAllVisible,
   onClearSelection,
   onOpenInspector,
+  onInlineUpdateScene,
   onToggleKeyScene,
   onCreateScene,
   onCreateFolder,
@@ -96,6 +100,7 @@ export function SceneBankView({
   const [editingFolderDraft, setEditingFolderDraft] = useState('')
   const [editingFolderColor, setEditingFolderColor] = useState<SceneFolder['color']>('slate')
   const [dragOverFolderPath, setDragOverFolderPath] = useState<string | null>(null)
+  const [dragOverSceneId, setDragOverSceneId] = useState<string | null>(null)
   const [draggedFolderPath, setDraggedFolderPath] = useState<string | null>(null)
 
   const groupedScenes = useMemo(() => groupScenes(scenes, folders), [scenes, folders])
@@ -199,7 +204,9 @@ export function SceneBankView({
 
   const handleDropToFolder = (event: DragEvent<HTMLDivElement>, folder: string) => {
     event.preventDefault()
+    event.stopPropagation()
     setDragOverFolderPath(null)
+    setDragOverSceneId(null)
     if (draggedFolderPath) {
       if (draggedFolderPath !== folder) {
         onUpdateFolder(draggedFolderPath, { parentPath: folder || null })
@@ -207,7 +214,7 @@ export function SceneBankView({
       setDraggedFolderPath(null)
       return
     }
-    const sceneIds = getDraggedSceneIds(event.dataTransfer)
+    const sceneIds = readSceneDragData(event.dataTransfer)
     if (sceneIds.length === 0) return
     onMoveToFolder(sceneIds, folder)
   }
@@ -274,42 +281,38 @@ export function SceneBankView({
           </div>
         </div>
         {folderFormOpen ? (
-          <div className="mt-3 flex items-center gap-2">
-            <Input
+          <div className="mt-3 px-1">
+            <InlineNameEditor
+              autoFocus
               value={folderDraft}
-              onChange={(event) => setFolderDraft(event.target.value)}
               placeholder="New scene folder"
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  event.preventDefault()
-                  submitNewFolder()
-                }
+              onChange={setFolderDraft}
+              onSubmit={submitNewFolder}
+              onCancel={() => {
+                setFolderDraft('')
+                setFolderFormOpen(false)
               }}
             />
-            <Button
-              size="sm"
-              onClick={submitNewFolder}
-            >
-              Add
-            </Button>
           </div>
         ) : null}
       </div>
       <div
         className={cn(
-          'h-[calc(100%-72px)] overflow-y-auto p-4',
+          'h-[calc(100%-72px)] overflow-y-auto overscroll-contain p-4',
           density === 'detailed' ? '' : '',
         )}
         onDragOver={(event) => event.preventDefault()}
         onDrop={(event) => {
           event.preventDefault()
+          event.stopPropagation()
           setDragOverFolderPath(null)
+          setDragOverSceneId(null)
           if (draggedFolderPath) {
             onUpdateFolder(draggedFolderPath, { parentPath: null })
             setDraggedFolderPath(null)
             return
           }
-          const sceneIds = getDraggedSceneIds(event.dataTransfer)
+          const sceneIds = readSceneDragData(event.dataTransfer)
           if (sceneIds.length > 0) {
             onMoveToFolder(sceneIds, '')
           }
@@ -394,43 +397,18 @@ export function SceneBankView({
                 </div>
 
                 {editingFolderName === group.folderPath ? (
-                  <div className="space-y-2 px-6 pb-1 pt-1">
-                    <div className="flex items-center gap-1.5">
-                      <Input
-                        autoFocus
-                        value={editingFolderDraft}
-                        onChange={(event) => setEditingFolderDraft(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter') {
-                            event.preventDefault()
-                            submitFolderEdit()
-                          }
-                          if (event.key === 'Escape') {
-                            event.preventDefault()
-                            setEditingFolderName(null)
-                            setEditingFolderDraft('')
-                          }
-                        }}
-                        className="h-7 min-w-[120px] rounded-lg px-2 text-xs"
-                      />
-                      <button
-                        type="button"
-                        className="rounded-md p-1 transition hover:bg-panelMuted hover:text-foreground"
-                        onClick={submitFolderEdit}
-                      >
-                        <Check className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded-md p-1 transition hover:bg-panelMuted hover:text-foreground"
-                        onClick={() => {
-                          setEditingFolderName(null)
-                          setEditingFolderDraft('')
-                        }}
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
+                  <div data-inline-edit-scope="true" className="space-y-2 px-6 pb-1 pt-1">
+                    <InlineNameEditor
+                      autoFocus
+                      value={editingFolderDraft}
+                      onChange={setEditingFolderDraft}
+                      onSubmit={submitFolderEdit}
+                      onCancel={() => {
+                        setEditingFolderName(null)
+                        setEditingFolderDraft('')
+                      }}
+                      className="h-7 min-w-[120px] text-xs"
+                    />
                     <div className="flex flex-wrap gap-1">
                       {sceneColors.map((color) => (
                         <button
@@ -468,10 +446,14 @@ export function SceneBankView({
                       onToggleSelection={onToggleSelection}
                       onSetSelection={onSelectAllVisible}
                       onOpenInspector={onOpenInspector}
+                      onInlineUpdateScene={onInlineUpdateScene}
                       onToggleKeyScene={onToggleKeyScene}
                       onAdd={onAdd}
                       onContextMenu={setMenuState}
+                      dragOver={dragOverSceneId === scene.id}
+                      onDragOverScene={setDragOverSceneId}
                       onDropOnScene={(draggedSceneIds, targetSceneId) => {
+                        setDragOverSceneId(null)
                         const targetScene = allScenes.find((entry) => entry.id === targetSceneId)
                         if (!targetScene) return
                         const nextSceneIds = getReorderedSceneIds(allScenes, draggedSceneIds, targetSceneId)
@@ -530,10 +512,14 @@ export function SceneBankView({
                 onToggleSelection={onToggleSelection}
                 onSetSelection={onSelectAllVisible}
                 onOpenInspector={onOpenInspector}
+                onInlineUpdateScene={onInlineUpdateScene}
                 onToggleKeyScene={onToggleKeyScene}
                 onAdd={onAdd}
                 onContextMenu={setMenuState}
+                dragOver={dragOverSceneId === scene.id}
+                onDragOverScene={setDragOverSceneId}
                 onDropOnScene={(draggedSceneIds, targetSceneId) => {
+                  setDragOverSceneId(null)
                   const nextSceneIds = getReorderedSceneIds(allScenes, draggedSceneIds, targetSceneId)
                   const needsFolderMove = draggedSceneIds.some((sceneId) => {
                     const dragged = allScenes.find((entry) => entry.id === sceneId)
@@ -582,9 +568,12 @@ function SceneBankRow({
   onToggleSelection,
   onSetSelection,
   onOpenInspector,
+  onInlineUpdateScene,
   onToggleKeyScene,
   onAdd,
   onContextMenu,
+  dragOver,
+  onDragOverScene,
   onDropOnScene,
 }: {
   scene: Scene
@@ -601,36 +590,74 @@ function SceneBankRow({
   onToggleSelection(sceneId: string): void
   onSetSelection(sceneIds: string[]): void
   onOpenInspector(sceneId: string): void
+  onInlineUpdateScene(sceneId: string, input: { title: string; synopsis: string }): void
   onToggleKeyScene(scene: Scene): void
   onAdd(sceneId: string, afterItemId?: string | null): void
   onContextMenu(state: { sceneId: string; x: number; y: number } | null): void
+  dragOver: boolean
+  onDragOverScene(sceneId: string | null): void
   onDropOnScene(draggedSceneIds: string[], targetSceneId: string): void
 }) {
   const isOnBoard = boardSceneIds.has(scene.id)
+  const [editing, setEditing] = useState(false)
+  const [draftTitle, setDraftTitle] = useState(scene.title)
+  const [draftSynopsis, setDraftSynopsis] = useState(scene.synopsis)
+
+  const startEditing = () => {
+    setDraftTitle(scene.title)
+    setDraftSynopsis(scene.synopsis)
+    setEditing(true)
+  }
+
+  const save = () => {
+    onInlineUpdateScene(scene.id, {
+      title: draftTitle.trim() || scene.title,
+      synopsis: draftSynopsis.trim(),
+    })
+    setEditing(false)
+  }
+
   return (
     <div
-      draggable
+      draggable={!editing}
       onDragStart={(event) => {
+        if (editing) {
+          event.preventDefault()
+          return
+        }
         const draggedSceneIds =
           selectedSceneIdSet.has(scene.id) && selectedSceneIds.length > 1 ? selectedSceneIds : [scene.id]
-        event.dataTransfer.setData(SCENE_DRAG_IDS_MIME, JSON.stringify(draggedSceneIds))
-        event.dataTransfer.setData(SCENE_DRAG_ID_MIME, scene.id)
+        writeSceneDragData(event.dataTransfer, draggedSceneIds)
         event.dataTransfer.effectAllowed = 'move'
+        void window.docudoc.windows.setDragSession({ kind: 'scene', sceneIds: draggedSceneIds })
+      }}
+      onDragEnd={() => {
+        window.setTimeout(() => {
+          void window.docudoc.windows.setDragSession(null)
+        }, 150)
       }}
       onDragOver={(event) => {
         event.preventDefault()
         event.stopPropagation()
+        onDragOverScene(scene.id)
+      }}
+      onDragLeave={(event) => {
+        const nextTarget = event.relatedTarget
+        if (nextTarget && event.currentTarget.contains(nextTarget as Node)) return
+        onDragOverScene(null)
       }}
       onDrop={(event) => {
         event.preventDefault()
         event.stopPropagation()
-        const draggedSceneIds = getDraggedSceneIds(event.dataTransfer)
+        onDragOverScene(null)
+        const draggedSceneIds = readSceneDragData(event.dataTransfer)
         if (draggedSceneIds.length === 0 || draggedSceneIds.includes(scene.id)) return
         onDropOnScene(draggedSceneIds, scene.id)
       }}
       className={cn(
         'relative rounded-2xl px-2 py-2 transition',
         selectedSceneIdSet.has(scene.id) && 'bg-accent/8 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)]',
+        dragOver && 'bg-accent/5',
       )}
       role="button"
       tabIndex={0}
@@ -647,7 +674,7 @@ function SceneBankRow({
           onSetSelection,
         })
       }
-      onDoubleClick={() => onOpenInspector(scene.id)}
+      onDoubleClick={() => startEditing()}
       onContextMenu={(event) => {
         event.preventDefault()
         handleSelectionGesture({
@@ -667,30 +694,70 @@ function SceneBankRow({
       {selectedSceneIdSet.has(scene.id) ? (
         <div className="absolute inset-y-2 left-0 w-1 rounded-full bg-accent/70" />
       ) : null}
-      <SceneCard
-        scene={scene}
-        tags={tags.filter((tag) => scene.tagIds.includes(tag.id))}
-        density={density}
-        selected={selectedSceneIdSet.has(scene.id) || selectedSceneId === scene.id}
-        draggable
-        actions={
-          <>
-            <span
-              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted/80 transition group-hover:text-foreground"
-              aria-hidden="true"
-              title="Drag to reorder"
-            >
-              <GripVertical className="h-4 w-4" />
-            </span>
-            <KeyRatingButton value={scene.keyRating} onChange={() => onToggleKeyScene(scene)} />
-            {density !== 'detailed' && !isOnBoard ? (
-              <InlineActionButton label="Add to outline" onClick={() => onAdd(scene.id)}>
-                <Plus className="h-4 w-4" />
-              </InlineActionButton>
-            ) : null}
-          </>
-        }
-      />
+      {dragOver ? (
+        <div className="absolute left-3 right-3 top-0 h-0.5 rounded-full bg-accent/80 shadow-[0_0_0_1px_rgba(89,185,255,0.18)]" />
+      ) : null}
+      {editing ? (
+        <SceneBankInlineEditor
+          scene={scene}
+          density={density}
+          selected={selectedSceneIdSet.has(scene.id) || selectedSceneId === scene.id}
+          draftTitle={draftTitle}
+          draftSynopsis={draftSynopsis}
+          onChangeTitle={setDraftTitle}
+          onChangeSynopsis={setDraftSynopsis}
+          onSave={save}
+          onCancel={() => {
+            setDraftTitle(scene.title)
+            setDraftSynopsis(scene.synopsis)
+            setEditing(false)
+          }}
+          onOpenInspector={() => onOpenInspector(scene.id)}
+          actions={
+            <>
+              <span
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted/80 transition group-hover:text-foreground"
+                aria-hidden="true"
+                title="Drag to reorder"
+              >
+                <GripVertical className="h-4 w-4" />
+              </span>
+              <KeyRatingButton value={scene.keyRating} onChange={() => onToggleKeyScene(scene)} />
+              {density !== 'detailed' && !isOnBoard ? (
+                <InlineActionButton label="Add to outline" onClick={() => onAdd(scene.id)}>
+                  <Plus className="h-4 w-4" />
+                </InlineActionButton>
+              ) : null}
+            </>
+          }
+        />
+      ) : (
+        <SceneCard
+          scene={scene}
+          tags={tags.filter((tag) => scene.tagIds.includes(tag.id))}
+          density={density}
+          selected={selectedSceneIdSet.has(scene.id) || selectedSceneId === scene.id}
+          draggable
+          onDoubleClick={() => startEditing()}
+          actions={
+            <>
+              <span
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted/80 transition group-hover:text-foreground"
+                aria-hidden="true"
+                title="Drag to reorder"
+              >
+                <GripVertical className="h-4 w-4" />
+              </span>
+              <KeyRatingButton value={scene.keyRating} onChange={() => onToggleKeyScene(scene)} />
+              {density !== 'detailed' && !isOnBoard ? (
+                <InlineActionButton label="Add to outline" onClick={() => onAdd(scene.id)}>
+                  <Plus className="h-4 w-4" />
+                </InlineActionButton>
+              ) : null}
+            </>
+          }
+        />
+      )}
       {density === 'detailed' ? (
         <div className="mt-2 flex items-center justify-end gap-2">
           <Button
@@ -734,6 +801,118 @@ function InlineActionButton({
     >
       {children}
     </button>
+  )
+}
+
+function SceneBankInlineEditor({
+  scene,
+  density,
+  selected,
+  draftTitle,
+  draftSynopsis,
+  onChangeTitle,
+  onChangeSynopsis,
+  onSave,
+  onCancel,
+  onOpenInspector,
+  actions,
+}: {
+  scene: Scene
+  density: SceneDensity
+  selected?: boolean
+  draftTitle: string
+  draftSynopsis: string
+  onChangeTitle(value: string): void
+  onChangeSynopsis(value: string): void
+  onSave(): void
+  onCancel(): void
+  onOpenInspector(): void
+  actions?: ReactNode
+}) {
+  const accent = sceneColors.find((entry) => entry.value === scene.color)?.hex ?? '#7f8895'
+  const cardStyle = {
+    borderLeftColor: accent,
+    borderLeftWidth: 4,
+    backgroundImage: `linear-gradient(90deg, ${hexToRgba(accent, 0.24)} 0%, ${hexToRgba(accent, 0.08)} 18%, ${hexToRgba(accent, 0.03)} 42%, transparent 78%)`,
+  }
+
+  if (density === 'table') {
+    return (
+      <div
+        className={cn(
+          'group w-full rounded-lg border px-3 py-1.5 text-left transition',
+          selected ? 'border-accent/60 bg-white/[0.035] ring-2 ring-accent/20' : 'border-transparent hover:bg-white/[0.022]',
+        )}
+        style={cardStyle}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-center gap-3 text-[13px] leading-5">
+          <div data-inline-edit-scope="true" className="flex min-w-0 flex-1 items-center gap-2">
+            <InlineNameEditor
+              value={draftTitle}
+              onChange={onChangeTitle}
+              onSubmit={onSave}
+              onCancel={onCancel}
+              className="h-8 min-w-[10rem]"
+              autoFocus={true}
+            />
+            <InlineNameEditor
+              value={draftSynopsis}
+              onChange={onChangeSynopsis}
+              onSubmit={onSave}
+              onCancel={onCancel}
+              className="h-8 min-w-[14rem] flex-1"
+            />
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <InlineActionButton label="Open inspector" onClick={onOpenInspector}>
+              <PanelRightOpen className="h-4 w-4" />
+            </InlineActionButton>
+            {actions}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className={cn(
+        density === 'compact' ? 'rounded-2xl px-4 py-3' : 'rounded-2xl px-4 py-4',
+        'group w-full border text-left transition',
+        selected
+          ? 'border-accent/60 bg-white/[0.035] ring-2 ring-accent/20'
+          : 'border-transparent hover:bg-white/[0.028]',
+      )}
+      style={cardStyle}
+      onClick={(event) => event.stopPropagation()}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div data-inline-edit-scope="true" className="min-w-0 flex-1 space-y-2">
+          <InlineNameEditor
+            value={draftTitle}
+            onChange={onChangeTitle}
+            onSubmit={onSave}
+            onCancel={onCancel}
+            className="h-9"
+            autoFocus={true}
+          />
+          <InlineTextareaEditor
+            value={draftSynopsis}
+            onChange={onChangeSynopsis}
+            onSubmit={onSave}
+            onCancel={onCancel}
+            className={cn(density === 'compact' ? 'min-h-[72px]' : 'min-h-[88px]')}
+          />
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <InlineActionButton label="Open inspector" onClick={onOpenInspector}>
+            <PanelRightOpen className="h-4 w-4" />
+          </InlineActionButton>
+          {actions}
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -784,21 +963,30 @@ function handleSelectionGesture({
 }
 
 function groupScenes(scenes: Scene[], folders: SceneFolder[]) {
-  const groups = new Map<string, { folderPath: string; label: string; color: SceneFolder['color']; scenes: Scene[]; depth: number }>()
-  const order = [...folders].sort((left, right) => left.sortOrder - right.sortOrder || left.path.localeCompare(right.path)).map((folder) => folder.path)
+  type SceneGroup = {
+    folderPath: string
+    label: string
+    color: SceneFolder['color']
+    scenes: Scene[]
+    depth: number
+    parentPath: string | null
+    sortOrder: number
+  }
 
-  order.forEach((folderPath) => {
-    const existing = folders.find((folder) => folder.path === folderPath)
-    groups.set(folderPath, {
-      folderPath,
-      label: existing?.name ?? folderPath.split('/').at(-1) ?? folderPath,
-      color: existing?.color ?? 'slate',
+  const groups = new Map<string, SceneGroup>()
+  const rootScenes: Scene[] = []
+
+  folders.forEach((folder) => {
+    groups.set(folder.path, {
+      folderPath: folder.path,
+      label: folder.name,
+      color: folder.color,
       scenes: [],
-      depth: folderPath.split('/').length - 1,
+      depth: folder.path.split('/').length - 1,
+      parentPath: folder.parentPath,
+      sortOrder: folder.sortOrder,
     })
   })
-
-  const rootScenes: Scene[] = []
 
   scenes.forEach((scene) => {
     const folderPath = scene.folder.trim()
@@ -814,16 +1002,42 @@ function groupScenes(scenes: Scene[], folders: SceneFolder[]) {
         color: 'slate',
         scenes: [],
         depth: folderPath.split('/').length - 1,
+        parentPath: getParentFolderPath(folderPath),
+        sortOrder: Number.MAX_SAFE_INTEGER,
       })
-      order.push(folderPath)
     }
 
     groups.get(folderPath)?.scenes.push(scene)
   })
 
+  const knownPaths = new Set(groups.keys())
+  const childrenByParent = new Map<string | null, SceneGroup[]>()
+
+  Array.from(groups.values()).forEach((group) => {
+    const parentPath = group.parentPath && knownPaths.has(group.parentPath) ? group.parentPath : null
+    const siblings = childrenByParent.get(parentPath) ?? []
+    siblings.push(group)
+    childrenByParent.set(parentPath, siblings)
+  })
+
+  childrenByParent.forEach((siblings) => {
+    siblings.sort((left, right) => left.sortOrder - right.sortOrder || left.label.localeCompare(right.label))
+  })
+
+  const orderedGroups: SceneGroup[] = []
+  const visit = (parentPath: string | null) => {
+    const children = childrenByParent.get(parentPath) ?? []
+    children.forEach((child) => {
+      orderedGroups.push(child)
+      visit(child.folderPath)
+    })
+  }
+
+  visit(null)
+
   return {
     rootScenes,
-    groups: order.map((folderPath) => groups.get(folderPath)!).filter(Boolean),
+    groups: orderedGroups,
   }
 }
 
@@ -835,25 +1049,33 @@ function colorHex(color: SceneFolder['color']) {
   return sceneColors.find((entry) => entry.value === color)?.hex ?? '#607086'
 }
 
+function hexToRgba(hex: string, alpha: number) {
+  const normalized = hex.replace('#', '')
+  const value = normalized.length === 3
+    ? normalized
+        .split('')
+        .map((char) => `${char}${char}`)
+        .join('')
+    : normalized
+
+  const red = Number.parseInt(value.slice(0, 2), 16)
+  const green = Number.parseInt(value.slice(2, 4), 16)
+  const blue = Number.parseInt(value.slice(4, 6), 16)
+
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`
+}
+
 function formatFolderLabel(label: string) {
   return label.toLocaleUpperCase('nb-NO')
 }
 
-function getDraggedSceneIds(dataTransfer: DataTransfer) {
-  const rawIds = dataTransfer.getData(SCENE_DRAG_IDS_MIME)
-  if (rawIds) {
-    try {
-      const parsed = JSON.parse(rawIds)
-      if (Array.isArray(parsed)) {
-        return parsed.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-      }
-    } catch {
-      // Fallback to single-scene payload below.
-    }
+function getParentFolderPath(path: string) {
+  const segments = path.split('/').filter(Boolean)
+  if (segments.length <= 1) {
+    return null
   }
 
-  const singleId = dataTransfer.getData(SCENE_DRAG_ID_MIME)
-  return singleId ? [singleId] : []
+  return segments.slice(0, -1).join('/')
 }
 
 function getMoveTargetSceneIds(sceneId: string, selectedSceneIds: string[]) {
@@ -877,6 +1099,4 @@ function getReorderedSceneIds(allScenes: Scene[], draggedSceneIds: string[], tar
   ]
 }
 
-const SCENE_DRAG_IDS_MIME = 'application/x-docudoc-scenes'
-const SCENE_DRAG_ID_MIME = 'application/x-docudoc-scene'
 const ROOT_SCENE_FOLDER_KEY = '__root__'

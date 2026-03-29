@@ -15,6 +15,13 @@
 - Vurdere enda tydeligere visuell separasjon mellom scener og strukturblokker.
 - Legge inn diskret `Saving…` / `Saved`-indikator i inspector og notebook.
 
+## Notebook
+
+- Utvide notebooken til flere separate notater/faner i samme prosjekt.
+- Vurdere om notebook bør ha mapper som ren organisering, på samme måte som ellers i appen.
+- Lage en enkel note-list/sidebar for å bytte mellom notater raskt.
+- Avklare om notater skal kunne knyttes til board, scene eller bare leve som frie prosjektnotater.
+
 ## Strukturblokker
 
 - Vurdere om blokker skal kunne foldes eller skjules per type.

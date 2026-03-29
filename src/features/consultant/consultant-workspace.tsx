@@ -81,7 +81,7 @@ export function ConsultantWorkspace({
         <div
           ref={viewportRef}
           className={cn(
-            'min-h-0 flex-1 overflow-y-auto bg-black/10',
+            'min-h-0 flex-1 overflow-y-auto overscroll-contain bg-black/10',
             compact ? 'space-y-3 px-4 py-3' : 'space-y-4 px-5 py-5',
           )}
         >

@@ -20,12 +20,17 @@ export type BlockTemplate = {
 
 export type BoardItemKind = 'scene' | 'chapter' | 'voiceover' | 'narration' | 'text-card' | 'note'
 export type BoardTextItemKind = Exclude<BoardItemKind, 'scene'>
+export type BoardViewMode = 'outline' | 'timeline' | 'board'
 
 type BoardItemBase = {
   id: string
   boardId: string
   kind: BoardItemKind
   position: number
+  boardX: number
+  boardY: number
+  boardW: number
+  boardH: number
   createdAt: string
   updatedAt: string
 }
@@ -73,12 +78,21 @@ export type AddSceneToBoardResult = {
   existed: boolean
 }
 
+export type BoardDropPosition = {
+  x: number
+  y: number
+}
+
 export type BoardItemUpdateInput = {
   id: string
   kind?: BoardTextItemKind
   title?: string
   body?: string
   color?: SceneColor
+  boardX?: number
+  boardY?: number
+  boardW?: number
+  boardH?: number
 }
 
 export function isSceneBoardItem(item: BoardItem): item is BoardSceneItem {

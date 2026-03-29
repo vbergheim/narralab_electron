@@ -8,18 +8,34 @@ import type {
   ConsultantContextMode,
   ConsultantMessage,
 } from '@/types/ai'
-import type { BlockTemplate, Board, BoardFolder, BoardItem, BoardTextItem, BoardTextItemKind, BoardUpdateInput } from '@/types/board'
-import type { BoardScriptExportFormat, NotebookDocument, ProjectMeta } from '@/types/project'
-import type { Scene, SceneFolder, SceneUpdateInput } from '@/types/scene'
+import type { AddSceneToBoardResult, BlockTemplate, Board, BoardDropPosition, BoardFolder, BoardItem, BoardTextItem, BoardTextItemKind, BoardUpdateInput } from '@/types/board'
+import type {
+  BoardScriptExportFormat,
+  GlobalUiState,
+  NotebookDocument,
+  ProjectMeta,
+  ProjectSettings,
+  ProjectSettingsUpdateInput,
+} from '@/types/project'
+import type { Scene, SceneBeat, SceneBeatUpdateInput, SceneFolder, SceneUpdateInput } from '@/types/scene'
 import type { Tag, TagType } from '@/types/tag'
 
 type WorkspaceMode = 'outline' | 'bank' | 'notebook' | 'archive' | 'consultant' | 'settings'
 
-type SceneDraftInput = Omit<Scene, 'tagIds' | 'createdAt' | 'updatedAt'> & {
+type SceneDraftInput = Omit<Scene, 'tagIds' | 'createdAt' | 'updatedAt' | 'beats'> & {
   tagNames: string[]
 }
 
-type BoardItemDraftInput = Pick<BoardTextItem, 'id' | 'kind' | 'title' | 'body'>
+type BoardItemDraftInput = {
+  id: string
+  kind?: BoardTextItem['kind']
+  title?: string
+  body?: string
+  boardX?: number
+  boardY?: number
+  boardW?: number
+  boardH?: number
+}
 type SceneBulkUpdateInput = {
   sceneIds: string[]
   category?: string
@@ -33,6 +49,7 @@ type AppStore = {
   consultantBusy: boolean
   error: string | null
   projectMeta: ProjectMeta | null
+  projectSettings: ProjectSettings | null
   appSettings: AppSettings
   notebook: NotebookDocument
   archiveFolders: ArchiveFolder[]
@@ -53,6 +70,7 @@ type AppStore = {
   consultantContextMode: ConsultantContextMode
   workspaceMode: WorkspaceMode
   updateAppSettings(input: AppSettingsUpdateInput): Promise<void>
+  updateProjectSettings(input: ProjectSettingsUpdateInput): Promise<void>
   sendConsultantMessage(content: string): Promise<void>
   setConsultantContextMode(mode: ConsultantContextMode): void
   clearConsultantConversation(): void
@@ -75,6 +93,10 @@ type AppStore = {
   exportJson(): Promise<void>
   exportActiveBoardScript(format: BoardScriptExportFormat): Promise<void>
   createScene(): Promise<void>
+  createSceneBeat(sceneId: string, afterBeatId?: string | null): Promise<void>
+  updateSceneBeat(input: SceneBeatUpdateInput): Promise<void>
+  deleteSceneBeat(id: string): Promise<void>
+  reorderSceneBeats(sceneId: string, beatIds: string[]): Promise<void>
   createSceneFolder(name: string, parentPath?: string | null): Promise<void>
   updateSceneFolder(currentPath: string, input: { name?: string; color?: SceneFolder['color']; parentPath?: string | null }): Promise<void>
   deleteSceneFolder(currentPath: string): Promise<void>
@@ -101,11 +123,12 @@ type AppStore = {
   clearSceneSelection(): void
   setWorkspaceMode(mode: WorkspaceMode): void
   setActiveBoard(boardId: string): void
+  applyGlobalUiState(input: Partial<GlobalUiState>): void
   updateBoardDraft(input: BoardUpdateInput): Promise<void>
   reorderBoards(boardIds: string[]): Promise<void>
   cloneBoard(boardId: string): Promise<void>
   moveBoard(boardId: string, folder: string, beforeBoardId?: string | null): Promise<void>
-  addSceneToActiveBoard(sceneId: string, afterItemId?: string | null): Promise<void>
+  addSceneToActiveBoard(sceneId: string, afterItemId?: string | null, boardPosition?: BoardDropPosition | null): Promise<AddSceneToBoardResult | null>
   addBlockToActiveBoard(kind: BoardTextItemKind, afterItemId?: string | null): Promise<void>
   addBlockTemplateToActiveBoard(templateId: string, afterItemId?: string | null): Promise<void>
   saveBlockTemplate(input: { kind: BoardTextItemKind; name: string; title: string; body: string }): Promise<void>
@@ -124,6 +147,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   consultantBusy: false,
   error: null,
   projectMeta: null,
+  projectSettings: null,
   appSettings: {
     ai: {
       provider: 'openai',
@@ -135,6 +159,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
       responseStyle: 'structured',
       hasOpenAiApiKey: false,
       hasGeminiApiKey: false,
+    },
+    ui: {
+      restoreLastProject: true,
+      restoreLastLayout: true,
+      defaultBoardView: 'outline',
+      defaultSceneDensity: 'compact',
+      defaultDetachedWorkspace: 'outline',
+      lastProjectPath: null,
+      lastLayoutByProject: {},
+      savedLayouts: [],
     },
   },
   notebook: { content: '', updatedAt: null },
@@ -158,11 +192,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   async initialize() {
     try {
-      const [meta, appSettings] = await Promise.all([
+      const [meta, appSettings, globalUiState] = await Promise.all([
         window.docudoc.project.getMeta(),
         window.docudoc.settings.get(),
+        window.docudoc.windows.getGlobalUiState(),
       ])
       set({ ready: true, projectMeta: meta, appSettings })
+      get().applyGlobalUiState(globalUiState)
       if (meta) {
         await get().refreshAll()
       }
@@ -176,6 +212,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     if (!meta) {
       set({
         projectMeta: null,
+        projectSettings: null,
         notebook: { content: '', updatedAt: null },
         archiveFolders: [],
         archiveItems: [],
@@ -190,7 +227,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
       return
     }
 
-    const [notebook, archiveFolders, archiveItems, scenes, sceneFolders, boards, boardFolders, blockTemplates, tags] = await Promise.all([
+    const [projectSettings, notebook, archiveFolders, archiveItems, scenes, sceneFolders, boards, boardFolders, blockTemplates, tags] = await Promise.all([
+      window.docudoc.project.getSettings(),
       window.docudoc.notebook.get(),
       window.docudoc.archive.folders.list(),
       window.docudoc.archive.items.list(),
@@ -204,6 +242,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     set((state) => ({
       projectMeta: meta,
+      projectSettings,
       notebook,
       archiveFolders,
       archiveItems,
@@ -310,6 +349,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   setSelectedArchiveFolder(folderId) {
     set({ selectedArchiveFolderId: folderId })
+    void window.docudoc.windows.updateGlobalUiState({ selectedArchiveFolderId: folderId })
   },
 
   async createProject() {
@@ -353,6 +393,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
     await runProjectAction(set, async () => {
       const appSettings = await window.docudoc.settings.update(input)
       set({ appSettings })
+    })
+  },
+
+  async updateProjectSettings(input) {
+    await runProjectAction(set, async () => {
+      const projectSettings = await window.docudoc.project.updateSettings(input)
+      set({ projectSettings })
     })
   },
 
@@ -447,6 +494,66 @@ export const useAppStore = create<AppStore>((set, get) => ({
     })
   },
 
+  async createSceneBeat(sceneId, afterBeatId = null) {
+    await runProjectAction(set, async () => {
+      const beat = await window.docudoc.sceneBeats.create(sceneId, afterBeatId)
+      set((state) => ({
+        scenes: state.scenes.map((scene) =>
+          scene.id === sceneId
+            ? {
+                ...scene,
+                beats: sortBeats([...(scene.beats ?? []), beat]),
+              }
+            : scene,
+        ),
+      }))
+    })
+  },
+
+  async updateSceneBeat(input) {
+    await runProjectAction(set, async () => {
+      const beat = await window.docudoc.sceneBeats.update(input)
+      set((state) => ({
+        scenes: state.scenes.map((scene) =>
+          scene.id === beat.sceneId
+            ? {
+                ...scene,
+                beats: sortBeats((scene.beats ?? []).map((entry) => (entry.id === beat.id ? beat : entry))),
+              }
+            : scene,
+        ),
+      }))
+    })
+  },
+
+  async deleteSceneBeat(id) {
+    await runProjectAction(set, async () => {
+      await window.docudoc.sceneBeats.delete(id)
+      set((state) => ({
+        scenes: state.scenes.map((scene) => ({
+          ...scene,
+          beats: (scene.beats ?? []).filter((beat) => beat.id !== id),
+        })),
+      }))
+    })
+  },
+
+  async reorderSceneBeats(sceneId, beatIds) {
+    await runProjectAction(set, async () => {
+      const beats = await window.docudoc.sceneBeats.reorder(sceneId, beatIds)
+      set((state) => ({
+        scenes: state.scenes.map((scene) =>
+          scene.id === sceneId
+            ? {
+                ...scene,
+                beats,
+              }
+            : scene,
+        ),
+      }))
+    })
+  },
+
   async createSceneFolder(name, parentPath = null) {
     await runProjectAction(set, async () => {
       const sceneFolders = await window.docudoc.sceneFolders.create(name, parentPath)
@@ -512,6 +619,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
         selectedSceneIds: [],
         selectedBoardItemId: null,
       }))
+      void window.docudoc.windows.updateGlobalUiState({
+        activeBoardId: board.id,
+        selectedBoardId: board.id,
+        selectedSceneId: null,
+        selectedSceneIds: [],
+        selectedBoardItemId: null,
+      })
     })
   },
 
@@ -555,17 +669,22 @@ export const useAppStore = create<AppStore>((set, get) => ({
     await runProjectAction(set, async () => {
       const boards = await window.docudoc.boards.delete(boardId)
       const boardFolders = await window.docudoc.boardFolders.list()
+      const nextActiveBoardId =
+        get().activeBoardId === boardId
+          ? boards[0]?.id ?? null
+          : get().activeBoardId && boards.some((board) => board.id === get().activeBoardId)
+            ? get().activeBoardId
+            : boards[0]?.id ?? null
       set((state) => ({
         boards,
         boardFolders,
-        activeBoardId:
-          state.activeBoardId === boardId
-            ? boards[0]?.id ?? null
-            : state.activeBoardId && boards.some((board) => board.id === state.activeBoardId)
-              ? state.activeBoardId
-              : boards[0]?.id ?? null,
+        activeBoardId: nextActiveBoardId,
         selectedBoardId: state.selectedBoardId === boardId ? null : state.selectedBoardId,
       }))
+      void window.docudoc.windows.updateGlobalUiState({
+        activeBoardId: nextActiveBoardId,
+        selectedBoardId: get().selectedBoardId === boardId ? null : get().selectedBoardId,
+      })
     })
   },
 
@@ -731,16 +850,29 @@ export const useAppStore = create<AppStore>((set, get) => ({
         tagIds: source.tagIds,
       } satisfies SceneUpdateInput)
 
+      let duplicatedWithBeats = duplicated
+      for (const sourceBeat of source.beats) {
+        const createdBeat = await window.docudoc.sceneBeats.create(duplicated.id, duplicatedWithBeats.beats.at(-1)?.id ?? null)
+        const updatedBeat = await window.docudoc.sceneBeats.update({
+          id: createdBeat.id,
+          text: sourceBeat.text,
+        })
+        duplicatedWithBeats = {
+          ...duplicatedWithBeats,
+          beats: [...duplicatedWithBeats.beats, updatedBeat],
+        }
+      }
+
       set((state) => ({
-        scenes: [duplicated, ...state.scenes],
+        scenes: [duplicatedWithBeats, ...state.scenes],
         selectedBoardId: null,
-        selectedSceneId: duplicated.id,
-        selectedSceneIds: [duplicated.id],
+        selectedSceneId: duplicatedWithBeats.id,
+        selectedSceneIds: [duplicatedWithBeats.id],
         selectedBoardItemId: null,
       }))
 
       if (options?.addToBoardAfterItemId !== undefined) {
-        await get().addSceneToActiveBoard(duplicated.id, options.addToBoardAfterItemId ?? null)
+        await get().addSceneToActiveBoard(duplicatedWithBeats.id, options.addToBoardAfterItemId ?? null)
       }
     })
   },
@@ -753,10 +885,23 @@ export const useAppStore = create<AppStore>((set, get) => ({
       selectedSceneIds: [],
       selectedBoardItemId: null,
     })
+    void window.docudoc.windows.updateGlobalUiState({
+      activeBoardId: boardId,
+      selectedBoardId: boardId,
+      selectedSceneId: null,
+      selectedSceneIds: [],
+      selectedBoardItemId: null,
+    })
   },
 
   selectScene(sceneId, boardItemId = null) {
     set({
+      selectedBoardId: null,
+      selectedSceneId: sceneId,
+      selectedSceneIds: sceneId ? [sceneId] : [],
+      selectedBoardItemId: boardItemId,
+    })
+    void window.docudoc.windows.updateGlobalUiState({
       selectedBoardId: null,
       selectedSceneId: sceneId,
       selectedSceneIds: sceneId ? [sceneId] : [],
@@ -778,6 +923,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
         selectedBoardItemId: null,
       }
     })
+    const state = get()
+    void window.docudoc.windows.updateGlobalUiState({
+      selectedBoardId: null,
+      selectedSceneId: state.selectedSceneId,
+      selectedSceneIds: state.selectedSceneIds,
+      selectedBoardItemId: null,
+    })
   },
 
   setSceneSelection(sceneIds) {
@@ -785,6 +937,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
       selectedBoardId: null,
       selectedSceneIds: sceneIds,
       selectedSceneId: sceneIds[0] ?? null,
+      selectedBoardItemId: null,
+    })
+    void window.docudoc.windows.updateGlobalUiState({
+      selectedBoardId: null,
+      selectedSceneId: sceneIds[0] ?? null,
+      selectedSceneIds: sceneIds,
       selectedBoardItemId: null,
     })
   },
@@ -795,6 +953,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
       selectedSceneIds: [],
       selectedSceneId: null,
     })
+    void window.docudoc.windows.updateGlobalUiState({
+      selectedBoardId: null,
+      selectedSceneIds: [],
+      selectedSceneId: null,
+      selectedBoardItemId: null,
+    })
   },
 
   setWorkspaceMode(workspaceMode) {
@@ -803,6 +967,21 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   setActiveBoard(activeBoardId) {
     set({ activeBoardId, selectedBoardId: null })
+    void window.docudoc.windows.updateGlobalUiState({
+      activeBoardId,
+      selectedBoardId: null,
+    })
+  },
+
+  applyGlobalUiState(input) {
+    set((state) => ({
+      activeBoardId: input.activeBoardId ?? state.activeBoardId,
+      selectedBoardId: input.selectedBoardId ?? state.selectedBoardId,
+      selectedSceneId: input.selectedSceneId ?? state.selectedSceneId,
+      selectedSceneIds: input.selectedSceneIds ?? state.selectedSceneIds,
+      selectedBoardItemId: input.selectedBoardItemId ?? state.selectedBoardItemId,
+      selectedArchiveFolderId: input.selectedArchiveFolderId ?? state.selectedArchiveFolderId,
+    }))
   },
 
   async updateBoardDraft(input) {
@@ -862,15 +1041,17 @@ export const useAppStore = create<AppStore>((set, get) => ({
     })
   },
 
-  async addSceneToActiveBoard(sceneId, afterItemId = null) {
+  async addSceneToActiveBoard(sceneId, afterItemId = null, boardPosition = null) {
     const activeBoardId = get().activeBoardId
-    if (!activeBoardId) return
+    if (!activeBoardId) return null
+
+    let result: AddSceneToBoardResult | null = null
 
     await runProjectAction(set, async () => {
-      const result = await window.docudoc.boards.addScene(activeBoardId, sceneId, afterItemId)
+      result = await window.docudoc.boards.addScene(activeBoardId, sceneId, afterItemId, boardPosition)
       set((state) => ({
         boards: state.boards.map((board) =>
-          board.id === activeBoardId && !result.existed
+          board.id === activeBoardId && result && !result.existed
             ? {
                 ...board,
                 items: [...board.items, result.item]
@@ -882,9 +1063,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
         selectedBoardId: null,
         selectedSceneId: sceneId,
         selectedSceneIds: [sceneId],
-        selectedBoardItemId: result.item.id,
+        selectedBoardItemId: result?.item.id ?? null,
       }))
     })
+
+    return result
   },
 
   async addBlockToActiveBoard(kind, afterItemId = null) {
@@ -1122,6 +1305,10 @@ function findLastIndex<T>(items: T[], predicate: (item: T) => boolean) {
     }
   }
   return -1
+}
+
+function sortBeats(beats: SceneBeat[]) {
+  return [...beats].sort((left, right) => left.sortOrder - right.sortOrder || left.createdAt.localeCompare(right.createdAt))
 }
 
 async function runProjectAction(

@@ -1,6 +1,14 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
 import type { DocuDocApi } from '@/types/project'
+
+let currentDragSession: DocuDocApi['windows'] extends { getDragSession(): infer T } ? T : null = null
+
+ipcRenderer.on('windows:event', (_event, payload) => {
+  if (payload?.type === 'drag-session') {
+    currentDragSession = payload.payload
+  }
+})
 
 const api: DocuDocApi = {
   project: {
@@ -11,6 +19,8 @@ const api: DocuDocApi = {
     exportBoardScript: (boardId, path, format) => ipcRenderer.invoke('project:exportBoardScript', boardId, path, format),
     importJson: (path) => ipcRenderer.invoke('project:importJson', path),
     getMeta: () => ipcRenderer.invoke('project:getMeta'),
+    getSettings: () => ipcRenderer.invoke('project:getSettings'),
+    updateSettings: (input) => ipcRenderer.invoke('project:updateSettings', input),
   },
   notebook: {
     get: () => ipcRenderer.invoke('notebook:get'),
@@ -27,6 +37,10 @@ const api: DocuDocApi = {
     items: {
       list: () => ipcRenderer.invoke('archive:items:list'),
       add: (filePaths, folderId) => ipcRenderer.invoke('archive:items:add', filePaths, folderId),
+      resolveDroppedPaths: (files) =>
+        Array.from(files)
+          .map((file) => webUtils.getPathForFile(file))
+          .filter(Boolean),
       update: (input) => ipcRenderer.invoke('archive:items:update', input),
       delete: (itemId) => ipcRenderer.invoke('archive:items:delete', itemId),
       open: (itemId) => ipcRenderer.invoke('archive:items:open', itemId),
@@ -39,6 +53,12 @@ const api: DocuDocApi = {
     update: (input) => ipcRenderer.invoke('scenes:update', input),
     delete: (id) => ipcRenderer.invoke('scenes:delete', id),
     reorder: (sceneIds) => ipcRenderer.invoke('scenes:reorder', sceneIds),
+  },
+  sceneBeats: {
+    create: (sceneId, afterBeatId) => ipcRenderer.invoke('sceneBeats:create', sceneId, afterBeatId),
+    update: (input) => ipcRenderer.invoke('sceneBeats:update', input),
+    delete: (id) => ipcRenderer.invoke('sceneBeats:delete', id),
+    reorder: (sceneId, beatIds) => ipcRenderer.invoke('sceneBeats:reorder', sceneId, beatIds),
   },
   sceneFolders: {
     list: () => ipcRenderer.invoke('sceneFolders:list'),
@@ -53,7 +73,8 @@ const api: DocuDocApi = {
     createClone: (sourceBoardId, name) => ipcRenderer.invoke('boards:createClone', sourceBoardId, name),
     updateBoard: (input) => ipcRenderer.invoke('boards:updateBoard', input),
     reorderBoards: (boardIds) => ipcRenderer.invoke('boards:reorderBoards', boardIds),
-    addScene: (boardId, sceneId, afterItemId) => ipcRenderer.invoke('boards:addScene', boardId, sceneId, afterItemId),
+    addScene: (boardId, sceneId, afterItemId, boardPosition) =>
+      ipcRenderer.invoke('boards:addScene', boardId, sceneId, afterItemId, boardPosition),
     addBlock: (boardId, kind, afterItemId) => ipcRenderer.invoke('boards:addBlock', boardId, kind, afterItemId),
     duplicateItem: (itemId) => ipcRenderer.invoke('boards:duplicateItem', itemId),
     removeItem: (itemId) => ipcRenderer.invoke('boards:removeItem', itemId),
@@ -75,6 +96,31 @@ const api: DocuDocApi = {
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),
     update: (input) => ipcRenderer.invoke('settings:update', input),
+  },
+  windows: {
+    getContext: () => ipcRenderer.invoke('windows:getContext'),
+    openWorkspace: (workspace, options) => ipcRenderer.invoke('windows:openWorkspace', workspace, options),
+    updateContext: (input) => ipcRenderer.invoke('windows:updateContext', input),
+    getDragSession: () => currentDragSession,
+    readDragSession: () => ipcRenderer.invoke('windows:getDragSession'),
+    setDragSession: (session) => {
+      currentDragSession = session
+      return ipcRenderer.invoke('windows:setDragSession', session)
+    },
+    getGlobalUiState: () => ipcRenderer.invoke('windows:getGlobalUiState'),
+    updateGlobalUiState: (input) => ipcRenderer.invoke('windows:updateGlobalUiState', input),
+    listLayouts: () => ipcRenderer.invoke('windows:listLayouts'),
+    saveLayout: (name) => ipcRenderer.invoke('windows:saveLayout', name),
+    applyLayout: (layoutId) => ipcRenderer.invoke('windows:applyLayout', layoutId),
+    deleteLayout: (layoutId) => ipcRenderer.invoke('windows:deleteLayout', layoutId),
+    subscribe: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, payload: Parameters<typeof listener>[0]) =>
+        listener(payload)
+      ipcRenderer.on('windows:event', handler)
+      return () => {
+        ipcRenderer.removeListener('windows:event', handler)
+      }
+    },
   },
   consultant: {
     chat: (input) => ipcRenderer.invoke('consultant:chat', input),

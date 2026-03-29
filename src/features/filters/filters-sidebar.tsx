@@ -1,10 +1,10 @@
 import type { MouseEvent, ReactNode } from 'react'
 import { useMemo, useState } from 'react'
-import { Check, ChevronDown, ChevronRight, CircleOff, Filter, Folder, FolderPlus, Layers3, Plus, SearchX, Star, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, CircleOff, Filter, Folder, FolderPlus, Layers3, PanelLeftClose, PanelRightOpen, Plus, SearchX, Star } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { ContextMenu, type ContextMenuItem } from '@/components/ui/context-menu'
-import { Input } from '@/components/ui/input'
+import { InlineNameEditor } from '@/components/ui/inline-name-editor'
 import { usePersistedStringArray } from '@/hooks/use-persisted-string-array'
 import { cn } from '@/lib/cn'
 import { sceneColors, sceneStatuses } from '@/lib/constants'
@@ -19,8 +19,10 @@ type Props = {
   scenes: Scene[]
   tags: Tag[]
   activeBoardId: string | null
+  onCollapse?(): void
   onSelectBoard(boardId: string): void
   onOpenBoardInspector(boardId: string): void
+  onInlineUpdateBoard(boardId: string, input: { name: string }): void
   onDuplicateBoard(boardId: string): void
   onCreateBoard(folder?: string | null): void
   onCreateFolder(name: string, parentPath?: string | null): void
@@ -37,8 +39,10 @@ export function FiltersSidebar({
   scenes,
   tags,
   activeBoardId,
+  onCollapse,
   onSelectBoard,
   onOpenBoardInspector,
+  onInlineUpdateBoard,
   onDuplicateBoard,
   onCreateBoard,
   onCreateFolder,
@@ -76,6 +80,8 @@ export function FiltersSidebar({
   const [editingFolderName, setEditingFolderName] = useState<string | null>(null)
   const [editingFolderDraft, setEditingFolderDraft] = useState('')
   const [editingFolderColor, setEditingFolderColor] = useState<BoardFolder['color']>('slate')
+  const [editingBoardId, setEditingBoardId] = useState<string | null>(null)
+  const [editingBoardDraft, setEditingBoardDraft] = useState('')
   const boardMenuItems = useMemo<ContextMenuItem[]>(() => {
     if (!menuState) return []
     const board = boards.find((entry) => entry.id === menuState.boardId)
@@ -155,7 +161,7 @@ export function FiltersSidebar({
   }
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto px-4 pb-4 pt-3">
+    <div className="flex h-full flex-col overflow-y-auto overscroll-contain px-4 pb-4 pt-3">
       <SectionHeader
         icon={<Layers3 className="h-4 w-4 text-accent" />}
         title="Boards"
@@ -165,9 +171,10 @@ export function FiltersSidebar({
               variant="ghost"
               size="sm"
               onClick={() => onCreateBoard(boards.find((board) => board.id === activeBoardId)?.folder ?? null)}
+              title="New Board"
+              aria-label="New Board"
             >
               <Plus className="h-4 w-4" />
-              Board
             </Button>
             <Button
               variant="ghost"
@@ -177,30 +184,27 @@ export function FiltersSidebar({
               <FolderPlus className="h-4 w-4" />
               Folder
             </Button>
+            {onCollapse ? (
+              <Button variant="ghost" size="sm" onClick={onCollapse} title="Collapse sidebar" aria-label="Collapse sidebar">
+                <PanelLeftClose className="h-4 w-4" />
+              </Button>
+            ) : null}
           </div>
         )}
       />
       {folderFormOpen ? (
-        <div className="mt-3 rounded-2xl border border-border/90 bg-panelMuted/50 p-3">
-          <div className="flex items-center gap-2">
-            <Input
-              value={folderDraft}
-              onChange={(event) => setFolderDraft(event.target.value)}
-              placeholder="New folder name"
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  event.preventDefault()
-                  submitNewFolder()
-                }
-              }}
-            />
-            <Button
-              size="sm"
-              onClick={submitNewFolder}
-            >
-              Add
-            </Button>
-          </div>
+        <div className="mt-3 px-2">
+          <InlineNameEditor
+            autoFocus
+            value={folderDraft}
+            placeholder="New folder name"
+            onChange={setFolderDraft}
+            onSubmit={submitNewFolder}
+            onCancel={() => {
+              setFolderDraft('')
+              setFolderFormOpen(false)
+            }}
+          />
         </div>
       ) : null}
       <div
@@ -314,43 +318,18 @@ export function FiltersSidebar({
               </div>
             ) : null}
             {editingFolderName === group.folderPath ? (
-              <div className="space-y-2 px-6 pb-1 pt-1">
-                <div className="flex items-center gap-1.5">
-                  <Input
-                    autoFocus
-                    value={editingFolderDraft}
-                    onChange={(event) => setEditingFolderDraft(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') {
-                        event.preventDefault()
-                        submitFolderEdit()
-                      }
-                      if (event.key === 'Escape') {
-                        event.preventDefault()
-                        setEditingFolderName(null)
-                        setEditingFolderDraft('')
-                      }
-                    }}
-                    className="h-7 min-w-[120px] rounded-lg px-2 text-xs"
-                  />
-                  <button
-                    type="button"
-                    className="rounded-md p-1 transition hover:bg-panelMuted hover:text-foreground"
-                    onClick={submitFolderEdit}
-                  >
-                    <Check className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-md p-1 transition hover:bg-panelMuted hover:text-foreground"
-                    onClick={() => {
-                      setEditingFolderName(null)
-                      setEditingFolderDraft('')
-                    }}
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </div>
+              <div data-inline-edit-scope="true" className="space-y-2 px-6 pb-1 pt-1">
+                <InlineNameEditor
+                  autoFocus
+                  value={editingFolderDraft}
+                  onChange={setEditingFolderDraft}
+                  onSubmit={submitFolderEdit}
+                  onCancel={() => {
+                    setEditingFolderName(null)
+                    setEditingFolderDraft('')
+                  }}
+                  className="h-7 min-w-[120px] text-xs"
+                />
                 <div className="flex flex-wrap gap-1">
                   {sceneColors.map((color) => (
                     <button
@@ -376,11 +355,15 @@ export function FiltersSidebar({
               )}
             >
               {group.boards.map((board) => (
-                <button
+                <div
                   key={board.id}
-                  type="button"
-                  draggable
-                  onDragStart={() => setDraggedBoardId(board.id)}
+                  draggable={editingBoardId !== board.id}
+                  onDragStart={() => {
+                    if (editingBoardId === board.id) {
+                      return
+                    }
+                    setDraggedBoardId(board.id)
+                  }}
                   onDragEnd={() => setDraggedBoardId(null)}
                   onDragOver={(event) => {
                     event.preventDefault()
@@ -394,7 +377,10 @@ export function FiltersSidebar({
                     setDraggedBoardId(null)
                   }}
                   onClick={() => onSelectBoard(board.id)}
-                  onDoubleClick={() => onOpenBoardInspector(board.id)}
+                  onDoubleClick={() => {
+                    setEditingBoardId(board.id)
+                    setEditingBoardDraft(board.name)
+                  }}
                   onContextMenu={(event) => openBoardMenu(event, board.id, onSelectBoard, setMenuState)}
                   className={cn(
                     'w-full rounded-xl border px-3 py-3 text-left transition',
@@ -409,11 +395,50 @@ export function FiltersSidebar({
                       style={{ backgroundColor: sceneColors.find((entry) => entry.value === board.color)?.hex ?? '#7f8895' }}
                     />
                     <div className="min-w-0">
-                      <div className="truncate font-medium text-foreground">{board.name}</div>
+                      {editingBoardId === board.id ? (
+                        <div
+                          data-inline-edit-scope="true"
+                          className="flex items-center gap-1.5"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <InlineNameEditor
+                            autoFocus
+                            value={editingBoardDraft}
+                            onChange={setEditingBoardDraft}
+                            onSubmit={() => {
+                              const nextName = editingBoardDraft.trim()
+                              if (nextName) {
+                                onInlineUpdateBoard(board.id, { name: nextName })
+                              }
+                              setEditingBoardId(null)
+                              setEditingBoardDraft('')
+                            }}
+                            onCancel={() => {
+                              setEditingBoardId(null)
+                              setEditingBoardDraft('')
+                            }}
+                            className="h-7 text-sm"
+                          />
+                          <button
+                            type="button"
+                            aria-label="Open board inspector"
+                            title="Open board inspector"
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-transparent text-muted transition hover:border-border hover:bg-panelMuted hover:text-foreground"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              onOpenBoardInspector(board.id)
+                            }}
+                          >
+                            <PanelRightOpen className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="truncate font-medium text-foreground">{board.name}</div>
+                      )}
                       <div className="mt-1 text-xs text-muted">{board.items.length} rows</div>
                     </div>
                   </div>
-                </button>
+                </div>
               ))}
             </div>
           </div>
@@ -597,7 +622,7 @@ function formatFolderLabel(label: string) {
 }
 
 function openBoardMenu(
-  event: MouseEvent<HTMLButtonElement>,
+  event: MouseEvent<HTMLElement>,
   boardId: string,
   onSelectBoard: (boardId: string) => void,
   setMenuState: (state: { boardId: string; x: number; y: number } | null) => void,

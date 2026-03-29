@@ -15,6 +15,15 @@ export type SceneColor =
   | 'violet'
   | 'plum'
 
+export type SceneBeat = {
+  id: string
+  sceneId: string
+  sortOrder: number
+  text: string
+  createdAt: string
+  updatedAt: string
+}
+
 export type Scene = {
   id: string
   sortOrder: number
@@ -35,9 +44,13 @@ export type Scene = {
   createdAt: string
   updatedAt: string
   tagIds: string[]
+  beats: SceneBeat[]
 }
 
-export type SceneUpdateInput = Partial<Omit<Scene, 'createdAt' | 'updatedAt'>> & Pick<Scene, 'id'>
+export type SceneUpdateInput = Partial<Omit<Scene, 'createdAt' | 'updatedAt' | 'beats'>> & Pick<Scene, 'id'>
+
+export type SceneBeatUpdateInput = Partial<Omit<SceneBeat, 'createdAt' | 'updatedAt' | 'sceneId'>> &
+  Pick<SceneBeat, 'id'>
 
 export type SceneFolder = {
   path: string

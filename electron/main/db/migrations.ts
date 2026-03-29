@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3'
 
-const SCHEMA_VERSION = 9
+const SCHEMA_VERSION = 12
 
 export function runMigrations(db: Database.Database) {
   db.exec(`
@@ -44,6 +44,16 @@ export function runMigrations(db: Database.Database) {
       FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS scene_beats (
+      id TEXT PRIMARY KEY,
+      scene_id TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      text TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (scene_id) REFERENCES scenes(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS boards (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -78,6 +88,19 @@ export function runMigrations(db: Database.Database) {
       updated_at TEXT NOT NULL,
       FOREIGN KEY (folder_id) REFERENCES archive_folders(id) ON DELETE SET NULL
     );
+
+    CREATE TABLE IF NOT EXISTS project_settings (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      title TEXT NOT NULL DEFAULT '',
+      genre TEXT NOT NULL DEFAULT '',
+      format TEXT NOT NULL DEFAULT '',
+      target_runtime_minutes INTEGER NOT NULL DEFAULT 90,
+      logline TEXT NOT NULL DEFAULT '',
+      default_board_view TEXT NOT NULL DEFAULT 'outline',
+      enabled_block_kinds TEXT NOT NULL DEFAULT '["chapter","voiceover","narration","text-card","note"]',
+      block_kind_order TEXT NOT NULL DEFAULT '["chapter","voiceover","narration","text-card","note"]',
+      updated_at TEXT NOT NULL DEFAULT ''
+    );
   `)
 
   ensureColumn(db, 'scenes', 'is_key_scene', 'INTEGER NOT NULL DEFAULT 0')
@@ -90,10 +113,13 @@ export function runMigrations(db: Database.Database) {
   ensureColumn(db, 'archive_folders', 'color', "TEXT NOT NULL DEFAULT 'slate'")
   ensureColumn(db, 'archive_folders', 'parent_id', 'TEXT')
   ensureArchiveFolderHierarchy(db)
+  ensureArchiveItemsForeignKey(db)
+  ensureSceneBeatsTable(db)
   normalizeSceneSortOrder(db)
   normalizeBoardSortOrder(db)
   ensureBoardItemsTable(db)
   ensureArchiveIndexes(db)
+  ensureProjectSettingsRow(db)
 
   db.prepare(
     `INSERT OR REPLACE INTO app_meta (key, value) VALUES ('schema_version', ?)`,
@@ -113,6 +139,23 @@ function normalizeSceneSortOrder(db: Database.Database) {
   scenes.forEach((scene, index) => {
     update.run(index, scene.id)
   })
+}
+
+function ensureSceneBeatsTable(db: Database.Database) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS scene_beats (
+      id TEXT PRIMARY KEY,
+      scene_id TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      text TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (scene_id) REFERENCES scenes(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_scene_beats_scene_sort
+      ON scene_beats(scene_id, sort_order);
+  `)
 }
 
 function normalizeBoardSortOrder(db: Database.Database) {
@@ -145,8 +188,22 @@ function ensureBoardItemsTable(db: Database.Database) {
   const hasTitle = columns.some((column) => column.name === 'title')
   const hasBody = columns.some((column) => column.name === 'body')
   const hasColor = columns.some((column) => column.name === 'color')
+  const hasBoardX = columns.some((column) => column.name === 'board_x')
+  const hasBoardY = columns.some((column) => column.name === 'board_y')
+  const hasBoardW = columns.some((column) => column.name === 'board_w')
+  const hasBoardH = columns.some((column) => column.name === 'board_h')
+
+  if (hasKind && hasTitle && hasBody && hasColor && hasBoardX && hasBoardY && hasBoardW && hasBoardH) {
+    ensureBoardItemIndexes(db)
+    return
+  }
 
   if (hasKind && hasTitle && hasBody && hasColor) {
+    ensureColumn(db, 'board_items', 'board_x', 'REAL NOT NULL DEFAULT 0')
+    ensureColumn(db, 'board_items', 'board_y', 'REAL NOT NULL DEFAULT 0')
+    ensureColumn(db, 'board_items', 'board_w', 'REAL NOT NULL DEFAULT 300')
+    ensureColumn(db, 'board_items', 'board_h', 'REAL NOT NULL DEFAULT 132')
+    seedBoardCoordinates(db)
     ensureBoardItemIndexes(db)
     return
   }
@@ -160,7 +217,7 @@ function ensureBoardItemsTable(db: Database.Database) {
 
   db.exec(`
     INSERT INTO board_items (
-      id, board_id, scene_id, kind, title, body, color, position, created_at, updated_at
+      id, board_id, scene_id, kind, title, body, color, position, board_x, board_y, board_w, board_h, created_at, updated_at
     )
     SELECT
       id,
@@ -171,6 +228,10 @@ function ensureBoardItemsTable(db: Database.Database) {
       '',
       'charcoal',
       position,
+      position * 320,
+      0,
+      300,
+      132,
       created_at,
       updated_at
     FROM board_items_legacy;
@@ -192,6 +253,10 @@ function createBoardItemsTable(db: Database.Database) {
       body TEXT NOT NULL DEFAULT '',
       color TEXT NOT NULL DEFAULT 'charcoal',
       position INTEGER NOT NULL,
+      board_x REAL NOT NULL DEFAULT 0,
+      board_y REAL NOT NULL DEFAULT 0,
+      board_w REAL NOT NULL DEFAULT 300,
+      board_h REAL NOT NULL DEFAULT 132,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       FOREIGN KEY (board_id) REFERENCES boards(id) ON DELETE CASCADE,
@@ -209,6 +274,9 @@ function ensureBoardItemIndexes(db: Database.Database) {
 
     CREATE INDEX IF NOT EXISTS idx_scene_tags_scene_tag
       ON scene_tags(scene_id, tag_id);
+
+    CREATE INDEX IF NOT EXISTS idx_scene_beats_scene_sort
+      ON scene_beats(scene_id, sort_order);
   `)
 }
 
@@ -235,6 +303,8 @@ function ensureArchiveFolderHierarchy(db: Database.Database) {
   }
 
   db.exec(`
+    PRAGMA foreign_keys = OFF;
+
     ALTER TABLE archive_folders RENAME TO archive_folders_legacy;
 
     CREATE TABLE archive_folders (
@@ -253,6 +323,55 @@ function ensureArchiveFolderHierarchy(db: Database.Database) {
     FROM archive_folders_legacy;
 
     DROP TABLE archive_folders_legacy;
+
+    PRAGMA foreign_keys = ON;
+  `)
+}
+
+function ensureArchiveItemsForeignKey(db: Database.Database) {
+  const createSql = db
+    .prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'archive_items'`)
+    .get() as { sql?: string } | undefined
+
+  if (!createSql?.sql) {
+    return
+  }
+
+  if (
+    createSql.sql.includes('REFERENCES archive_folders(id)') &&
+    !createSql.sql.includes('archive_folders_legacy')
+  ) {
+    return
+  }
+
+  db.exec(`
+    PRAGMA foreign_keys = OFF;
+
+    ALTER TABLE archive_items RENAME TO archive_items_legacy;
+
+    CREATE TABLE archive_items (
+      id TEXT PRIMARY KEY,
+      folder_id TEXT,
+      name TEXT NOT NULL,
+      file_path TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'document',
+      extension TEXT NOT NULL DEFAULT '',
+      file_size INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (folder_id) REFERENCES archive_folders(id) ON DELETE SET NULL
+    );
+
+    INSERT INTO archive_items (
+      id, folder_id, name, file_path, kind, extension, file_size, created_at, updated_at
+    )
+    SELECT
+      id, folder_id, name, file_path, kind, extension, file_size, created_at, updated_at
+    FROM archive_items_legacy;
+
+    DROP TABLE archive_items_legacy;
+
+    PRAGMA foreign_keys = ON;
   `)
 }
 
@@ -266,4 +385,31 @@ function ensureColumn(
   if (!columns.some((column) => column.name === columnName)) {
     db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`)
   }
+}
+
+function ensureProjectSettingsRow(db: Database.Database) {
+  db.prepare(
+    `
+      INSERT OR IGNORE INTO project_settings (
+        id, title, genre, format, target_runtime_minutes, logline, default_board_view,
+        enabled_block_kinds, block_kind_order, updated_at
+      ) VALUES (
+        1, '', '', '', 90, '', 'outline',
+        '["chapter","voiceover","narration","text-card","note"]',
+        '["chapter","voiceover","narration","text-card","note"]',
+        ''
+      )
+    `,
+  ).run()
+}
+
+function seedBoardCoordinates(db: Database.Database) {
+  db.exec(`
+    UPDATE board_items
+    SET
+      board_x = CASE WHEN board_x = 0 THEN position * 320 ELSE board_x END,
+      board_y = COALESCE(board_y, 0),
+      board_w = CASE WHEN board_w = 300 THEN board_w ELSE board_w END,
+      board_h = CASE WHEN board_h = 132 THEN board_h ELSE board_h END
+  `)
 }

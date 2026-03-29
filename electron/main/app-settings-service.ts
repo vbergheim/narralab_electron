@@ -3,7 +3,16 @@ import path from 'node:path'
 
 import { app, safeStorage } from 'electron'
 
-import type { AIProvider, AppSettings, AppSettingsUpdateInput, ConsultantResponseStyle } from '@/types/ai'
+import type {
+  AIProvider,
+  AppSettings,
+  AppSettingsUpdateInput,
+  ConsultantResponseStyle,
+  SavedWindowLayout,
+  WindowWorkspace,
+} from '@/types/ai'
+import type { BoardViewMode } from '@/types/board'
+import type { SceneDensity } from '@/types/view'
 
 type StoredSecret = {
   encoding: 'safe' | 'plain'
@@ -20,6 +29,16 @@ type SettingsFile = {
     responseStyle?: ConsultantResponseStyle
     openAiApiKey?: StoredSecret | null
     geminiApiKey?: StoredSecret | null
+  }
+  ui?: {
+    restoreLastProject?: boolean
+    restoreLastLayout?: boolean
+    defaultBoardView?: BoardViewMode
+    defaultSceneDensity?: SceneDensity
+    defaultDetachedWorkspace?: WindowWorkspace
+    lastProjectPath?: string | null
+    lastLayoutByProject?: Record<string, string>
+    savedLayouts?: SavedWindowLayout[]
   }
 }
 
@@ -40,6 +59,16 @@ const DEFAULT_SETTINGS: AppSettings = {
     hasOpenAiApiKey: false,
     hasGeminiApiKey: false,
   },
+  ui: {
+    restoreLastProject: true,
+    restoreLastLayout: true,
+    defaultBoardView: 'outline',
+    defaultSceneDensity: 'compact',
+    defaultDetachedWorkspace: 'outline',
+    lastProjectPath: null,
+    lastLayoutByProject: {},
+    savedLayouts: [],
+  },
 }
 
 export class AppSettingsService {
@@ -55,6 +84,17 @@ export class AppSettingsService {
         responseStyle: file.ai?.responseStyle ?? DEFAULT_SETTINGS.ai.responseStyle,
         hasOpenAiApiKey: !!this.readSecret(file.ai?.openAiApiKey),
         hasGeminiApiKey: !!this.readSecret(file.ai?.geminiApiKey),
+      },
+      ui: {
+        restoreLastProject: file.ui?.restoreLastProject ?? DEFAULT_SETTINGS.ui.restoreLastProject,
+        restoreLastLayout: file.ui?.restoreLastLayout ?? DEFAULT_SETTINGS.ui.restoreLastLayout,
+        defaultBoardView: normalizeDefaultBoardView(file.ui?.defaultBoardView),
+        defaultSceneDensity: file.ui?.defaultSceneDensity ?? DEFAULT_SETTINGS.ui.defaultSceneDensity,
+        defaultDetachedWorkspace:
+          file.ui?.defaultDetachedWorkspace ?? DEFAULT_SETTINGS.ui.defaultDetachedWorkspace,
+        lastProjectPath: file.ui?.lastProjectPath ?? DEFAULT_SETTINGS.ui.lastProjectPath,
+        lastLayoutByProject: file.ui?.lastLayoutByProject ?? DEFAULT_SETTINGS.ui.lastLayoutByProject,
+        savedLayouts: normalizeLayouts(file.ui?.savedLayouts),
       },
     }
   }
@@ -72,6 +112,30 @@ export class AppSettingsService {
         responseStyle: input.responseStyle ?? current.file.ai?.responseStyle ?? DEFAULT_SETTINGS.ai.responseStyle,
         openAiApiKey: current.file.ai?.openAiApiKey ?? null,
         geminiApiKey: current.file.ai?.geminiApiKey ?? null,
+      },
+      ui: {
+        restoreLastProject:
+          input.restoreLastProject ?? current.file.ui?.restoreLastProject ?? DEFAULT_SETTINGS.ui.restoreLastProject,
+        restoreLastLayout:
+          input.restoreLastLayout ?? current.file.ui?.restoreLastLayout ?? DEFAULT_SETTINGS.ui.restoreLastLayout,
+        defaultBoardView: normalizeDefaultBoardView(
+          input.defaultBoardView ?? current.file.ui?.defaultBoardView,
+        ),
+        defaultSceneDensity:
+          input.defaultSceneDensity ??
+          current.file.ui?.defaultSceneDensity ??
+          DEFAULT_SETTINGS.ui.defaultSceneDensity,
+        defaultDetachedWorkspace:
+          input.defaultDetachedWorkspace ??
+          current.file.ui?.defaultDetachedWorkspace ??
+          DEFAULT_SETTINGS.ui.defaultDetachedWorkspace,
+        lastProjectPath:
+          input.lastProjectPath !== undefined
+            ? input.lastProjectPath
+            : current.file.ui?.lastProjectPath ?? DEFAULT_SETTINGS.ui.lastProjectPath,
+        lastLayoutByProject:
+          input.lastLayoutByProject ?? current.file.ui?.lastLayoutByProject ?? DEFAULT_SETTINGS.ui.lastLayoutByProject,
+        savedLayouts: normalizeLayouts(input.savedLayouts ?? current.file.ui?.savedLayouts),
       },
     }
 
@@ -156,4 +220,34 @@ export class AppSettingsService {
       return null
     }
   }
+}
+
+function normalizeLayouts(value?: SavedWindowLayout[] | null): SavedWindowLayout[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  return value
+    .map((layout) => ({
+      ...layout,
+      windows: Array.isArray(layout.windows)
+        ? layout.windows.map((windowState) => ({
+            ...windowState,
+            viewMode: normalizeDefaultBoardView(windowState.viewMode),
+            displayId:
+              typeof windowState.displayId === 'number' && Number.isFinite(windowState.displayId)
+                ? windowState.displayId
+                : null,
+          }))
+        : [],
+    }))
+    .filter((layout) => layout.id && layout.name)
+}
+
+function normalizeDefaultBoardView(value?: BoardViewMode | null): BoardViewMode {
+  if (value === 'board') {
+    return 'board'
+  }
+
+  return 'outline'
 }
