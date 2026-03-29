@@ -1,33 +1,87 @@
-# Stabilitetsgjennomgang (automatisk + kodelesing)
+# Stabilitetsgjennomgang — full pass
 
-Dato: 2026-03-30. Kjørt uten manuell UI-testing.
+**Dato:** 2026-03-30 (oppdatert etter systematisk fasegjennomgang).  
+**Manuell UI-testing:** Ikke utført i denne runden (krever interaktiv app); se matrise nederst.
 
-## Automatiske sjekker (alle OK)
+## Executive summary
 
-- `npm run lint` — ingen ESLint-feil
-- `npx tsc -b` — prosjektet typekompilerer
-- `npm run test` — 17 enhetstester + 10 integrasjonstester (inkl. migrasjoner, shoot-log-import, scene-drag)
-- `npm run build` — Vite + electron main/preload bygger; `electron-builder --dir` fullfører pakking (signering avhenger av lokalt oppsett)
+Kodebasen **typekompilerer**, **lint er grønn**, **npm audit rapporterer 0 sårbarheter**, og **alle automatiserte tester** (23 enhet + 10 integrasjon per kjøring) passerer. Produksjons**bygg** (Vite + electron-builder) fullførte lokalt med exit 0. Hovedrisiko for videre utvikling ligger i **store enkeltfiler**, **begrenset dybdesjekk av JSON-snapshot-import**, og **språkblanding** i UI — ikke i åpenbar feil i IPC/DB for kjente flyter. I denne runden er IPC endepunktene `windows:updateGlobalUiState` og `windows:setDragSession` strammet inn med eksplisitt validering i `ipc-validators.ts`.
 
-## Endringer gjort i denne runden
+## Fase A — Automatisert baseline
 
-1. **Opptakslogg-import** (`importShootLogWorkbook`): Lesefeil / korrupt `.xlsx` gir nå et strukturert `ShootLogImportResult` med feil på arket `(fil)` i stedet for ukontrollert avbrudd i IPC.
-2. **JSON-import**: Lesefeil og ugyldig JSON gir tydelige norske feilmeldinger i stedet for rå `JSON.parse`-kast.
-3. **Feilmelding i UI** for opptakslogg: `formatShootLogImportErrors` er norsk (`Opptakslogg-import mislyktes`).
-4. **electron-builder**: `publish: null` i `package.json` for å unngå implisitt publish-adferd i CI (advarsel i v26).
-5. **Tester**: Ny integrasjonstest for ugyldig xlsx-fil.
-6. **.gitignore**: `~$*` (Office-låsefiler).
+| Sjekk | Resultat |
+|-------|----------|
+| `npm run lint` | OK |
+| `npx tsc -b` | OK |
+| `npm run test` (unit + integration) | OK — 23 + 10 tester |
+| `npm audit` | 0 vulnerabilities |
+| `npm run build` | OK — Vite + electron-builder (mac arm64); notarize hoppet over (forventet uten full config) |
 
-## Observations (ikke endret nå)
+**Merknader:** electron-builder kan fortsatt logge «Implicit publishing triggered by CI detection» hvis miljøvariabelen `CI` er satt; `publish: null` er konfigurert i `package.json`. Vite logget deprecation om `inlineDynamicImports` fra electron-plugin — lav prioritet.
 
-- **Språk**: Noen strenger i appen er fortsatt engelske (menyer, dialogtitler i Electron); vurder samkjøring med norsk der det er produktkrav.
-- **Tom vellykket opptakslogg-import** (0 nye scener, 0 feil): Brukeren får lite feedback — evt. toast «Ingen nye rader» senere.
-- **Store kodefiler**: `outline-workspace.tsx` og `app-store.ts` er tunge; fremtidige features bør deles opp for vedlikehold.
-- **JSON-import**: `replaceWithSnapshot` validerer ikke dypt — korrupt snapshot kan gi rare DB-tilstander; strengere validering kan komme senere.
-- **Grafikk / duplikate maler** i `sample-data/` (kopier av xlsx): Rydd gjerne manuelt; kun `shoot-log-template.xlsx` er tenkt som kanonisk mal i repo.
+## Fase B — IPC, preload, typer
+
+- **ipcMain.handle:** ca. 74 registrerte handlere i `electron/main/ipc.ts`.
+- **Preload** (`electron/preload/index.ts`) og **NarraLabApi** (`src/types/project.ts`) er i praksis i paritet med kanalene som brukes fra renderer; inkl. `boards:addScene`, `project:exportBoardScript`, `importShootLog`.
+- **Validering:** De fleste muterende kall bruker `requireString` / `parse*` fra `ipc-validators.ts`.
+- **Endring i denne passen:** `windows:updateGlobalUiState` og `windows:setDragSession` går nå via `parseGlobalUiStatePatch` og `parseWindowDragSession` (ingen rå `Partial<>`-spread fra ukjent IPC-payload).
+
+## Fase C — Main, database, filer
+
+- **Electron main:** `contextIsolation: true`, `nodeIntegration: false` i `electron/main/app.ts` (standard trygg profil for renderer).
+- **Prosjekt/JSON:** `importJson` har trygg lesing + JSON-feil på norsk; `importShootLogWorkbook` fanger lese-/parse-feil og returnerer strukturert feil på arket `(fil)`.
+- **Migreringer:** `electron/main/db/migrations.ts` + integrasjonstest `tests/integration/migrations.test.ts` — kjører grønt.
+- **JSON.parse** andre steder: fortsatt steder i meta/settings-repositorier; forventer kontrollert input fra egen DB — akseptabelt med lav risiko så lenge snapshot-import ikke er strengt validert (se funn).
+
+## Fase D — Renderer (React / Zustand)
+
+- **Store:** `src/stores/app-store.ts` (~1368 linjer) — sentral; `runProjectAction` fanger feil til `error`-state.
+- **Største fil:** `src/features/boards/outline-workspace.tsx` (~3055 linjer) — høy refaktoreringsgjeld før store nye board-features.
+- **Drag:** `src/lib/scene-drag.ts` bruker try/catch rundt JSON-parse av drag-data.
+
+## Fase E — Sikkerhet og avhengigheter
+
+- **Preload:** Kun `contextBridge.exposeInMainWorld('narralab', api)` — ingen direkte Node i renderer.
+- **Sandbox:** `sandbox: false` i BrowserWindow (vanlig for preload som trenger visse capabilities); risiko avhenger av at preload holder API-et minimalt — vurder `sandbox: true` på sikt hvis Electron-oppsett tillater det.
+- **npm audit:** 0 issues på kjøretidspunktet.
+
+## Fase F — Manuell smoke (matrise)
+
+| Flyt | Status | Merknad |
+|------|--------|---------|
+| Opprett/åpne prosjekt | **Ikke kjørt** | Krever manuell kjøring i app |
+| Scene-bank, mapper, filter | **Ikke kjørt** | — |
+| Board/outline, dra scene | **Ikke kjørt** | — |
+| Inspector, lagring | **Ikke kjørt** | — |
+| Opptakslogg-import (OK + feil) | **Ikke kjørt** | Dekket delvis av integrasjonstester |
+| JSON-import feil | **Ikke kjørt** | Delvis dekket av kodegang |
+| Archive, settings | **Ikke kjørt** | — |
+| Multi-window / layouts | **Ikke kjørt** | — |
+
+## Funn (prioritert)
+
+| Alvor | Område | Beskrivelse | Tiltak i denne runden |
+|-------|--------|-------------|------------------------|
+| Medium | IPC | Rå payload til global UI-state / drag session | **Fikset:** parsere i `ipc-validators.ts` |
+| Medium | Vedlikehold | Monolitt `outline-workspace.tsx` | Dokumentert; refaktor senere |
+| Low | UX | Tom opptakslogg-import (0 rader) gir lite feedback | Ingen endring |
+| Low | i18n | Engelsk blanding i UI/dialoger | Ingen endring |
+| Low | Data | `replaceWithSnapshot` uten streng skjema-validering | Ingen endring; anbefales senere |
+| Info | Bygg | electron-builder CI/publish-advarsel, duplicate deps warning | Delvis adressert (`publish: null`); rest er tooling |
+
+## Tidligere runde (beholdt oversikt)
+
+1. Opptakslogg: strukturert feil ved korrupt `.xlsx` (`(fil)`).
+2. JSON-import: norske feil ved I/O og ugyldig JSON.
+3. UI-tekst for opptakslogg-feil: norsk.
+4. `publish: null` i `package.json`.
+5. Integrasjonstest for ugyldig xlsx.
+6. `.gitignore`: `~$*`.
 
 ## Anbefalinger før større features
 
-- Behold `npm run check` i CI eller pre-push.
-- Nye IPC-kanaler: følg eksisterende validators i `ipc-validators.ts`.
-- Nye databasefelt: alltid migrering i `migrations.ts` + integrasjonstest.
+- Kjør `npm run check` i CI eller pre-push.
+- Nye IPC-kanaler: alltid validator + test.
+- Nye DB-felt: migrering + integrasjonstest.
+- Planlegg utbrytning av `outline-workspace.tsx` parallelt med store board-endringer.
+- Utfør manuell smoke-matrise (Fase F) ved release-kandidat.
