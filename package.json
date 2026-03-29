@@ -12,6 +12,11 @@
     "build": "tsc -b && vite build && electron-builder",
     "build:dir": "tsc -b && vite build && electron-builder --dir",
     "lint": "eslint .",
+    "test": "npm run test:unit && npm run test:integration",
+    "test:unit": "vitest run tests/unit",
+    "test:integration": "node scripts/run-integration-tests.mjs",
+    "test:watch": "vitest tests/unit",
+    "check": "npm run lint && npx tsc -b && npm run test",
     "preview": "vite preview",
     "postinstall": "electron-builder install-app-deps"
   },
@@ -48,7 +53,8 @@
     "typescript-eslint": "^8.57.0",
     "vite": "^8.0.1",
     "vite-plugin-electron": "^0.29.1",
-    "vite-plugin-electron-renderer": "^0.14.6"
+    "vite-plugin-electron-renderer": "^0.14.6",
+    "vitest": "^4.1.2"
   },
   "build": {
     "appId": "com.docudoc.desktop",

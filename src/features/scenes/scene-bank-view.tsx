@@ -634,7 +634,7 @@ function SceneBankRow({
       onDragEnd={() => {
         window.setTimeout(() => {
           void window.docudoc.windows.setDragSession(null)
-        }, 150)
+        }, 2000)
       }}
       onDragOver={(event) => {
         event.preventDefault()

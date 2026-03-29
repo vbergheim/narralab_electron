@@ -112,8 +112,18 @@ export class WindowManager {
     return this.dragSession
   }
 
+  consumeDragSession() {
+    const session = this.dragSession
+    this.dragSession = null
+    this.broadcast({
+      type: 'drag-session',
+      payload: this.dragSession,
+    })
+    return session
+  }
+
   updateDragSession(session: WindowDragSession) {
-    this.dragSession = session
+    this.dragSession = normalizeDragSession(session)
     this.broadcast({
       type: 'drag-session',
       payload: this.dragSession,
@@ -140,6 +150,8 @@ export class WindowManager {
     if (meta) {
       this.settingsService.updateSettings({ lastProjectPath: meta.path })
     }
+
+    this.dragSession = null
 
     this.broadcast({ type: 'project-changed' })
   }
@@ -373,4 +385,20 @@ function clampBounds(
 
 function workspaceLabel(workspace: WindowWorkspace) {
   return workspace.charAt(0).toUpperCase() + workspace.slice(1)
+}
+
+function normalizeDragSession(session: WindowDragSession): WindowDragSession {
+  if (!session || session.kind !== 'scene') {
+    return null
+  }
+
+  const sceneIds = session.sceneIds.filter((value) => typeof value === 'string' && value.trim().length > 0)
+  if (sceneIds.length === 0) {
+    return null
+  }
+
+  return {
+    kind: 'scene',
+    sceneIds,
+  }
 }

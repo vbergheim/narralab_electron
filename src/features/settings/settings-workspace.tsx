@@ -335,6 +335,13 @@ function AiSettingsPanel({
         </Button>
       </Header>
 
+      {settings.ai.secretStorageMode === 'plain' ? (
+        <Panel className="mt-4 border-amber/40 bg-amber/10 p-4 text-sm text-foreground">
+          Safe Storage er ikke tilgjengelig på denne maskinen akkurat nå. Lagrede API-nøkler faller derfor tilbake
+          til base64-lagring i lokale appinnstillinger, ikke ekte kryptering.
+        </Panel>
+      ) : null}
+
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         <Field label="Provider">
           <select className={selectClassName} value={provider} onChange={(event) => setProvider(event.target.value as typeof provider)}>

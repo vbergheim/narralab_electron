@@ -32,6 +32,7 @@ export type AppSettings = {
     systemPrompt: string
     extraInstructions: string
     responseStyle: ConsultantResponseStyle
+    secretStorageMode: 'safe' | 'plain'
     hasOpenAiApiKey: boolean
     hasGeminiApiKey: boolean
   }

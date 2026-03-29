@@ -56,6 +56,7 @@ const DEFAULT_SETTINGS: AppSettings = {
       'Du er en skarp, erfaren dokumentarkonsulent. Gi konkrete, redaksjonelle forslag til struktur, dramaturgi, scenevalg, voiceover, tematiske linjer og hva som mangler. Vær presis og arbeidsnær, ikke vag.',
     extraInstructions: '',
     responseStyle: 'structured',
+    secretStorageMode: resolveSecretStorageMode(),
     hasOpenAiApiKey: false,
     hasGeminiApiKey: false,
   },
@@ -82,6 +83,7 @@ export class AppSettingsService {
         systemPrompt: file.ai?.systemPrompt ?? DEFAULT_SETTINGS.ai.systemPrompt,
         extraInstructions: file.ai?.extraInstructions ?? DEFAULT_SETTINGS.ai.extraInstructions,
         responseStyle: file.ai?.responseStyle ?? DEFAULT_SETTINGS.ai.responseStyle,
+        secretStorageMode: resolveSecretStorageMode(),
         hasOpenAiApiKey: !!this.readSecret(file.ai?.openAiApiKey),
         hasGeminiApiKey: !!this.readSecret(file.ai?.geminiApiKey),
       },
@@ -250,4 +252,8 @@ function normalizeDefaultBoardView(value?: BoardViewMode | null): BoardViewMode 
   }
 
   return 'outline'
+}
+
+function resolveSecretStorageMode(): 'safe' | 'plain' {
+  return safeStorage.isEncryptionAvailable() ? 'safe' : 'plain'
 }

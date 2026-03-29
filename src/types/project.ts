@@ -239,6 +239,7 @@ export interface DocuDocApi {
     updateContext(input: Partial<Pick<WindowContext, 'boardId' | 'viewMode' | 'sceneDensity'>>): Promise<WindowContext>
     getDragSession(): WindowDragSession
     readDragSession(): Promise<WindowDragSession>
+    consumeDragSession(): Promise<WindowDragSession>
     setDragSession(session: WindowDragSession): Promise<WindowDragSession>
     getGlobalUiState(): Promise<GlobalUiState>
     updateGlobalUiState(input: Partial<GlobalUiState>): Promise<GlobalUiState>

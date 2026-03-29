@@ -148,7 +148,7 @@ export function App() {
     reorderBoards,
     cloneBoard,
     moveBoard,
-    addSceneToActiveBoard,
+    addSceneToBoard,
     addBlockToActiveBoard,
     addBlockTemplateToActiveBoard,
     saveBlockTemplate,
@@ -419,15 +419,7 @@ export function App() {
     if (!targetBoardId) {
       return null
     }
-
-    if (targetBoardId === activeBoardId) {
-      return addSceneToActiveBoard(sceneId, afterItemId, boardPosition)
-    }
-
-    const result = await window.docudoc.boards.addScene(targetBoardId, sceneId, afterItemId, boardPosition)
-    await initialize()
-    selectScene(sceneId, result.item.id)
-    return result
+    return addSceneToBoard(targetBoardId, sceneId, afterItemId, boardPosition)
   }
 
   const saveCurrentLayout = async () => {

@@ -460,19 +460,18 @@ export function OutlineWorkspace({
                     setNativeSceneDropActive(false)
                   }}
                   onDrop={async (event) => {
-                    const sceneIds = await resolveDraggedSceneIds(event.dataTransfer)
+                    event.preventDefault()
+                    event.stopPropagation()
+                    const sceneIds = await resolveDraggedSceneIds(event.dataTransfer, true)
                     if (sceneIds.length === 0) {
                       return
                     }
-                    event.preventDefault()
-                    event.stopPropagation()
                     setNativeSceneDropActive(false)
                     setNativeSceneDropTargetId(null)
                     const sceneId = sceneIds[0]
                     if (!sceneId) {
                       return
                     }
-                    void window.docudoc.windows.setDragSession(null)
                     onAddScene(sceneId, resolveInsertAfterItemId(outlineScrollRef.current, selectedBoardItemId))
                   }}
                 >
@@ -507,7 +506,6 @@ export function OutlineWorkspace({
                           if (!sceneId) {
                             return
                           }
-                          void window.docudoc.windows.setDragSession(null)
                           onAddScene(sceneId, item.id)
                         }}
                         onToggleKeyScene={() => {
@@ -560,7 +558,6 @@ export function OutlineWorkspace({
                   if (!sceneId) {
                     return
                   }
-                  void window.docudoc.windows.setDragSession(null)
                   onAddScene(sceneId, null, boardPosition)
                 }}
                 onInlineUpdateScene={onInlineUpdateScene}
@@ -1530,12 +1527,12 @@ function BoardCanvasView({
           onNativeSceneDragStateChange?.(false)
         }}
         onDrop={async (event) => {
-          const sceneIds = await resolveDraggedSceneIds(event.dataTransfer)
+          event.preventDefault()
+          event.stopPropagation()
+          const sceneIds = await resolveDraggedSceneIds(event.dataTransfer, true)
           if (sceneIds.length === 0) {
             return
           }
-          event.preventDefault()
-          event.stopPropagation()
           onNativeSceneDragStateChange?.(false)
           onNativeSceneDrop(
             sceneIds,
@@ -2111,13 +2108,18 @@ function getDraggedSceneIds(dataTransfer: DataTransfer) {
   return []
 }
 
-async function resolveDraggedSceneIds(dataTransfer: DataTransfer) {
+async function resolveDraggedSceneIds(dataTransfer: DataTransfer, consume = false) {
   const nativeIds = readSceneDragData(dataTransfer)
   if (nativeIds.length > 0) {
+    if (consume) {
+      void window.docudoc.windows.setDragSession(null)
+    }
     return nativeIds
   }
 
-  const session = await window.docudoc.windows.readDragSession()
+  const session = consume
+    ? await window.docudoc.windows.consumeDragSession()
+    : await window.docudoc.windows.readDragSession()
   if (session?.kind === 'scene') {
     return session.sceneIds
   }
@@ -2509,12 +2511,12 @@ function BoardSortableItem({
         onNativeSceneDragLeave?.()
       }}
       onDrop={async (event: ReactDragEvent<HTMLDivElement>) => {
-        const sceneIds = await resolveDraggedSceneIds(event.dataTransfer)
+        event.preventDefault()
+        event.stopPropagation()
+        const sceneIds = await resolveDraggedSceneIds(event.dataTransfer, true)
         if (sceneIds.length === 0) {
           return
         }
-        event.preventDefault()
-        event.stopPropagation()
         onNativeSceneDrop?.(sceneIds)
       }}
       {...(density !== 'detailed' ? attributes : {})}

@@ -103,6 +103,10 @@ const api: DocuDocApi = {
     updateContext: (input) => ipcRenderer.invoke('windows:updateContext', input),
     getDragSession: () => currentDragSession,
     readDragSession: () => ipcRenderer.invoke('windows:getDragSession'),
+    consumeDragSession: async () => {
+      currentDragSession = await ipcRenderer.invoke('windows:consumeDragSession')
+      return currentDragSession
+    },
     setDragSession: (session) => {
       currentDragSession = session
       return ipcRenderer.invoke('windows:setDragSession', session)

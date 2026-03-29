@@ -128,6 +128,7 @@ type AppStore = {
   reorderBoards(boardIds: string[]): Promise<void>
   cloneBoard(boardId: string): Promise<void>
   moveBoard(boardId: string, folder: string, beforeBoardId?: string | null): Promise<void>
+  addSceneToBoard(boardId: string, sceneId: string, afterItemId?: string | null, boardPosition?: BoardDropPosition | null): Promise<AddSceneToBoardResult | null>
   addSceneToActiveBoard(sceneId: string, afterItemId?: string | null, boardPosition?: BoardDropPosition | null): Promise<AddSceneToBoardResult | null>
   addBlockToActiveBoard(kind: BoardTextItemKind, afterItemId?: string | null): Promise<void>
   addBlockTemplateToActiveBoard(templateId: string, afterItemId?: string | null): Promise<void>
@@ -157,6 +158,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         'Du er en skarp, erfaren dokumentarkonsulent. Gi konkrete, redaksjonelle forslag til struktur, dramaturgi, scenevalg, voiceover, tematiske linjer og hva som mangler. Vær presis og arbeidsnær, ikke vag.',
       extraInstructions: '',
       responseStyle: 'structured',
+      secretStorageMode: 'safe',
       hasOpenAiApiKey: false,
       hasGeminiApiKey: false,
     },
@@ -1041,22 +1043,24 @@ export const useAppStore = create<AppStore>((set, get) => ({
     })
   },
 
-  async addSceneToActiveBoard(sceneId, afterItemId = null, boardPosition = null) {
-    const activeBoardId = get().activeBoardId
-    if (!activeBoardId) return null
+  async addSceneToBoard(boardId, sceneId, afterItemId = null, boardPosition = null) {
+    const targetBoardId = boardId?.trim()
+    if (!targetBoardId) return null
 
     let result: AddSceneToBoardResult | null = null
 
     await runProjectAction(set, async () => {
-      result = await window.docudoc.boards.addScene(activeBoardId, sceneId, afterItemId, boardPosition)
+      result = await window.docudoc.boards.addScene(targetBoardId, sceneId, afterItemId, boardPosition)
       set((state) => ({
         boards: state.boards.map((board) =>
-          board.id === activeBoardId && result && !result.existed
+          board.id === targetBoardId && result
             ? {
                 ...board,
-                items: [...board.items, result.item]
-                  .sort((left, right) => left.position - right.position)
-                  .map((entry, index) => ({ ...entry, position: index }) as BoardItem),
+                items: result.existed
+                  ? board.items
+                  : [...board.items, result.item]
+                      .sort((left, right) => left.position - right.position)
+                      .map((entry, index) => ({ ...entry, position: index }) as BoardItem),
               }
             : board,
         ),
@@ -1068,6 +1072,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
     })
 
     return result
+  },
+
+  async addSceneToActiveBoard(sceneId, afterItemId = null, boardPosition = null) {
+    const activeBoardId = get().activeBoardId
+    if (!activeBoardId) return null
+    return get().addSceneToBoard(activeBoardId, sceneId, afterItemId, boardPosition)
   },
 
   async addBlockToActiveBoard(kind, afterItemId = null) {
