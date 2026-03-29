@@ -5,6 +5,7 @@ import {
   Download,
   FileCode2,
   FileJson2,
+  FileSpreadsheet,
   FileText,
   Files,
   FolderOpen,
@@ -31,6 +32,7 @@ type Props = {
   onOpenProject(): void
   onSaveAs(): void
   onImportJson(): void
+  onImportShootLog(): void
   onExportJson(): void
   onExportScript(format: BoardScriptExportFormat): void
   onOpenSettings(): void
@@ -50,6 +52,7 @@ export function ProjectsToolbar({
   onOpenProject,
   onSaveAs,
   onImportJson,
+  onImportShootLog,
   onExportJson,
   onExportScript,
   onOpenSettings,
@@ -90,7 +93,7 @@ export function ProjectsToolbar({
     <div className="app-drag flex items-center justify-between gap-4 border-b border-border/90 px-5 py-4 pl-24">
       <div>
         <div className="font-display text-lg font-semibold text-foreground">
-          {projectTitle || projectMeta?.name || 'DocuDoc'}
+          {projectTitle || projectMeta?.name || 'NarraLab'}
         </div>
         <div className="text-sm text-muted">
           {projectMeta?.path ?? 'Create or open a local project file to start outlining.'}
@@ -149,6 +152,15 @@ export function ProjectsToolbar({
                 }}
               />
               <div className="my-2 h-px bg-border/80" />
+              <ToolbarMenuButton
+                icon={<FileSpreadsheet className="h-4 w-4" />}
+                label="Import Shoot Log (.xlsx)"
+                description="Add scenes and beats from an Excel shoot log."
+                onClick={() => {
+                  onImportShootLog()
+                  setFileMenuOpen(false)
+                }}
+              />
               <ToolbarMenuButton
                 icon={<FileJson2 className="h-4 w-4" />}
                 label="Import JSON"

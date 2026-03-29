@@ -1,10 +1,11 @@
-# DocuDoc
+# NarraLab
 
-DocuDoc er en lokal Electron-app for å strukturere dokumentarfilm scene for scene. Appen kjører med React i renderer, Electron i desktop-skallet og SQLite som prosjektformat.
+NarraLab er en lokal Electron-app for å strukturere dokumentarfilm scene for scene. Appen kjører med React i renderer, Electron i desktop-skallet og SQLite som prosjektformat.
 
 ## Status
 - Lokal macOS-først desktop-app
-- Prosjektdata lagres i `.docudoc`-filer
+- Prosjektdata lagres i `.narralab`-filer, med støtte for eldre `.docudoc`-prosjekter
+- Kan importere `.xlsx`-basert opptakslogg direkte som nye scener og beats
 - Støtter scenes, boards, archive, notebook, settings og en innebygd AI-konsulent
 - Har detached vinduer og lagrede layouts, men cross-window-interaksjon er fortsatt et aktivt robusthetsområde
 
@@ -92,12 +93,13 @@ Repoet har nå et minimum av automatiske gjerder:
 Det finnes fortsatt ikke full Electron E2E eller UI-smoke for alle arbeidsflyter. Det er neste nivå, ikke ferdig arbeid.
 
 ## Prosjektformat
-Prosjektet lagres som en lokal SQLite-database med `.docudoc`-endelse.
+Prosjektet lagres som en lokal SQLite-database med `.narralab` som standardendelse, og åpner fortsatt eldre `.docudoc`-prosjekter.
 
 Dette betyr:
 - `Save As` kopierer den underliggende databasen
 - migreringer skjer ved åpning
 - import/export JSON er et eget snapshot-spor, ikke primær lagringsmotor
+- opptaksloggimport er et eget Excel-spor for append-only sceneinnlesing
 
 ## Viktige invariants
 - `board_items.position` skal være sekvensiell per board

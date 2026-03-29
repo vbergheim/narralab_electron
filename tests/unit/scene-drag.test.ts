@@ -27,7 +27,7 @@ describe('scene drag payloads', () => {
 
   it('falls back to text payloads', () => {
     const dataTransfer = new DataTransferMock() as unknown as DataTransfer
-    ;(dataTransfer as unknown as DataTransferMock).setData('text/plain', 'docudoc-scenes:["scene-a","scene-b"]')
+    ;(dataTransfer as unknown as DataTransferMock).setData('text/plain', 'narralab-scenes:["scene-a","scene-b"]')
 
     expect(readSceneDragData(dataTransfer)).toEqual(['scene-a', 'scene-b'])
   })

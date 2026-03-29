@@ -1,6 +1,6 @@
-export const SCENE_DRAG_IDS_MIME = 'application/x-docudoc-scenes'
-export const SCENE_DRAG_ID_MIME = 'application/x-docudoc-scene'
-const SCENE_DRAG_TEXT_PREFIX = 'docudoc-scenes:'
+export const SCENE_DRAG_IDS_MIME = 'application/x-narralab-scenes'
+export const SCENE_DRAG_ID_MIME = 'application/x-narralab-scene'
+const SCENE_DRAG_TEXT_PREFIX = 'narralab-scenes:'
 
 export function writeSceneDragData(dataTransfer: DataTransfer, sceneIds: string[]) {
   const normalized = sceneIds.filter((value) => typeof value === 'string' && value.trim().length > 0)

@@ -8,8 +8,8 @@ import { BoardRepository } from '../../electron/main/db/repositories/board-repos
 import { SceneRepository } from '../../electron/main/db/repositories/scene-repository'
 
 export function createTestDatabase() {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'docudoc-test-'))
-  const filePath = path.join(tempDir, 'project.docudoc')
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'narralab-test-'))
+  const filePath = path.join(tempDir, 'project.narralab')
   const db = openProjectDatabase(filePath)
 
   return {

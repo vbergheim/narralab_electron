@@ -312,7 +312,7 @@ function AiSettingsPanel({
 
   return (
     <Panel className="min-h-0 overflow-y-auto overscroll-contain p-5">
-      <Header title="AI Consultant" subtitle="Provider, model defaults and prompt behavior.">
+      <Header title="AI Settings" subtitle="Provider, model defaults, API keys and response behavior.">
         <Button
           variant="accent"
           size="sm"

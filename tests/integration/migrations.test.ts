@@ -9,8 +9,8 @@ import { runMigrations } from '../../electron/main/db/migrations'
 
 describe('runMigrations', () => {
   it('repairs archive item foreign keys that still reference archive_folders_legacy', () => {
-    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'docudoc-migrations-'))
-    const filePath = path.join(tempDir, 'legacy.docudoc')
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'narralab-migrations-'))
+    const filePath = path.join(tempDir, 'legacy.narralab')
     const db = new Database(filePath)
 
     try {

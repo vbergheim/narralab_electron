@@ -7,6 +7,7 @@ import {
   Folder,
   FolderPlus,
   GripVertical,
+  LayoutGrid,
   PanelRightOpen,
   Plus,
   Trash2,
@@ -18,10 +19,11 @@ import { Panel } from '@/components/ui/panel'
 import { SceneCard } from '@/components/cards/scene-card'
 import { Button } from '@/components/ui/button'
 import { ContextMenu, type ContextMenuItem } from '@/components/ui/context-menu'
-import { InlineNameEditor, InlineTextareaEditor } from '@/components/ui/inline-name-editor'
+import { InlineEditScope, InlineNameEditor, InlineTextareaEditor } from '@/components/ui/inline-name-editor'
 import { KeyRatingButton } from '@/components/ui/key-rating-button'
 import { usePersistedStringArray } from '@/hooks/use-persisted-string-array'
 import { sceneColors } from '@/lib/constants'
+import { comparePathDepthDesc, computeListSelection, ensureContextSelection } from '@/lib/selection'
 import { readSceneDragData, writeSceneDragData } from '@/lib/scene-drag'
 import type { Board } from '@/types/board'
 import { isSceneBoardItem } from '@/types/board'
@@ -55,6 +57,7 @@ type Props = {
   onDelete(sceneId: string): void
   onDeleteSelected(): void
   onAdd(sceneId: string, afterItemId?: string | null): void
+  embedded?: boolean
 }
 
 export function SceneBankView({
@@ -83,6 +86,7 @@ export function SceneBankView({
   onDelete,
   onDeleteSelected,
   onAdd,
+  embedded = false,
 }: Props) {
   const boardSceneIds = useMemo(
     () => new Set(board?.items.filter(isSceneBoardItem).map((item) => item.sceneId) ?? []),
@@ -93,7 +97,7 @@ export function SceneBankView({
   const sceneIndexById = useMemo(() => new Map(scenes.map((scene, index) => [scene.id, index])), [scenes])
   const [menuState, setMenuState] = useState<{ sceneId: string; x: number; y: number } | null>(null)
   const [folderMenuState, setFolderMenuState] = useState<{ folderPath: string; color: SceneFolder['color']; x: number; y: number } | null>(null)
-  const [collapsedFolders, setCollapsedFolders] = usePersistedStringArray('docudoc:collapsed:scene-folders')
+  const [collapsedFolders, setCollapsedFolders] = usePersistedStringArray('narralab:collapsed:scene-folders')
   const [folderFormOpen, setFolderFormOpen] = useState(false)
   const [folderDraft, setFolderDraft] = useState('')
   const [editingFolderName, setEditingFolderName] = useState<string | null>(null)
@@ -102,8 +106,15 @@ export function SceneBankView({
   const [dragOverFolderPath, setDragOverFolderPath] = useState<string | null>(null)
   const [dragOverSceneId, setDragOverSceneId] = useState<string | null>(null)
   const [draggedFolderPath, setDraggedFolderPath] = useState<string | null>(null)
+  const [selectedFolderPaths, setSelectedFolderPaths] = useState<string[]>([])
+  const folderSelectionAnchorRef = useRef<number | null>(null)
 
   const groupedScenes = useMemo(() => groupScenes(scenes, folders), [scenes, folders])
+  const folderPathOrder = useMemo(() => groupedScenes.groups.map((group) => group.folderPath), [groupedScenes.groups])
+  const visibleSelectedFolderPaths = useMemo(
+    () => selectedFolderPaths.filter((path) => folderPathOrder.includes(path)),
+    [folderPathOrder, selectedFolderPaths],
+  )
 
   const menuItems = useMemo<ContextMenuItem[]>(() => {
     if (!menuState) return []
@@ -163,27 +174,51 @@ export function SceneBankView({
 
   const folderMenuItems = useMemo<ContextMenuItem[]>(() => {
     if (!folderMenuState) return []
+    const targetFolderPaths = visibleSelectedFolderPaths.includes(folderMenuState.folderPath)
+      ? visibleSelectedFolderPaths
+      : [folderMenuState.folderPath]
+    const orderedFolderPaths = [...targetFolderPaths].sort(comparePathDepthDesc)
 
     return [
-      {
+      ...(targetFolderPaths.length === 1
+        ? [{
         label: 'Rename Folder',
         onSelect: () => {
           setEditingFolderName(folderMenuState.folderPath)
           setEditingFolderDraft(folderMenuState.folderPath.split('/').at(-1) ?? folderMenuState.folderPath)
           setEditingFolderColor(folderMenuState.color)
         },
+      }]
+        : []),
+      {
+        label: 'Expand All',
+        onSelect: () => {
+          setCollapsedFolders((current) =>
+            current.filter(
+              (entry) =>
+                !targetFolderPaths.some(
+                  (folderPath) => entry === folderPath || entry.startsWith(`${folderPath}/`),
+                ),
+            ),
+          )
+        },
       },
       {
-        label: 'Delete Folder',
+        label: targetFolderPaths.length > 1 ? 'Delete Selection' : 'Delete Folder',
         danger: true,
         onSelect: () => {
-          if (window.confirm(`Delete folder "${folderMenuState.folderPath}"? Scenes will be moved to root.`)) {
-            onDeleteFolder(folderMenuState.folderPath)
+          const confirmText =
+            targetFolderPaths.length > 1
+              ? `Delete ${targetFolderPaths.length} selected folders? Scenes will be moved to root.`
+              : `Delete folder "${folderMenuState.folderPath}"? Scenes will be moved to root.`
+          if (window.confirm(confirmText)) {
+            orderedFolderPaths.forEach((folderPath) => onDeleteFolder(folderPath))
+            setSelectedFolderPaths([])
           }
         },
       },
     ]
-  }, [folderMenuState, onDeleteFolder])
+  }, [folderMenuState, onDeleteFolder, setCollapsedFolders, visibleSelectedFolderPaths])
 
   const submitFolderEdit = () => {
     if (!editingFolderName) return
@@ -219,86 +254,106 @@ export function SceneBankView({
     onMoveToFolder(sceneIds, folder)
   }
 
-  return (
-    <Panel className="h-full overflow-hidden">
-      <div className="border-b border-border/90 px-4 py-4">
-        <div className="flex min-w-0 items-start justify-between gap-3">
+  const handleFolderSelection = (event: MouseEvent<HTMLElement>, folderPath: string) => {
+    onClearSelection()
+    const { nextSelectedIds, nextAnchorIndex } = computeListSelection({
+      id: folderPath,
+      orderedIds: folderPathOrder,
+      selectedIds: visibleSelectedFolderPaths,
+      anchorIndex: folderSelectionAnchorRef.current,
+      shiftKey: event.shiftKey,
+      metaKey: event.metaKey,
+      ctrlKey: event.ctrlKey,
+    })
+    folderSelectionAnchorRef.current = nextAnchorIndex
+    setSelectedFolderPaths(nextSelectedIds)
+  }
+
+  const toolbar = (
+    <div className={cn(embedded ? 'border-b border-border/80 pb-3' : 'border-b border-border/90 px-4 py-4')}>
+      {!embedded ? (
+        <div className="mb-3 flex min-w-0 items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="font-display text-sm font-semibold uppercase tracking-[0.16em] text-foreground">
-              Scene Bank
+            <div className="flex items-center gap-2 font-display text-sm font-semibold uppercase tracking-[0.16em] text-foreground">
+              <LayoutGrid className="h-4 w-4 text-accent" />
+              <span>Scene Bank</span>
             </div>
             <div className="mt-1 hidden truncate text-sm text-muted xl:block">
               Browse the full scene pool and add candidates to the active outline.
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-1 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            <Button variant="ghost" size="sm" onClick={onCreateScene} title="New Scene" aria-label="New Scene">
-              <Plus className="h-4 w-4" />
-              <span className="hidden xl:inline">New Scene</span>
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setFolderFormOpen((current) => !current)}
-              title="New Folder"
-              aria-label="New Folder"
-            >
-              <FolderPlus className="h-4 w-4" />
-              <span className="hidden xl:inline">Folder</span>
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onSelectAllVisible(scenes.map((scene) => scene.id))}
-              title="Select All"
-              aria-label="Select All"
-            >
-              <Check className="h-4 w-4" />
-              <span className="hidden xl:inline">Select All</span>
-            </Button>
-            {selectedSceneIds.length > 0 ? (
-              <>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    if (window.confirm(`Delete ${selectedSceneIds.length} selected scenes? This removes them from every board.`)) {
-                      onDeleteSelected()
-                    }
-                  }}
-                  title="Delete Selected"
-                  aria-label="Delete Selected"
-                >
-                  <Trash2 className="h-4 w-4" />
-                  <span className="hidden xl:inline">Delete Selected</span>
-                </Button>
-                <Button variant="ghost" size="sm" onClick={onClearSelection} title="Clear Selection" aria-label="Clear Selection">
-                  <X className="h-4 w-4" />
-                  <span className="hidden xl:inline">Clear</span>
-                </Button>
-              </>
-            ) : null}
-          </div>
         </div>
-        {folderFormOpen ? (
-          <div className="mt-3 px-1">
-            <InlineNameEditor
-              autoFocus
-              value={folderDraft}
-              placeholder="New scene folder"
-              onChange={setFolderDraft}
-              onSubmit={submitNewFolder}
-              onCancel={() => {
-                setFolderDraft('')
-                setFolderFormOpen(false)
+      ) : null}
+      <div className="flex shrink-0 items-center gap-1 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <Button variant="ghost" size="sm" onClick={onCreateScene} title="New Scene" aria-label="New Scene">
+          <Plus className="h-4 w-4" />
+          <span className="hidden xl:inline">New Scene</span>
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setFolderFormOpen((current) => !current)}
+          title="New Folder"
+          aria-label="New Folder"
+        >
+          <FolderPlus className="h-4 w-4" />
+          <span className="hidden xl:inline">Folder</span>
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => onSelectAllVisible(scenes.map((scene) => scene.id))}
+          title="Select All"
+          aria-label="Select All"
+        >
+          <Check className="h-4 w-4" />
+          <span className="hidden xl:inline">Select All</span>
+        </Button>
+        {selectedSceneIds.length > 0 ? (
+          <>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                if (window.confirm(`Delete ${selectedSceneIds.length} selected scenes? This removes them from every board.`)) {
+                  onDeleteSelected()
+                }
               }}
-            />
-          </div>
+              title="Delete Selected"
+              aria-label="Delete Selected"
+            >
+              <Trash2 className="h-4 w-4" />
+              <span className="hidden xl:inline">Delete Selected</span>
+            </Button>
+            <Button variant="ghost" size="sm" onClick={onClearSelection} title="Clear Selection" aria-label="Clear Selection">
+              <X className="h-4 w-4" />
+              <span className="hidden xl:inline">Clear</span>
+            </Button>
+          </>
         ) : null}
       </div>
+      {folderFormOpen ? (
+        <div className="mt-3 px-1">
+          <InlineNameEditor
+            autoFocus
+            value={folderDraft}
+            placeholder="New scene folder"
+            onChange={setFolderDraft}
+            onSubmit={submitNewFolder}
+            onCancel={() => {
+              setFolderDraft('')
+              setFolderFormOpen(false)
+            }}
+          />
+        </div>
+      ) : null}
+    </div>
+  )
+
+  const content = (
       <div
         className={cn(
-          'h-[calc(100%-72px)] overflow-y-auto overscroll-contain p-4',
+          embedded ? 'min-h-0 flex-1 overflow-y-auto overscroll-contain pt-3' : 'min-h-0 flex-1 overflow-y-auto overscroll-contain p-4',
           density === 'detailed' ? '' : '',
         )}
         onDragOver={(event) => event.preventDefault()}
@@ -326,6 +381,7 @@ export function SceneBankView({
                 className={cn(
                   'rounded-xl border border-border/50 bg-panelMuted/20 px-2 py-1.5 transition',
                   dragOverFolderPath === group.folderPath && 'border-accent/60 bg-accent/10',
+                  visibleSelectedFolderPaths.includes(group.folderPath) && 'border-accent/60 bg-accent/10 ring-2 ring-accent/15',
                   hasCollapsedAncestor(group.folderPath, collapsedFolders) && 'hidden',
                 )}
                 onDragEnter={() => setDragOverFolderPath(group.folderPath)}
@@ -336,6 +392,15 @@ export function SceneBankView({
                 }}
                 onDragOver={(event) => event.preventDefault()}
                 onDrop={(event) => handleDropToFolder(event, group.folderPath)}
+                onClick={(event) => handleFolderSelection(event, group.folderPath)}
+                onContextMenu={(event) => {
+                  event.preventDefault()
+                  onClearSelection()
+                  const nextSelection = ensureContextSelection(group.folderPath, visibleSelectedFolderPaths, folderPathOrder)
+                  setSelectedFolderPaths(nextSelection)
+                  folderSelectionAnchorRef.current = folderPathOrder.indexOf(group.folderPath)
+                  setFolderMenuState({ folderPath: group.folderPath, color: group.color, x: event.clientX, y: event.clientY })
+                }}
               >
                 <div
                   draggable
@@ -346,20 +411,17 @@ export function SceneBankView({
                 >
                   <div className="flex min-w-0 flex-1 items-center gap-1.5">
                     <button
-                      type="button"
-                      className="flex shrink-0 items-center rounded-md px-1 py-0.5 transition hover:bg-panelMuted hover:text-foreground"
-                      onContextMenu={(event) => {
-                        event.preventDefault()
-                        setFolderMenuState({ folderPath: group.folderPath, color: group.color, x: event.clientX, y: event.clientY })
-                      }}
-                      onClick={() =>
-                        setCollapsedFolders((current) =>
-                          current.includes(group.folderPath)
-                            ? current.filter((entry) => entry !== group.folderPath)
-                            : [...current, group.folderPath],
-                        )
-                      }
-                    >
+                    type="button"
+                    className="flex shrink-0 items-center rounded-md px-1 py-0.5 transition hover:bg-panelMuted hover:text-foreground"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      setCollapsedFolders((current) =>
+                        current.includes(group.folderPath)
+                          ? current.filter((entry) => entry !== group.folderPath)
+                          : [...current, group.folderPath],
+                      )
+                    }}
+                  >
                       {collapsedFolders.includes(group.folderPath) ? (
                         <ChevronRight className="h-3.5 w-3.5" />
                       ) : (
@@ -370,22 +432,12 @@ export function SceneBankView({
                     <button
                     type="button"
                     className="min-w-0 rounded-md px-1 py-0.5 text-left transition hover:bg-panelMuted hover:text-foreground"
-                    onContextMenu={(event) => {
-                      event.preventDefault()
-                      setFolderMenuState({ folderPath: group.folderPath, color: group.color, x: event.clientX, y: event.clientY })
-                    }}
-                    onClick={() =>
-                      setCollapsedFolders((current) =>
-                        current.includes(group.folderPath)
-                          ? current.filter((entry) => entry !== group.folderPath)
-                          : [...current, group.folderPath],
-                      )
-                    }
                     onDoubleClick={(event) => {
                       event.preventDefault()
-                        setEditingFolderName(group.folderPath)
-                        setEditingFolderDraft(group.label)
-                        setEditingFolderColor(group.color)
+                      event.stopPropagation()
+                      setEditingFolderName(group.folderPath)
+                      setEditingFolderDraft(group.label)
+                      setEditingFolderColor(group.color)
                     }}
                   >
                       <span className="truncate">{formatFolderLabel(group.label)}</span>
@@ -397,7 +449,14 @@ export function SceneBankView({
                 </div>
 
                 {editingFolderName === group.folderPath ? (
-                  <div data-inline-edit-scope="true" className="space-y-2 px-6 pb-1 pt-1">
+                  <InlineEditScope
+                    className="space-y-2 px-6 pb-1 pt-1"
+                    onSubmit={submitFolderEdit}
+                    onCancel={() => {
+                      setEditingFolderName(null)
+                      setEditingFolderDraft('')
+                    }}
+                  >
                     <InlineNameEditor
                       autoFocus
                       value={editingFolderDraft}
@@ -425,7 +484,7 @@ export function SceneBankView({
                         />
                       ))}
                     </div>
-                  </div>
+                  </InlineEditScope>
                 ) : null}
 
                 <div className={cn('mt-1.5 space-y-2 pl-5', collapsedFolders.includes(group.folderPath) && 'hidden')}>
@@ -535,6 +594,10 @@ export function SceneBankView({
           </div>
         ) : null}
       </div>
+  )
+
+  const menus = (
+    <>
       <ContextMenu
         open={Boolean(menuState)}
         x={menuState?.x ?? 0}
@@ -549,6 +612,24 @@ export function SceneBankView({
         items={folderMenuItems}
         onClose={() => setFolderMenuState(null)}
       />
+    </>
+  )
+
+  if (embedded) {
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        {toolbar}
+        {content}
+        {menus}
+      </div>
+    )
+  }
+
+  return (
+    <Panel className="flex h-full flex-col overflow-hidden">
+      {toolbar}
+      {content}
+      {menus}
     </Panel>
   )
 }
@@ -628,12 +709,12 @@ function SceneBankRow({
         const draggedSceneIds =
           selectedSceneIdSet.has(scene.id) && selectedSceneIds.length > 1 ? selectedSceneIds : [scene.id]
         writeSceneDragData(event.dataTransfer, draggedSceneIds)
-        event.dataTransfer.effectAllowed = 'move'
-        void window.docudoc.windows.setDragSession({ kind: 'scene', sceneIds: draggedSceneIds })
+        event.dataTransfer.effectAllowed = 'copyMove'
+        void window.narralab.windows.setDragSession({ kind: 'scene', sceneIds: draggedSceneIds })
       }}
       onDragEnd={() => {
         window.setTimeout(() => {
-          void window.docudoc.windows.setDragSession(null)
+          void window.narralab.windows.setDragSession(null)
         }, 2000)
       }}
       onDragOver={(event) => {
@@ -829,6 +910,7 @@ function SceneBankInlineEditor({
   onOpenInspector(): void
   actions?: ReactNode
 }) {
+  const synopsisInputRef = useRef<HTMLInputElement | null>(null)
   const accent = sceneColors.find((entry) => entry.value === scene.color)?.hex ?? '#7f8895'
   const cardStyle = {
     borderLeftColor: accent,
@@ -847,23 +929,25 @@ function SceneBankInlineEditor({
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-center gap-3 text-[13px] leading-5">
-          <div data-inline-edit-scope="true" className="flex min-w-0 flex-1 items-center gap-2">
+          <InlineEditScope className="flex min-w-0 flex-1 items-center gap-2" onSubmit={onSave} onCancel={onCancel}>
             <InlineNameEditor
               value={draftTitle}
               onChange={onChangeTitle}
               onSubmit={onSave}
               onCancel={onCancel}
+              onEnterKey={() => synopsisInputRef.current?.focus()}
               className="h-8 min-w-[10rem]"
               autoFocus={true}
             />
             <InlineNameEditor
+              inputRef={synopsisInputRef}
               value={draftSynopsis}
               onChange={onChangeSynopsis}
               onSubmit={onSave}
               onCancel={onCancel}
               className="h-8 min-w-[14rem] flex-1"
             />
-          </div>
+          </InlineEditScope>
           <div className="flex shrink-0 items-center gap-1.5">
             <InlineActionButton label="Open inspector" onClick={onOpenInspector}>
               <PanelRightOpen className="h-4 w-4" />
@@ -888,7 +972,7 @@ function SceneBankInlineEditor({
       onClick={(event) => event.stopPropagation()}
     >
       <div className="flex items-start justify-between gap-3">
-        <div data-inline-edit-scope="true" className="min-w-0 flex-1 space-y-2">
+        <InlineEditScope className="min-w-0 flex-1 space-y-2" onSubmit={onSave} onCancel={onCancel}>
           <InlineNameEditor
             value={draftTitle}
             onChange={onChangeTitle}
@@ -904,7 +988,7 @@ function SceneBankInlineEditor({
             onCancel={onCancel}
             className={cn(density === 'compact' ? 'min-h-[72px]' : 'min-h-[88px]')}
           />
-        </div>
+        </InlineEditScope>
         <div className="flex shrink-0 items-center gap-1.5">
           <InlineActionButton label="Open inspector" onClick={onOpenInspector}>
             <PanelRightOpen className="h-4 w-4" />

@@ -1,0 +1,5 @@
+beat_id,scene_id,sort_order,text
+beat_arrival_1,scene_arrival_station,0,Train doors open and Anna steps onto the platform.
+beat_arrival_2,scene_arrival_station,1,"She searches the crowd, unsure whether anyone will meet her."
+beat_kitchen_1,scene_kitchen_interview,0,Anna avoids eye contact before answering the first question.
+beat_kitchen_2,scene_kitchen_interview,1,"She admits that returning home feels like failure and relief at the same time."

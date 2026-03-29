@@ -73,6 +73,19 @@ export type WindowDragSession =
 
 export type BoardScriptExportFormat = 'txt-formatted' | 'txt-plain' | 'md' | 'html-screenplay' | 'doc-screenplay'
 
+export type ShootLogImportError = {
+  sheet: string
+  row: number
+  message: string
+}
+
+export type ShootLogImportResult = {
+  addedSceneCount: number
+  addedBeatCount: number
+  skippedRowCount: number
+  errors: ShootLogImportError[]
+}
+
 export type ProjectSnapshotV1 = {
   schemaVersion: 1
   exportedAt: string
@@ -150,7 +163,7 @@ export type ProjectSnapshot =
   | ProjectSnapshotV5
   | ProjectSnapshotV6
 
-export interface DocuDocApi {
+export interface NarraLabApi {
   project: {
     create(path?: string | null): Promise<ProjectMeta | null>
     open(path?: string | null): Promise<ProjectMeta | null>
@@ -158,6 +171,7 @@ export interface DocuDocApi {
     exportJson(path?: string | null): Promise<string | null>
     exportBoardScript(boardId: string, path?: string | null, format?: BoardScriptExportFormat): Promise<string | null>
     importJson(path?: string | null): Promise<ProjectMeta | null>
+    importShootLog(path?: string | null): Promise<ShootLogImportResult | null>
     getMeta(): Promise<ProjectMeta | null>
     getSettings(): Promise<ProjectSettings>
     updateSettings(input: ProjectSettingsUpdateInput): Promise<ProjectSettings>

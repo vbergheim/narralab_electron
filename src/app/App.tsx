@@ -56,7 +56,7 @@ export function App() {
   const searchRef = useRef<HTMLInputElement | null>(null)
   const viewButtonRef = useRef<HTMLButtonElement | null>(null)
   const [leftCollapsed, setLeftCollapsed] = useState(false)
-  const [rightCollapsed, setRightCollapsed] = useState(false)
+  const [rightCollapsed, setRightCollapsed] = useState(true)
   const [consultantDockOpen, setConsultantDockOpen] = useState(false)
   const [sceneDensity, setSceneDensity] = useState<SceneDensity>('compact')
   const [boardViewMode, setBoardViewMode] = useState<BoardViewMode>('outline')
@@ -111,6 +111,7 @@ export function App() {
     openProject,
     saveProjectAs,
     importJson,
+    importShootLog,
     exportJson,
     exportActiveBoardScript,
     createScene,
@@ -169,8 +170,8 @@ export function App() {
   useEffect(() => {
     const loadWindowState = async () => {
       const [context, layouts] = await Promise.all([
-        window.docudoc.windows.getContext(),
-        window.docudoc.windows.listLayouts(),
+        window.narralab.windows.getContext(),
+        window.narralab.windows.listLayouts(),
       ])
       setWindowContext(context)
       setSavedLayouts(layouts)
@@ -182,10 +183,10 @@ export function App() {
 
     void loadWindowState()
 
-    const dispose = window.docudoc.windows.subscribe((event) => {
+    const dispose = window.narralab.windows.subscribe((event) => {
       if (event.type === 'project-changed') {
         void initialize()
-        void window.docudoc.windows.listLayouts().then(setSavedLayouts)
+        void window.narralab.windows.listLayouts().then(setSavedLayouts)
         return
       }
 
@@ -244,7 +245,7 @@ export function App() {
       return
     }
 
-    void window.docudoc.windows.updateContext({
+    void window.narralab.windows.updateContext({
       boardId: boardIdForWindow,
       viewMode: normalizeBoardViewMode(boardViewMode),
       sceneDensity,
@@ -384,7 +385,7 @@ export function App() {
   const multiSelectedSceneCount = workspaceMode === 'bank' ? selectedSceneIds.length : 0
   const workspaceSummary =
     workspaceMode === 'settings'
-      ? `${appSettings.ai.provider === 'openai' ? 'OpenAI' : 'Gemini'} consultant settings`
+      ? 'App, project and AI preferences'
       : workspaceMode === 'consultant'
         ? `${consultantMessages.length} messages in current conversation`
       : workspaceMode === 'archive'
@@ -408,7 +409,7 @@ export function App() {
     [],
   )
   const effectiveBoardViewMode = normalizeBoardViewMode(boardViewMode)
-  const projectTitle = projectSettings?.title?.trim() || projectMeta?.name || 'DocuDoc'
+  const projectTitle = projectSettings?.title?.trim() || projectMeta?.name || 'NarraLab'
 
   const addSceneToCurrentBoard = async (
     sceneId: string,
@@ -427,21 +428,21 @@ export function App() {
     if (!name?.trim()) {
       return
     }
-    const layout = await window.docudoc.windows.saveLayout(name.trim())
+    const layout = await window.narralab.windows.saveLayout(name.trim())
     setSavedLayouts((current) => [...current.filter((entry) => entry.id !== layout.id), layout])
   }
 
   const applyLayout = async (layoutId: string) => {
-    await window.docudoc.windows.applyLayout(layoutId)
-    setSavedLayouts(await window.docudoc.windows.listLayouts())
+    await window.narralab.windows.applyLayout(layoutId)
+    setSavedLayouts(await window.narralab.windows.listLayouts())
   }
 
   const deleteLayout = async (layoutId: string) => {
-    setSavedLayouts(await window.docudoc.windows.deleteLayout(layoutId))
+    setSavedLayouts(await window.narralab.windows.deleteLayout(layoutId))
   }
 
   const openWorkspaceWindow = async (workspace: WindowWorkspace) => {
-    await window.docudoc.windows.openWorkspace(workspace, {
+    await window.narralab.windows.openWorkspace(workspace, {
       boardId: activeBoardId,
       viewMode: effectiveBoardViewMode,
       sceneDensity,
@@ -566,15 +567,28 @@ export function App() {
               viewMode={effectiveBoardViewMode}
               availableBlockKinds={boardBlockKindsForProject}
               immersive={outlineImmersive}
+              defaultBankCollapsed
               onToggleImmersive={() => void toggleOutlineImmersive()}
               onChangeViewMode={(mode) => setBoardViewMode(normalizeBoardViewMode(mode))}
               selectedSceneId={selectedSceneId}
+              selectedSceneIds={selectedSceneIds}
               selectedBoardItemId={selectedBoardItemId}
               onSelect={(sceneId, boardItemId) => selectScene(sceneId, boardItemId)}
               onOpenInspector={openInspector}
+              onCreateScene={() => void createScene()}
+              onToggleSceneSelection={toggleSceneSelection}
+              onSetSceneSelection={setSceneSelection}
+              onClearSceneSelection={clearSceneSelection}
+              onCreateSceneFolder={(name, parentPath) => void createSceneFolder(name, parentPath)}
+              onUpdateSceneFolder={(currentPath, input) => void updateSceneFolder(currentPath, input)}
+              onDeleteSceneFolder={(currentPath) => void deleteSceneFolder(currentPath)}
+              onMoveScenesToFolder={(sceneIds, folder) => void moveScenesToFolder(sceneIds, folder)}
+              onReorderScenes={(sceneIds) => void reorderScenes(sceneIds)}
               onToggleKeyScene={toggleKeyScene}
               onDuplicateScene={(sceneId, afterItemId) =>
                 void duplicateScene(sceneId, { addToBoardAfterItemId: afterItemId ?? null })}
+              onDeleteScene={(sceneId) => void deleteScene(sceneId)}
+              onDeleteSelectedScenes={() => void deleteScenes(selectedSceneIds)}
               onAddScene={(sceneId, afterItemId, boardPosition) => void addSceneToCurrentBoard(sceneId, afterItemId, boardPosition)}
               onAddBlock={(kind, afterItemId) => void addBlockToActiveBoard(kind, afterItemId)}
               onAddTemplate={(templateId, afterItemId) => void addBlockTemplateToActiveBoard(templateId, afterItemId)}
@@ -663,6 +677,7 @@ export function App() {
         onOpenProject={() => void openProject()}
         onSaveAs={() => void saveProjectAs()}
         onImportJson={() => void importJson()}
+        onImportShootLog={() => void importShootLog()}
         onExportJson={() => void exportJson()}
         onExportScript={(format) => void exportActiveBoardScript(format)}
         onOpenSettings={() => setWorkspaceMode('settings')}
@@ -823,11 +838,23 @@ export function App() {
                   availableBlockKinds={boardBlockKindsForProject}
                   onChangeViewMode={(mode) => setBoardViewMode(normalizeBoardViewMode(mode))}
                   selectedSceneId={selectedSceneId}
+                  selectedSceneIds={selectedSceneIds}
                   selectedBoardItemId={selectedBoardItemId}
                   onSelect={(sceneId, boardItemId) => selectScene(sceneId, boardItemId)}
                   onOpenInspector={openInspector}
+                  onCreateScene={() => void createScene()}
+                  onToggleSceneSelection={toggleSceneSelection}
+                  onSetSceneSelection={setSceneSelection}
+                  onClearSceneSelection={clearSceneSelection}
+                  onCreateSceneFolder={(name, parentPath) => void createSceneFolder(name, parentPath)}
+                  onUpdateSceneFolder={(currentPath, input) => void updateSceneFolder(currentPath, input)}
+                  onDeleteSceneFolder={(currentPath) => void deleteSceneFolder(currentPath)}
+                  onMoveScenesToFolder={(sceneIds, folder) => void moveScenesToFolder(sceneIds, folder)}
+                  onReorderScenes={(sceneIds) => void reorderScenes(sceneIds)}
                   onToggleKeyScene={toggleKeyScene}
                   onDuplicateScene={(sceneId, afterItemId) => void duplicateScene(sceneId, { addToBoardAfterItemId: afterItemId ?? null })}
+                  onDeleteScene={(sceneId) => void deleteScene(sceneId)}
+                  onDeleteSelectedScenes={() => void deleteScenes(selectedSceneIds)}
                   onAddScene={(sceneId, afterItemId, boardPosition) => void addSceneToCurrentBoard(sceneId, afterItemId, boardPosition)}
                   onAddBlock={(kind, afterItemId) => void addBlockToActiveBoard(kind, afterItemId)}
                   onAddTemplate={(templateId, afterItemId) => void addBlockTemplateToActiveBoard(templateId, afterItemId)}

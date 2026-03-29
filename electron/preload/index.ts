@@ -1,8 +1,8 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 
-import type { DocuDocApi } from '@/types/project'
+import type { NarraLabApi } from '@/types/project'
 
-let currentDragSession: DocuDocApi['windows'] extends { getDragSession(): infer T } ? T : null = null
+let currentDragSession: NarraLabApi['windows'] extends { getDragSession(): infer T } ? T : null = null
 
 ipcRenderer.on('windows:event', (_event, payload) => {
   if (payload?.type === 'drag-session') {
@@ -10,7 +10,7 @@ ipcRenderer.on('windows:event', (_event, payload) => {
   }
 })
 
-const api: DocuDocApi = {
+const api: NarraLabApi = {
   project: {
     create: (path) => ipcRenderer.invoke('project:create', path),
     open: (path) => ipcRenderer.invoke('project:open', path),
@@ -18,6 +18,7 @@ const api: DocuDocApi = {
     exportJson: (path) => ipcRenderer.invoke('project:exportJson', path),
     exportBoardScript: (boardId, path, format) => ipcRenderer.invoke('project:exportBoardScript', boardId, path, format),
     importJson: (path) => ipcRenderer.invoke('project:importJson', path),
+    importShootLog: (path) => ipcRenderer.invoke('project:importShootLog', path),
     getMeta: () => ipcRenderer.invoke('project:getMeta'),
     getSettings: () => ipcRenderer.invoke('project:getSettings'),
     updateSettings: (input) => ipcRenderer.invoke('project:updateSettings', input),
@@ -136,4 +137,4 @@ const api: DocuDocApi = {
   },
 }
 
-contextBridge.exposeInMainWorld('docudoc', api)
+contextBridge.exposeInMainWorld('narralab', api)

@@ -30,5 +30,11 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
+    rollupOptions: {
+      input: {
+        app: path.resolve(__dirname, 'index.html'),
+        landing: path.resolve(__dirname, 'landing.html'),
+      },
+    },
   },
 })

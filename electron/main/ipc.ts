@@ -68,6 +68,13 @@ export function registerIpc(
     windowManager.notifyProjectChanged()
     return result
   })
+  ipcMain.handle('project:importShootLog', async (_, requestedPath?: string | null) => {
+    const result = await projectService.importShootLog(requestedPath)
+    if (result && result.errors.length === 0 && (result.addedSceneCount > 0 || result.addedBeatCount > 0)) {
+      windowManager.notifyProjectChanged()
+    }
+    return result
+  })
   ipcMain.handle('project:getMeta', () => projectService.getMeta())
   ipcMain.handle('project:getSettings', () => projectService.getProjectSettings())
   ipcMain.handle('project:updateSettings', (_, input) => {

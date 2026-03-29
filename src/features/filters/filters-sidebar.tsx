@@ -1,13 +1,14 @@
 import type { MouseEvent, ReactNode } from 'react'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { ChevronDown, ChevronRight, CircleOff, Filter, Folder, FolderPlus, Layers3, PanelLeftClose, PanelRightOpen, Plus, SearchX, Star } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { ContextMenu, type ContextMenuItem } from '@/components/ui/context-menu'
-import { InlineNameEditor } from '@/components/ui/inline-name-editor'
+import { InlineEditScope, InlineNameEditor } from '@/components/ui/inline-name-editor'
 import { usePersistedStringArray } from '@/hooks/use-persisted-string-array'
 import { cn } from '@/lib/cn'
 import { sceneColors, sceneStatuses } from '@/lib/constants'
+import { comparePathDepthDesc, computeListSelection, ensureContextSelection } from '@/lib/selection'
 import { useFilterStore } from '@/stores/filter-store'
 import type { Board, BoardFolder } from '@/types/board'
 import type { Scene } from '@/types/scene'
@@ -74,7 +75,7 @@ export function FiltersSidebar({
   const [folderMenuState, setFolderMenuState] = useState<{ folderPath: string; color: BoardFolder['color']; x: number; y: number } | null>(null)
   const [draggedBoardId, setDraggedBoardId] = useState<string | null>(null)
   const [draggedFolderPath, setDraggedFolderPath] = useState<string | null>(null)
-  const [collapsedFolders, setCollapsedFolders] = usePersistedStringArray('docudoc:collapsed:board-folders')
+  const [collapsedFolders, setCollapsedFolders] = usePersistedStringArray('narralab:collapsed:board-folders')
   const [folderDraft, setFolderDraft] = useState('')
   const [folderFormOpen, setFolderFormOpen] = useState(false)
   const [editingFolderName, setEditingFolderName] = useState<string | null>(null)
@@ -82,6 +83,16 @@ export function FiltersSidebar({
   const [editingFolderColor, setEditingFolderColor] = useState<BoardFolder['color']>('slate')
   const [editingBoardId, setEditingBoardId] = useState<string | null>(null)
   const [editingBoardDraft, setEditingBoardDraft] = useState('')
+  const [selectedFolderPaths, setSelectedFolderPaths] = useState<string[]>([])
+  const folderSelectionAnchorRef = useRef<number | null>(null)
+  const folderPathOrder = useMemo(
+    () => boardGroups.filter((group) => Boolean(group.folderPath)).map((group) => group.folderPath),
+    [boardGroups],
+  )
+  const visibleSelectedFolderPaths = useMemo(
+    () => selectedFolderPaths.filter((path) => folderPathOrder.includes(path)),
+    [folderPathOrder, selectedFolderPaths],
+  )
   const boardMenuItems = useMemo<ContextMenuItem[]>(() => {
     if (!menuState) return []
     const board = boards.find((entry) => entry.id === menuState.boardId)
@@ -121,27 +132,51 @@ export function FiltersSidebar({
   }, [boards, menuState, onDeleteBoard, onDuplicateBoard, onOpenBoardInspector, onReorderBoards])
   const folderMenuItems = useMemo<ContextMenuItem[]>(() => {
     if (!folderMenuState) return []
+    const targetFolderPaths = visibleSelectedFolderPaths.includes(folderMenuState.folderPath)
+      ? visibleSelectedFolderPaths
+      : [folderMenuState.folderPath]
+    const orderedFolderPaths = [...targetFolderPaths].sort(comparePathDepthDesc)
 
     return [
-      {
+      ...(targetFolderPaths.length === 1
+        ? [{
         label: 'Rename Folder',
         onSelect: () => {
           setEditingFolderName(folderMenuState.folderPath)
           setEditingFolderDraft(folderMenuState.folderPath.split('/').at(-1) ?? folderMenuState.folderPath)
           setEditingFolderColor(folderMenuState.color)
         },
+      }]
+        : []),
+      {
+        label: 'Expand All',
+        onSelect: () => {
+          setCollapsedFolders((current) =>
+            current.filter(
+              (entry) =>
+                !targetFolderPaths.some(
+                  (folderPath) => entry === folderPath || entry.startsWith(`${folderPath}/`),
+                ),
+            ),
+          )
+        },
       },
       {
-        label: 'Delete Folder',
+        label: targetFolderPaths.length > 1 ? 'Delete Selection' : 'Delete Folder',
         danger: true,
         onSelect: () => {
-          if (window.confirm(`Delete folder "${folderMenuState.folderPath}"? Boards will be moved to the root list.`)) {
-            onDeleteFolder(folderMenuState.folderPath)
+          const confirmText =
+            targetFolderPaths.length > 1
+              ? `Delete ${targetFolderPaths.length} selected folders? Boards will be moved to the root list.`
+              : `Delete folder "${folderMenuState.folderPath}"? Boards will be moved to the root list.`
+          if (window.confirm(confirmText)) {
+            orderedFolderPaths.forEach((folderPath) => onDeleteFolder(folderPath))
+            setSelectedFolderPaths([])
           }
         },
       },
     ]
-  }, [folderMenuState, onDeleteFolder])
+  }, [folderMenuState, onDeleteFolder, setCollapsedFolders, visibleSelectedFolderPaths])
 
   const submitFolderEdit = () => {
     if (!editingFolderName) return
@@ -158,6 +193,20 @@ export function FiltersSidebar({
     onCreateFolder(name, null)
     setFolderDraft('')
     setFolderFormOpen(false)
+  }
+
+  const handleFolderSelection = (event: MouseEvent<HTMLElement>, folderPath: string) => {
+    const { nextSelectedIds, nextAnchorIndex } = computeListSelection({
+      id: folderPath,
+      orderedIds: folderPathOrder,
+      selectedIds: visibleSelectedFolderPaths,
+      anchorIndex: folderSelectionAnchorRef.current,
+      shiftKey: event.shiftKey,
+      metaKey: event.metaKey,
+      ctrlKey: event.ctrlKey,
+    })
+    folderSelectionAnchorRef.current = nextAnchorIndex
+    setSelectedFolderPaths(nextSelectedIds)
   }
 
   return (
@@ -252,26 +301,34 @@ export function FiltersSidebar({
             {group.folderPath ? (
               <div
                 draggable
-                className="flex min-h-8 items-center justify-between gap-2 px-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted"
+                className={cn(
+                  'flex min-h-8 items-center justify-between gap-2 rounded-lg px-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted transition',
+                  visibleSelectedFolderPaths.includes(group.folderPath) && 'bg-accent/10 text-foreground ring-1 ring-accent/35',
+                )}
                 style={{ paddingLeft: `${group.depth * 14 + 4}px` }}
                 onDragStart={() => setDraggedFolderPath(group.folderPath)}
                 onDragEnd={() => setDraggedFolderPath(null)}
+                onClick={(event) => handleFolderSelection(event, group.folderPath)}
+                onContextMenu={(event) => {
+                  event.preventDefault()
+                  const nextSelection = ensureContextSelection(group.folderPath, visibleSelectedFolderPaths, folderPathOrder)
+                  setSelectedFolderPaths(nextSelection)
+                  folderSelectionAnchorRef.current = folderPathOrder.indexOf(group.folderPath)
+                  setFolderMenuState({ folderPath: group.folderPath, color: group.color, x: event.clientX, y: event.clientY })
+                }}
               >
                 <div className="flex min-w-0 flex-1 items-center gap-1.5">
                   <button
                     type="button"
                     className="flex shrink-0 items-center rounded-md px-1 py-0.5 transition hover:bg-panelMuted hover:text-foreground"
-                    onContextMenu={(event) => {
-                      event.preventDefault()
-                      setFolderMenuState({ folderPath: group.folderPath, color: group.color, x: event.clientX, y: event.clientY })
-                    }}
-                    onClick={() =>
+                    onClick={(event) => {
+                      event.stopPropagation()
                       setCollapsedFolders((current) =>
                         current.includes(group.folderPath)
                           ? current.filter((entry) => entry !== group.folderPath)
                           : [...current, group.folderPath],
                       )
-                    }
+                    }}
                   >
                     {collapsedFolders.includes(group.folderPath) ? (
                       <ChevronRight className="h-3.5 w-3.5" />
@@ -283,19 +340,9 @@ export function FiltersSidebar({
                   <button
                     type="button"
                     className="min-w-0 rounded-md px-1 py-0.5 text-left transition hover:bg-panelMuted hover:text-foreground"
-                    onContextMenu={(event) => {
-                      event.preventDefault()
-                      setFolderMenuState({ folderPath: group.folderPath, color: group.color, x: event.clientX, y: event.clientY })
-                    }}
-                    onClick={() =>
-                      setCollapsedFolders((current) =>
-                        current.includes(group.folderPath)
-                          ? current.filter((entry) => entry !== group.folderPath)
-                          : [...current, group.folderPath],
-                      )
-                    }
                     onDoubleClick={(event) => {
                       event.preventDefault()
+                      event.stopPropagation()
                       setEditingFolderName(group.folderPath)
                       setEditingFolderDraft(group.label)
                       setEditingFolderColor(group.color)
@@ -309,7 +356,10 @@ export function FiltersSidebar({
                   <button
                     type="button"
                     className="rounded-md p-1 transition hover:bg-panelMuted hover:text-foreground"
-                    onClick={() => onCreateBoard(group.folderPath)}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      onCreateBoard(group.folderPath)
+                    }}
                     title={`New board in ${group.label}`}
                   >
                     <Plus className="h-3.5 w-3.5" />
@@ -318,7 +368,14 @@ export function FiltersSidebar({
               </div>
             ) : null}
             {editingFolderName === group.folderPath ? (
-              <div data-inline-edit-scope="true" className="space-y-2 px-6 pb-1 pt-1">
+              <InlineEditScope
+                className="space-y-2 px-6 pb-1 pt-1"
+                onSubmit={submitFolderEdit}
+                onCancel={() => {
+                  setEditingFolderName(null)
+                  setEditingFolderDraft('')
+                }}
+              >
                 <InlineNameEditor
                   autoFocus
                   value={editingFolderDraft}
@@ -346,7 +403,7 @@ export function FiltersSidebar({
                     />
                   ))}
                 </div>
-              </div>
+              </InlineEditScope>
             ) : null}
               <div
                 className={cn(
@@ -376,12 +433,18 @@ export function FiltersSidebar({
                     onMoveBoard(draggedBoardId, board.folder, board.id)
                     setDraggedBoardId(null)
                   }}
-                  onClick={() => onSelectBoard(board.id)}
+                  onClick={() => {
+                    setSelectedFolderPaths([])
+                    onSelectBoard(board.id)
+                  }}
                   onDoubleClick={() => {
                     setEditingBoardId(board.id)
                     setEditingBoardDraft(board.name)
                   }}
-                  onContextMenu={(event) => openBoardMenu(event, board.id, onSelectBoard, setMenuState)}
+                  onContextMenu={(event) => {
+                    setSelectedFolderPaths([])
+                    openBoardMenu(event, board.id, onSelectBoard, setMenuState)
+                  }}
                   className={cn(
                     'w-full rounded-xl border px-3 py-3 text-left transition',
                     activeBoardId === board.id
@@ -396,10 +459,21 @@ export function FiltersSidebar({
                     />
                     <div className="min-w-0">
                       {editingBoardId === board.id ? (
-                        <div
-                          data-inline-edit-scope="true"
+                        <InlineEditScope
                           className="flex items-center gap-1.5"
-                          onClick={(event) => event.stopPropagation()}
+                          stopPropagation
+                          onSubmit={() => {
+                            const nextName = editingBoardDraft.trim()
+                            if (nextName) {
+                              onInlineUpdateBoard(board.id, { name: nextName })
+                            }
+                            setEditingBoardId(null)
+                            setEditingBoardDraft('')
+                          }}
+                          onCancel={() => {
+                            setEditingBoardId(null)
+                            setEditingBoardDraft('')
+                          }}
                         >
                           <InlineNameEditor
                             autoFocus
@@ -431,7 +505,7 @@ export function FiltersSidebar({
                           >
                             <PanelRightOpen className="h-4 w-4" />
                           </button>
-                        </div>
+                        </InlineEditScope>
                       ) : (
                         <div className="truncate font-medium text-foreground">{board.name}</div>
                       )}

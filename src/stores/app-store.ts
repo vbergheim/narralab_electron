@@ -16,6 +16,7 @@ import type {
   ProjectMeta,
   ProjectSettings,
   ProjectSettingsUpdateInput,
+  ShootLogImportResult,
 } from '@/types/project'
 import type { Scene, SceneBeat, SceneBeatUpdateInput, SceneFolder, SceneUpdateInput } from '@/types/scene'
 import type { Tag, TagType } from '@/types/tag'
@@ -90,6 +91,7 @@ type AppStore = {
   openProject(): Promise<void>
   saveProjectAs(): Promise<void>
   importJson(): Promise<void>
+  importShootLog(): Promise<void>
   exportJson(): Promise<void>
   exportActiveBoardScript(format: BoardScriptExportFormat): Promise<void>
   createScene(): Promise<void>
@@ -195,9 +197,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
   async initialize() {
     try {
       const [meta, appSettings, globalUiState] = await Promise.all([
-        window.docudoc.project.getMeta(),
-        window.docudoc.settings.get(),
-        window.docudoc.windows.getGlobalUiState(),
+        window.narralab.project.getMeta(),
+        window.narralab.settings.get(),
+        window.narralab.windows.getGlobalUiState(),
       ])
       set({ ready: true, projectMeta: meta, appSettings })
       get().applyGlobalUiState(globalUiState)
@@ -210,7 +212,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   async refreshAll() {
-    const meta = await window.docudoc.project.getMeta()
+    const meta = await window.narralab.project.getMeta()
     if (!meta) {
       set({
         projectMeta: null,
@@ -230,16 +232,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
 
     const [projectSettings, notebook, archiveFolders, archiveItems, scenes, sceneFolders, boards, boardFolders, blockTemplates, tags] = await Promise.all([
-      window.docudoc.project.getSettings(),
-      window.docudoc.notebook.get(),
-      window.docudoc.archive.folders.list(),
-      window.docudoc.archive.items.list(),
-      window.docudoc.scenes.list(),
-      window.docudoc.sceneFolders.list(),
-      window.docudoc.boards.list(),
-      window.docudoc.boardFolders.list(),
-      window.docudoc.blockTemplates.list(),
-      window.docudoc.tags.list(),
+      window.narralab.project.getSettings(),
+      window.narralab.notebook.get(),
+      window.narralab.archive.folders.list(),
+      window.narralab.archive.items.list(),
+      window.narralab.scenes.list(),
+      window.narralab.sceneFolders.list(),
+      window.narralab.boards.list(),
+      window.narralab.boardFolders.list(),
+      window.narralab.blockTemplates.list(),
+      window.narralab.tags.list(),
     ])
 
     set((state) => ({
@@ -273,29 +275,29 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   async createArchiveFolder(name, parentId = null) {
     await runProjectAction(set, async () => {
-      const archiveFolders = await window.docudoc.archive.folders.create(name, parentId)
+      const archiveFolders = await window.narralab.archive.folders.create(name, parentId)
       set({ archiveFolders })
     })
   },
 
   async renameArchiveFolder(folderId, name) {
     await runProjectAction(set, async () => {
-      const archiveFolders = await window.docudoc.archive.folders.rename(folderId, name)
+      const archiveFolders = await window.narralab.archive.folders.rename(folderId, name)
       set({ archiveFolders })
     })
   },
 
   async updateArchiveFolder(folderId, input) {
     await runProjectAction(set, async () => {
-      const archiveFolders = await window.docudoc.archive.folders.update({ id: folderId, ...input })
+      const archiveFolders = await window.narralab.archive.folders.update({ id: folderId, ...input })
       set({ archiveFolders })
     })
   },
 
   async deleteArchiveFolder(folderId) {
     await runProjectAction(set, async () => {
-      const archiveFolders = await window.docudoc.archive.folders.delete(folderId)
-      const archiveItems = await window.docudoc.archive.items.list()
+      const archiveFolders = await window.narralab.archive.folders.delete(folderId)
+      const archiveItems = await window.narralab.archive.items.list()
       set((state) => ({
         archiveFolders,
         archiveItems,
@@ -306,9 +308,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   async addArchiveFiles(filePaths, folderId = null) {
     await runProjectAction(set, async () => {
-      const added = await window.docudoc.archive.items.add(filePaths, folderId)
+      const added = await window.narralab.archive.items.add(filePaths, folderId)
       if (added.length === 0) return
-      const archiveItems = await window.docudoc.archive.items.list()
+      const archiveItems = await window.narralab.archive.items.list()
       set((state) => ({
         archiveItems,
         selectedArchiveFolderId: folderId ?? state.selectedArchiveFolderId,
@@ -318,15 +320,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   async moveArchiveItem(itemId, folderId) {
     await runProjectAction(set, async () => {
-      await window.docudoc.archive.items.update({ id: itemId, folderId })
-      const archiveItems = await window.docudoc.archive.items.list()
+      await window.narralab.archive.items.update({ id: itemId, folderId })
+      const archiveItems = await window.narralab.archive.items.list()
       set({ archiveItems })
     })
   },
 
   async deleteArchiveItem(itemId) {
     await runProjectAction(set, async () => {
-      await window.docudoc.archive.items.delete(itemId)
+      await window.narralab.archive.items.delete(itemId)
       set((state) => ({
         archiveItems: state.archiveItems.filter((item) => item.id !== itemId),
       }))
@@ -335,7 +337,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   async openArchiveItem(itemId) {
     try {
-      await window.docudoc.archive.items.open(itemId)
+      await window.narralab.archive.items.open(itemId)
     } catch (error) {
       set({ error: toMessage(error) })
     }
@@ -343,7 +345,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   async revealArchiveItem(itemId) {
     try {
-      await window.docudoc.archive.items.reveal(itemId)
+      await window.narralab.archive.items.reveal(itemId)
     } catch (error) {
       set({ error: toMessage(error) })
     }
@@ -351,12 +353,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   setSelectedArchiveFolder(folderId) {
     set({ selectedArchiveFolderId: folderId })
-    void window.docudoc.windows.updateGlobalUiState({ selectedArchiveFolderId: folderId })
+    void window.narralab.windows.updateGlobalUiState({ selectedArchiveFolderId: folderId })
   },
 
   async createProject() {
     await runProjectAction(set, async () => {
-      const meta = await window.docudoc.project.create()
+      const meta = await window.narralab.project.create()
       if (meta) {
         await get().refreshAll()
         set({ consultantMessages: [] })
@@ -366,7 +368,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   async openProject() {
     await runProjectAction(set, async () => {
-      const meta = await window.docudoc.project.open()
+      const meta = await window.narralab.project.open()
       if (meta) {
         await get().refreshAll()
         set({ consultantMessages: [] })
@@ -376,14 +378,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   async saveProjectAs() {
     await runProjectAction(set, async () => {
-      const meta = await window.docudoc.project.saveAs()
+      const meta = await window.narralab.project.saveAs()
       if (meta) await get().refreshAll()
     })
   },
 
   async importJson() {
     await runProjectAction(set, async () => {
-      const meta = await window.docudoc.project.importJson()
+      const meta = await window.narralab.project.importJson()
       if (meta) {
         await get().refreshAll()
         set({ consultantMessages: [] })
@@ -391,16 +393,31 @@ export const useAppStore = create<AppStore>((set, get) => ({
     })
   },
 
+  async importShootLog() {
+    await runProjectAction(set, async () => {
+      const result = await window.narralab.project.importShootLog()
+      if (!result) return
+
+      if (result.errors.length > 0) {
+        throw new Error(formatShootLogImportErrors(result))
+      }
+
+      if (result.addedSceneCount > 0 || result.addedBeatCount > 0) {
+        await get().refreshAll()
+      }
+    })
+  },
+
   async updateAppSettings(input) {
     await runProjectAction(set, async () => {
-      const appSettings = await window.docudoc.settings.update(input)
+      const appSettings = await window.narralab.settings.update(input)
       set({ appSettings })
     })
   },
 
   async updateProjectSettings(input) {
     await runProjectAction(set, async () => {
-      const projectSettings = await window.docudoc.project.updateSettings(input)
+      const projectSettings = await window.narralab.project.updateSettings(input)
       set({ projectSettings })
     })
   },
@@ -423,7 +440,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     try {
       const conversation = [...get().consultantMessages].slice(-8)
-      const result = await window.docudoc.consultant.chat({
+      const result = await window.narralab.consultant.chat({
         activeBoardId: get().activeBoardId,
         contextMode: get().consultantContextMode,
         messages: conversation.map((entry) => ({
@@ -470,7 +487,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   async exportJson() {
     await runProjectAction(set, async () => {
-      await window.docudoc.project.exportJson()
+      await window.narralab.project.exportJson()
     })
   },
 
@@ -480,13 +497,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
       if (!activeBoardId) {
         throw new Error('Select a board before exporting a script')
       }
-      await window.docudoc.project.exportBoardScript(activeBoardId, null, format)
+      await window.narralab.project.exportBoardScript(activeBoardId, null, format)
     })
   },
 
   async createScene() {
     await runProjectAction(set, async () => {
-      const scene = await window.docudoc.scenes.create()
+      const scene = await window.narralab.scenes.create()
       set((state) => ({
         scenes: [scene, ...state.scenes],
         selectedSceneId: scene.id,
@@ -498,7 +515,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   async createSceneBeat(sceneId, afterBeatId = null) {
     await runProjectAction(set, async () => {
-      const beat = await window.docudoc.sceneBeats.create(sceneId, afterBeatId)
+      const beat = await window.narralab.sceneBeats.create(sceneId, afterBeatId)
       set((state) => ({
         scenes: state.scenes.map((scene) =>
           scene.id === sceneId
@@ -514,7 +531,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   async updateSceneBeat(input) {
     await runProjectAction(set, async () => {
-      const beat = await window.docudoc.sceneBeats.update(input)
+      const beat = await window.narralab.sceneBeats.update(input)
       set((state) => ({
         scenes: state.scenes.map((scene) =>
           scene.id === beat.sceneId
@@ -530,7 +547,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   async deleteSceneBeat(id) {
     await runProjectAction(set, async () => {
-      await window.docudoc.sceneBeats.delete(id)
+      await window.narralab.sceneBeats.delete(id)
       set((state) => ({
         scenes: state.scenes.map((scene) => ({
           ...scene,
@@ -542,7 +559,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   async reorderSceneBeats(sceneId, beatIds) {
     await runProjectAction(set, async () => {
-      const beats = await window.docudoc.sceneBeats.reorder(sceneId, beatIds)
+      const beats = await window.narralab.sceneBeats.reorder(sceneId, beatIds)
       set((state) => ({
         scenes: state.scenes.map((scene) =>
           scene.id === sceneId
@@ -558,17 +575,17 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   async createSceneFolder(name, parentPath = null) {
     await runProjectAction(set, async () => {
-      const sceneFolders = await window.docudoc.sceneFolders.create(name, parentPath)
+      const sceneFolders = await window.narralab.sceneFolders.create(name, parentPath)
       set({ sceneFolders })
     })
   },
 
   async updateSceneFolder(currentPath, input) {
     await runProjectAction(set, async () => {
-      const sceneFolders = await window.docudoc.sceneFolders.update(currentPath, input)
+      const sceneFolders = await window.narralab.sceneFolders.update(currentPath, input)
       const scenes =
         input.name !== undefined || input.parentPath !== undefined
-          ? await window.docudoc.scenes.list()
+          ? await window.narralab.scenes.list()
           : get().scenes
       set({ sceneFolders, scenes })
     })
@@ -577,8 +594,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
   async deleteSceneFolder(currentPath) {
     await runProjectAction(set, async () => {
       const [sceneFolders, scenes] = await Promise.all([
-        window.docudoc.sceneFolders.delete(currentPath),
-        window.docudoc.scenes.list(),
+        window.narralab.sceneFolders.delete(currentPath),
+        window.narralab.scenes.list(),
       ])
       set({ sceneFolders, scenes })
     })
@@ -591,7 +608,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
       const updatedScenes = await Promise.all(
         uniqueSceneIds.map((sceneId) =>
-          window.docudoc.scenes.update({ id: sceneId, folder } satisfies SceneUpdateInput),
+          window.narralab.scenes.update({ id: sceneId, folder } satisfies SceneUpdateInput),
         ),
       )
       const updatesById = new Map(updatedScenes.map((scene) => [scene.id, scene]))
@@ -603,15 +620,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   async reorderScenes(sceneIds) {
     await runProjectAction(set, async () => {
-      const scenes = await window.docudoc.scenes.reorder(sceneIds)
+      const scenes = await window.narralab.scenes.reorder(sceneIds)
       set({ scenes })
     })
   },
 
   async createBoard(name, folder = null) {
     await runProjectAction(set, async () => {
-      const board = await window.docudoc.boards.create(name?.trim() || 'New Board', folder)
-      const boardFolders = await window.docudoc.boardFolders.list()
+      const board = await window.narralab.boards.create(name?.trim() || 'New Board', folder)
+      const boardFolders = await window.narralab.boardFolders.list()
       set((state) => ({
         boards: [...state.boards, board],
         boardFolders,
@@ -621,7 +638,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         selectedSceneIds: [],
         selectedBoardItemId: null,
       }))
-      void window.docudoc.windows.updateGlobalUiState({
+      void window.narralab.windows.updateGlobalUiState({
         activeBoardId: board.id,
         selectedBoardId: board.id,
         selectedSceneId: null,
@@ -633,25 +650,25 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   async createBoardFolder(name, parentPath = null) {
     await runProjectAction(set, async () => {
-      const boardFolders = await window.docudoc.boardFolders.create(name, parentPath)
+      const boardFolders = await window.narralab.boardFolders.create(name, parentPath)
       set({ boardFolders })
     })
   },
 
   async renameBoardFolder(oldPath, newName) {
     await runProjectAction(set, async () => {
-      const boardFolders = await window.docudoc.boardFolders.rename(oldPath, newName)
-      const boards = await window.docudoc.boards.list()
+      const boardFolders = await window.narralab.boardFolders.rename(oldPath, newName)
+      const boards = await window.narralab.boards.list()
       set({ boardFolders, boards })
     })
   },
 
   async updateBoardFolder(currentPath, input) {
     await runProjectAction(set, async () => {
-      const boardFolders = await window.docudoc.boardFolders.update(currentPath, input)
+      const boardFolders = await window.narralab.boardFolders.update(currentPath, input)
       const boards =
         input.name !== undefined || input.parentPath !== undefined
-          ? await window.docudoc.boards.list()
+          ? await window.narralab.boards.list()
           : get().boards
       set({ boardFolders, boards })
     })
@@ -660,8 +677,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
   async deleteBoardFolder(currentPath) {
     await runProjectAction(set, async () => {
       const [boardFolders, boards] = await Promise.all([
-        window.docudoc.boardFolders.delete(currentPath),
-        window.docudoc.boards.list(),
+        window.narralab.boardFolders.delete(currentPath),
+        window.narralab.boards.list(),
       ])
       set({ boardFolders, boards })
     })
@@ -669,8 +686,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   async deleteBoard(boardId) {
     await runProjectAction(set, async () => {
-      const boards = await window.docudoc.boards.delete(boardId)
-      const boardFolders = await window.docudoc.boardFolders.list()
+      const boards = await window.narralab.boards.delete(boardId)
+      const boardFolders = await window.narralab.boardFolders.list()
       const nextActiveBoardId =
         get().activeBoardId === boardId
           ? boards[0]?.id ?? null
@@ -683,7 +700,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         activeBoardId: nextActiveBoardId,
         selectedBoardId: state.selectedBoardId === boardId ? null : state.selectedBoardId,
       }))
-      void window.docudoc.windows.updateGlobalUiState({
+      void window.narralab.windows.updateGlobalUiState({
         activeBoardId: nextActiveBoardId,
         selectedBoardId: get().selectedBoardId === boardId ? null : get().selectedBoardId,
       })
@@ -692,7 +709,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   async deleteScene(sceneId) {
     await runProjectAction(set, async () => {
-      await window.docudoc.scenes.delete(sceneId)
+      await window.narralab.scenes.delete(sceneId)
       set((state) => ({
         scenes: state.scenes.filter((scene) => scene.id !== sceneId),
         boards: state.boards.map((board) => ({
@@ -711,7 +728,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const uniqueSceneIds = [...new Set(sceneIds.filter(Boolean))]
       if (uniqueSceneIds.length === 0) return
 
-      await Promise.all(uniqueSceneIds.map((sceneId) => window.docudoc.scenes.delete(sceneId)))
+      await Promise.all(uniqueSceneIds.map((sceneId) => window.narralab.scenes.delete(sceneId)))
       const deletedSceneIdSet = new Set(uniqueSceneIds)
 
       set((state) => ({
@@ -745,14 +762,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
         const name = rawName.trim()
         if (!name) continue
         const existing = tags.find((entry) => entry.name.toLowerCase() === name.toLowerCase())
-        const tag = existing ?? (await window.docudoc.tags.upsert({ name, type: inferTagType(name) }))
+        const tag = existing ?? (await window.narralab.tags.upsert({ name, type: inferTagType(name) }))
         if (!existing) {
           set((state) => ({ tags: [...state.tags, tag].sort((a, b) => a.name.localeCompare(b.name)) }))
         }
         tagIds.push(tag.id)
       }
 
-      const updated = await window.docudoc.scenes.update({
+      const updated = await window.narralab.scenes.update({
         id: input.id,
         title: input.title,
         synopsis: input.synopsis,
@@ -782,7 +799,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
       const updates = await Promise.all(
         currentScenes.map((scene) =>
-          window.docudoc.scenes.update({
+          window.narralab.scenes.update({
             id: scene.id,
             category: input.category ?? scene.category,
             status: input.status ?? scene.status,
@@ -799,7 +816,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   async persistBoardItemDraft(input) {
     await runProjectAction(set, async () => {
-      const updated = await window.docudoc.boards.updateItem(input)
+      const updated = await window.narralab.boards.updateItem(input)
 
       set((state) => ({
         boards: state.boards.map((board) => ({
@@ -821,7 +838,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   async persistNotebook(content) {
     try {
-      const notebook = await window.docudoc.notebook.update(content)
+      const notebook = await window.narralab.notebook.update(content)
       set({ notebook })
     } catch (error) {
       set({ error: toMessage(error) })
@@ -833,8 +850,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
     if (!source) return
 
     await runProjectAction(set, async () => {
-      const created = await window.docudoc.scenes.create()
-      const duplicated = await window.docudoc.scenes.update({
+      const created = await window.narralab.scenes.create()
+      const duplicated = await window.narralab.scenes.update({
         id: created.id,
         title: source.title ? `${source.title} Copy` : 'Untitled Scene Copy',
         synopsis: source.synopsis,
@@ -854,8 +871,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
       let duplicatedWithBeats = duplicated
       for (const sourceBeat of source.beats) {
-        const createdBeat = await window.docudoc.sceneBeats.create(duplicated.id, duplicatedWithBeats.beats.at(-1)?.id ?? null)
-        const updatedBeat = await window.docudoc.sceneBeats.update({
+        const createdBeat = await window.narralab.sceneBeats.create(duplicated.id, duplicatedWithBeats.beats.at(-1)?.id ?? null)
+        const updatedBeat = await window.narralab.sceneBeats.update({
           id: createdBeat.id,
           text: sourceBeat.text,
         })
@@ -887,7 +904,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       selectedSceneIds: [],
       selectedBoardItemId: null,
     })
-    void window.docudoc.windows.updateGlobalUiState({
+    void window.narralab.windows.updateGlobalUiState({
       activeBoardId: boardId,
       selectedBoardId: boardId,
       selectedSceneId: null,
@@ -903,7 +920,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       selectedSceneIds: sceneId ? [sceneId] : [],
       selectedBoardItemId: boardItemId,
     })
-    void window.docudoc.windows.updateGlobalUiState({
+    void window.narralab.windows.updateGlobalUiState({
       selectedBoardId: null,
       selectedSceneId: sceneId,
       selectedSceneIds: sceneId ? [sceneId] : [],
@@ -926,7 +943,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       }
     })
     const state = get()
-    void window.docudoc.windows.updateGlobalUiState({
+    void window.narralab.windows.updateGlobalUiState({
       selectedBoardId: null,
       selectedSceneId: state.selectedSceneId,
       selectedSceneIds: state.selectedSceneIds,
@@ -941,7 +958,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       selectedSceneId: sceneIds[0] ?? null,
       selectedBoardItemId: null,
     })
-    void window.docudoc.windows.updateGlobalUiState({
+    void window.narralab.windows.updateGlobalUiState({
       selectedBoardId: null,
       selectedSceneId: sceneIds[0] ?? null,
       selectedSceneIds: sceneIds,
@@ -955,7 +972,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       selectedSceneIds: [],
       selectedSceneId: null,
     })
-    void window.docudoc.windows.updateGlobalUiState({
+    void window.narralab.windows.updateGlobalUiState({
       selectedBoardId: null,
       selectedSceneIds: [],
       selectedSceneId: null,
@@ -969,7 +986,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   setActiveBoard(activeBoardId) {
     set({ activeBoardId, selectedBoardId: null })
-    void window.docudoc.windows.updateGlobalUiState({
+    void window.narralab.windows.updateGlobalUiState({
       activeBoardId,
       selectedBoardId: null,
     })
@@ -989,8 +1006,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
   async updateBoardDraft(input) {
     await runProjectAction(set, async () => {
       const [board, boardFolders] = await Promise.all([
-        window.docudoc.boards.updateBoard(input),
-        input.folder !== undefined ? window.docudoc.boardFolders.list() : Promise.resolve(get().boardFolders),
+        window.narralab.boards.updateBoard(input),
+        input.folder !== undefined ? window.narralab.boardFolders.list() : Promise.resolve(get().boardFolders),
       ])
       set((state) => ({
         boards: state.boards.map((entry) => (entry.id === board.id ? board : entry)),
@@ -1003,7 +1020,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   async reorderBoards(boardIds) {
     await runProjectAction(set, async () => {
-      const boards = await window.docudoc.boards.reorderBoards(boardIds)
+      const boards = await window.narralab.boards.reorderBoards(boardIds)
       set({ boards })
     })
   },
@@ -1019,13 +1036,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const updatedBoard =
         currentBoard.folder === nextFolder
           ? currentBoard
-          : await window.docudoc.boards.updateBoard({ id: boardId, folder: nextFolder })
+          : await window.narralab.boards.updateBoard({ id: boardId, folder: nextFolder })
 
       const boardsAfterMove = currentBoards.map((board) => (board.id === boardId ? updatedBoard : board))
       const orderIds = buildBoardOrderAfterMove(boardsAfterMove, currentFolders, boardId, nextFolder, beforeBoardId)
       const [boards, boardFolders] = await Promise.all([
-        window.docudoc.boards.reorderBoards(orderIds),
-        window.docudoc.boardFolders.list(),
+        window.narralab.boards.reorderBoards(orderIds),
+        window.narralab.boardFolders.list(),
       ])
 
       set({ boards, boardFolders })
@@ -1034,7 +1051,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   async cloneBoard(boardId) {
     await runProjectAction(set, async () => {
-      const board = await window.docudoc.boards.createClone(boardId, defaultBoardCloneName)
+      const board = await window.narralab.boards.createClone(boardId, defaultBoardCloneName)
       set((state) => ({
         boards: [...state.boards, board],
         activeBoardId: board.id,
@@ -1050,7 +1067,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     let result: AddSceneToBoardResult | null = null
 
     await runProjectAction(set, async () => {
-      result = await window.docudoc.boards.addScene(targetBoardId, sceneId, afterItemId, boardPosition)
+      result = await window.narralab.boards.addScene(targetBoardId, sceneId, afterItemId, boardPosition)
       set((state) => ({
         boards: state.boards.map((board) =>
           board.id === targetBoardId && result
@@ -1085,7 +1102,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     if (!activeBoardId) return
 
     await runProjectAction(set, async () => {
-      const item = await window.docudoc.boards.addBlock(activeBoardId, kind, afterItemId)
+      const item = await window.narralab.boards.addBlock(activeBoardId, kind, afterItemId)
       set((state) => ({
         boards: state.boards.map((board) =>
           board.id === activeBoardId
@@ -1114,8 +1131,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
         throw new Error('Template not found')
       }
 
-      const created = await window.docudoc.boards.addBlock(activeBoardId, template.kind, afterItemId)
-      const item = await window.docudoc.boards.updateItem({
+      const created = await window.narralab.boards.addBlock(activeBoardId, template.kind, afterItemId)
+      const item = await window.narralab.boards.updateItem({
         id: created.id,
         kind: template.kind,
         title: template.title,
@@ -1142,14 +1159,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   async saveBlockTemplate(input) {
     await runProjectAction(set, async () => {
-      const blockTemplates = await window.docudoc.blockTemplates.create(input)
+      const blockTemplates = await window.narralab.blockTemplates.create(input)
       set({ blockTemplates })
     })
   },
 
   async deleteBlockTemplate(templateId) {
     await runProjectAction(set, async () => {
-      const blockTemplates = await window.docudoc.blockTemplates.delete(templateId)
+      const blockTemplates = await window.narralab.blockTemplates.delete(templateId)
       set({ blockTemplates })
     })
   },
@@ -1162,8 +1179,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
         throw new Error('Only structure blocks can be copied between boards')
       }
 
-      const created = await window.docudoc.boards.addBlock(boardId, sourceItem.kind, null)
-      const copied = await window.docudoc.boards.updateItem({
+      const created = await window.narralab.boards.addBlock(boardId, sourceItem.kind, null)
+      const copied = await window.narralab.boards.updateItem({
         id: created.id,
         kind: sourceItem.kind,
         title: sourceItem.title,
@@ -1187,7 +1204,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   async duplicateBoardItem(itemId) {
     await runProjectAction(set, async () => {
-      const item = await window.docudoc.boards.duplicateItem(itemId)
+      const item = await window.narralab.boards.duplicateItem(itemId)
       set((state) => ({
         boards: state.boards.map((board) =>
           board.id === item.boardId
@@ -1208,7 +1225,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   async removeBoardItem(itemId) {
     await runProjectAction(set, async () => {
-      await window.docudoc.boards.removeItem(itemId)
+      await window.narralab.boards.removeItem(itemId)
       set((state) => ({
         boards: state.boards.map((board) => ({
           ...board,
@@ -1227,7 +1244,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     if (!activeBoardId) return
 
     await runProjectAction(set, async () => {
-      const items = await window.docudoc.boards.reorder(activeBoardId, itemIds)
+      const items = await window.narralab.boards.reorder(activeBoardId, itemIds)
       set((state) => ({
         boards: state.boards.map((board) =>
           board.id === activeBoardId
@@ -1338,4 +1355,14 @@ async function runProjectAction(
 
 function toMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Unknown error'
+}
+
+function formatShootLogImportErrors(result: ShootLogImportResult) {
+  const details = result.errors
+    .slice(0, 6)
+    .map((entry) => `${entry.sheet} row ${entry.row}: ${entry.message}`)
+    .join('\n')
+  const suffix = result.errors.length > 6 ? `\n...and ${result.errors.length - 6} more errors.` : ''
+
+  return `Opptakslogg-import mislyktes.\n${details}${suffix}`
 }

@@ -25,6 +25,7 @@ import type {
   ProjectSnapshot,
   ProjectSnapshotV1,
   ProjectSnapshotV6,
+  ShootLogImportResult,
 } from '@/types/project'
 import type { Scene, SceneBeat, SceneBeatUpdateInput, SceneFolder, SceneUpdateInput } from '@/types/scene'
 import type { Tag, TagType } from '@/types/tag'
@@ -34,6 +35,7 @@ import { ArchiveRepository } from './db/repositories/archive-repository'
 import { BoardRepository } from './db/repositories/board-repository'
 import { SceneRepository } from './db/repositories/scene-repository'
 import { TagRepository } from './db/repositories/tag-repository'
+import { importShootLogWorkbook } from './shoot-log-import'
 
 type Repositories = {
   archive: ArchiveRepository
@@ -62,7 +64,7 @@ export class ProjectService {
   }
 
   async openProject(requestedPath?: string | null) {
-    const filePath = requestedPath ?? (await this.pickOpenProjectPath())
+    const filePath = resolveOpenProjectFilePath(requestedPath ?? (await this.pickOpenProjectPath()))
     if (!filePath) return null
 
     this.openAtPath(filePath)
@@ -90,7 +92,7 @@ export class ProjectService {
       requestedPath ??
       (await dialog.showSaveDialog({
         title: 'Export JSON',
-        defaultPath: this.getMeta() ? `${this.getMeta()?.name}.json` : 'docudoc-export.json',
+        defaultPath: this.getMeta() ? `${this.getMeta()?.name}.json` : 'narralab-export.json',
         filters: [{ name: 'JSON', extensions: ['json'] }],
       }).then((result) => (result.canceled ? null : result.filePath)))
 
@@ -134,7 +136,6 @@ export class ProjectService {
   }
 
   async importJson(requestedPath?: string | null) {
-    // TODO: Reuse this import path when CSV/Excel support is added.
     const sourcePath =
       requestedPath ??
       (await dialog.showOpenDialog({
@@ -145,9 +146,37 @@ export class ProjectService {
 
     if (!sourcePath) return null
 
-    const snapshot = JSON.parse(fs.readFileSync(sourcePath, 'utf8')) as ProjectSnapshot
+    let raw: string
+    try {
+      raw = fs.readFileSync(sourcePath, 'utf8')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'ukjent feil'
+      throw new Error(`Kunne ikke lese JSON-filen: ${message}`)
+    }
+
+    let snapshot: ProjectSnapshot
+    try {
+      snapshot = JSON.parse(raw) as ProjectSnapshot
+    } catch {
+      throw new Error('Filen er ikke gyldig JSON.')
+    }
+
     this.replaceWithSnapshot(snapshot)
     return this.getMeta()
+  }
+
+  async importShootLog(requestedPath?: string | null): Promise<ShootLogImportResult | null> {
+    const sourcePath =
+      requestedPath ??
+      (await dialog.showOpenDialog({
+        title: 'Import Shoot Log',
+        properties: ['openFile'],
+        filters: [{ name: 'Excel Workbook', extensions: ['xlsx'] }],
+      }).then((result) => (result.canceled ? null : result.filePaths[0] ?? null)))
+
+    if (!sourcePath) return null
+
+    return importShootLogWorkbook(this.ensureDatabase(), sourcePath)
   }
 
   getMeta(): ProjectMeta | null {
@@ -1037,8 +1066,11 @@ export class ProjectService {
     const meta = this.getMeta()
     const result = await dialog.showSaveDialog({
       title,
-      defaultPath: meta?.path ?? path.join(app.getPath('documents'), 'Untitled.docudoc'),
-      filters: [{ name: 'DocuDoc Project', extensions: ['docudoc'] }],
+      defaultPath: meta?.path ?? path.join(app.getPath('documents'), 'Untitled.narralab'),
+      filters: [
+        { name: 'NarraLab Project', extensions: ['narralab'] },
+        { name: 'Legacy NarraLab Project', extensions: ['docudoc'] },
+      ],
     })
 
     return result.canceled ? null : result.filePath ?? null
@@ -1049,8 +1081,8 @@ export class ProjectService {
       title: 'Open Project',
       properties: ['openFile'],
       filters: [
-        { name: 'DocuDoc Project', extensions: ['docudoc'] },
-        { name: 'Legacy DocuDoc Project', extensions: ['sqlite'] },
+        { name: 'NarraLab Projects', extensions: ['narralab', 'docudoc', 'sqlite'] },
+        { name: 'All Files', extensions: ['*'] },
       ],
     })
 
@@ -1063,16 +1095,42 @@ function normalizeProjectFilePath(filePath: string | null) {
     return null
   }
 
-  if (filePath.endsWith('.docudoc') || filePath.endsWith('.docudoc.sqlite')) {
+  if (
+    filePath.endsWith('.narralab') ||
+    filePath.endsWith('.narralab.sqlite') ||
+    filePath.endsWith('.docudoc') ||
+    filePath.endsWith('.docudoc.sqlite')
+  ) {
     return filePath
   }
 
-  return `${filePath}.docudoc`
+  return `${filePath}.narralab`
+}
+
+function resolveOpenProjectFilePath(filePath: string | null) {
+  if (!filePath) {
+    return null
+  }
+
+  if (fs.existsSync(filePath)) {
+    return filePath
+  }
+
+  const candidates = [
+    filePath,
+    `${filePath}.narralab`,
+    `${filePath}.docudoc`,
+    `${filePath}.sqlite`,
+  ]
+
+  return candidates.find((candidate) => fs.existsSync(candidate)) ?? filePath
 }
 
 function toProjectDisplayName(filePath: string) {
   return path
     .basename(filePath)
+    .replace(/\.narralab\.sqlite$/i, '')
+    .replace(/\.narralab$/i, '')
     .replace(/\.docudoc\.sqlite$/i, '')
     .replace(/\.docudoc$/i, '')
     .replace(/\.sqlite$/i, '')

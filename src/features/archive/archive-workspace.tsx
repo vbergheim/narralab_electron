@@ -1,5 +1,5 @@
 import type { DragEvent, MouseEvent } from 'react'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import {
   ChevronDown,
   ChevronRight,
@@ -10,16 +10,18 @@ import {
   FileVideo2,
   Folder,
   FolderOpen,
+  LibraryBig,
   Plus,
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { ContextMenu, type ContextMenuItem } from '@/components/ui/context-menu'
-import { InlineNameEditor } from '@/components/ui/inline-name-editor'
+import { InlineEditScope, InlineNameEditor } from '@/components/ui/inline-name-editor'
 import { Panel } from '@/components/ui/panel'
 import { usePersistedStringArray } from '@/hooks/use-persisted-string-array'
 import { cn } from '@/lib/cn'
 import { sceneColors } from '@/lib/constants'
+import { computeListSelection, ensureContextSelection } from '@/lib/selection'
 import type { ArchiveFolder, ArchiveItem } from '@/types/archive'
 
 type Props = {
@@ -58,10 +60,17 @@ export function ArchiveWorkspace({
   const [editingFolderColor, setEditingFolderColor] = useState<ArchiveFolder['color']>('slate')
   const [dragOverFolderId, setDragOverFolderId] = useState<string | 'root' | null>(null)
   const [draggedFolderId, setDraggedFolderId] = useState<string | null>(null)
-  const [collapsedFolders, setCollapsedFolders] = usePersistedStringArray('docudoc:collapsed:archive-folders')
+  const [collapsedFolders, setCollapsedFolders] = usePersistedStringArray('narralab:collapsed:archive-folders')
   const [menuState, setMenuState] = useState<{ itemId: string; x: number; y: number } | null>(null)
   const [folderMenuState, setFolderMenuState] = useState<{ folderId: string; folderName: string; x: number; y: number } | null>(null)
+  const [selectedFolderIds, setSelectedFolderIds] = useState<string[]>([])
+  const folderSelectionAnchorRef = useRef<number | null>(null)
   const folderNodes = useMemo(() => buildArchiveFolderTree(folders, items), [folders, items])
+  const folderIdOrder = useMemo(() => folderNodes.map((folder) => folder.id), [folderNodes])
+  const visibleSelectedFolderIds = useMemo(
+    () => selectedFolderIds.filter((id) => folderIdOrder.includes(id)),
+    [folderIdOrder, selectedFolderIds],
+  )
 
   const filteredItems = useMemo(
     () => (selectedFolderId ? items.filter((item) => item.folderId === selectedFolderId) : items),
@@ -86,8 +95,14 @@ export function ArchiveWorkspace({
   }, [menuState, onDeleteItem, onOpenItem, onRevealItem])
   const folderMenuItems = useMemo<ContextMenuItem[]>(() => {
     if (!folderMenuState) return []
+    const targetFolderIds = visibleSelectedFolderIds.includes(folderMenuState.folderId)
+      ? visibleSelectedFolderIds
+      : [folderMenuState.folderId]
+    const depthById = new Map(folderNodes.map((node) => [node.id, node.depth]))
+    const orderedFolderIds = [...targetFolderIds].sort((left, right) => (depthById.get(right) ?? 0) - (depthById.get(left) ?? 0))
     return [
-      {
+      ...(targetFolderIds.length === 1
+        ? [{
         label: 'Rename Folder',
         onSelect: () => {
           setEditingFolderId(folderMenuState.folderId)
@@ -95,18 +110,35 @@ export function ArchiveWorkspace({
           const folder = folders.find((entry) => entry.id === folderMenuState.folderId)
           setEditingFolderColor(folder?.color ?? 'slate')
         },
+      }]
+        : []),
+      {
+        label: 'Expand All',
+        onSelect: () => {
+          setCollapsedFolders((current) =>
+            current.filter(
+              (entry) =>
+                !targetFolderIds.some((folderId) => isArchiveFolderDescendantOrSelf(entry, folderId, folderNodes)),
+            ),
+          )
+        },
       },
       {
-        label: 'Delete Folder',
+        label: targetFolderIds.length > 1 ? 'Delete Selection' : 'Delete Folder',
         danger: true,
         onSelect: () => {
-          if (window.confirm(`Delete folder "${folderMenuState.folderName}"? Files will be moved to All Files.`)) {
-            onDeleteFolder(folderMenuState.folderId)
+          const confirmText =
+            targetFolderIds.length > 1
+              ? `Delete ${targetFolderIds.length} selected folders? Files will be moved to All Files.`
+              : `Delete folder "${folderMenuState.folderName}"? Files will be moved to All Files.`
+          if (window.confirm(confirmText)) {
+            orderedFolderIds.forEach((folderId) => onDeleteFolder(folderId))
+            setSelectedFolderIds([])
           }
         },
       },
     ]
-  }, [folderMenuState, folders, onDeleteFolder])
+  }, [folderMenuState, folderNodes, folders, onDeleteFolder, setCollapsedFolders, visibleSelectedFolderIds])
 
   const handleDropFiles = (event: DragEvent<HTMLDivElement>, folderId: string | null) => {
     event.preventDefault()
@@ -118,13 +150,13 @@ export function ArchiveWorkspace({
       setDraggedFolderId(null)
       return
     }
-    const paths = window.docudoc.archive.items.resolveDroppedPaths(Array.from(event.dataTransfer.files))
+    const paths = window.narralab.archive.items.resolveDroppedPaths(Array.from(event.dataTransfer.files))
     if (paths.length > 0) {
       onAddFiles(paths, folderId)
       return
     }
 
-    const archiveItemId = event.dataTransfer.getData('application/x-docudoc-archive-item')
+    const archiveItemId = event.dataTransfer.getData('application/x-narralab-archive-item')
     if (archiveItemId) {
       onMoveItem(archiveItemId, folderId)
     }
@@ -138,11 +170,29 @@ export function ArchiveWorkspace({
     setShowFolderForm(false)
   }
 
+  const handleFolderSelection = (event: MouseEvent<HTMLElement>, folderId: string) => {
+    const { nextSelectedIds, nextAnchorIndex } = computeListSelection({
+      id: folderId,
+      orderedIds: folderIdOrder,
+      selectedIds: visibleSelectedFolderIds,
+      anchorIndex: folderSelectionAnchorRef.current,
+      shiftKey: event.shiftKey,
+      metaKey: event.metaKey,
+      ctrlKey: event.ctrlKey,
+    })
+    folderSelectionAnchorRef.current = nextAnchorIndex
+    setSelectedFolderIds(nextSelectedIds)
+    onSelectFolder(folderId)
+  }
+
   return (
     <div className="grid min-h-0 gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
       <Panel className="min-h-0 overflow-y-auto overscroll-contain p-4">
         <div className="flex items-center justify-between">
-          <div className="font-display text-lg font-semibold text-foreground">Archive</div>
+          <div className="flex items-center gap-2 font-display text-sm font-semibold uppercase tracking-[0.16em] text-foreground">
+            <LibraryBig className="h-4 w-4 text-accent" />
+            <span>Archive</span>
+          </div>
           <Button variant="ghost" size="sm" onClick={() => setShowFolderForm((current) => !current)}>
             <Plus className="h-4 w-4" />
             Folder
@@ -172,13 +222,17 @@ export function ArchiveWorkspace({
               dragOverFolderId === 'root' && 'border-accent/60 bg-accent/10',
             )}
           >
-            <FolderButton
-              active={selectedFolderId === null}
-              dropActive={dragOverFolderId === 'root'}
-              label="All Files"
-              count={items.length}
-              color="slate"
-              onClick={() => onSelectFolder(null)}
+              <FolderButton
+                active={selectedFolderId === null}
+                dropActive={dragOverFolderId === 'root'}
+                selected={visibleSelectedFolderIds.length === 0 && selectedFolderId === null}
+                label="All Files"
+                count={items.length}
+                color="slate"
+                onClick={() => {
+                  setSelectedFolderIds([])
+                  onSelectFolder(null)
+                }}
               onDragEnter={() => setDragOverFolderId('root')}
               onDragLeave={() => setDragOverFolderId((current) => (current === 'root' ? null : current))}
               onDragOver={(event) => {
@@ -199,7 +253,21 @@ export function ArchiveWorkspace({
               )}
             >
               {editingFolderId === folder.id ? (
-                <div data-inline-edit-scope="true" className="space-y-2 px-4 py-1">
+                <InlineEditScope
+                  className="space-y-2 px-4 py-1"
+                  onSubmit={() => {
+                    const nextName = editingFolderDraft.trim()
+                    if (nextName) {
+                      onUpdateFolder(folder.id, { name: nextName, color: editingFolderColor })
+                    }
+                    setEditingFolderId(null)
+                    setEditingFolderDraft('')
+                  }}
+                  onCancel={() => {
+                    setEditingFolderId(null)
+                    setEditingFolderDraft('')
+                  }}
+                >
                   <InlineNameEditor
                     autoFocus
                     value={editingFolderDraft}
@@ -234,18 +302,19 @@ export function ArchiveWorkspace({
                       />
                     ))}
                   </div>
-                </div>
+                </InlineEditScope>
               ) : (
                 <FolderButton
                   collapsible={folder.childIds.length > 0}
                   collapsed={collapsedFolders.includes(folder.id)}
                   active={selectedFolderId === folder.id}
+                  selected={visibleSelectedFolderIds.includes(folder.id)}
                   dropActive={dragOverFolderId === folder.id}
                   label={folder.name}
                   count={folder.itemCount}
                   color={folder.color}
                   depth={folder.depth}
-                  onClick={() => onSelectFolder(folder.id)}
+                  onClick={(event) => handleFolderSelection(event, folder.id)}
                   onDoubleClick={() => {
                     setEditingFolderId(folder.id)
                     setEditingFolderDraft(folder.name)
@@ -253,6 +322,10 @@ export function ArchiveWorkspace({
                   }}
                   onContextMenu={(event) => {
                     event.preventDefault()
+                    const nextSelection = ensureContextSelection(folder.id, visibleSelectedFolderIds, folderIdOrder)
+                    setSelectedFolderIds(nextSelection)
+                    folderSelectionAnchorRef.current = folderIdOrder.indexOf(folder.id)
+                    onSelectFolder(folder.id)
                     setFolderMenuState({ folderId: folder.id, folderName: folder.name, x: event.clientX, y: event.clientY })
                   }}
                   onToggleCollapse={() =>
@@ -288,7 +361,10 @@ export function ArchiveWorkspace({
       >
         <div className="flex items-center justify-between border-b border-border/90 px-5 py-4">
           <div>
-            <div className="font-display text-xl font-semibold text-foreground">Document Archive</div>
+            <div className="flex items-center gap-2 font-display text-sm font-semibold uppercase tracking-[0.16em] text-foreground">
+              <LibraryBig className="h-4 w-4 text-accent" />
+              <span>Archive</span>
+            </div>
             <div className="mt-1 text-sm text-muted">
               Drag files in from Finder, or add them manually. Files stay where they are; the archive stores local references.
             </div>
@@ -319,7 +395,7 @@ export function ArchiveWorkspace({
                   type="button"
                   draggable
                   onDragStart={(event) => {
-                    event.dataTransfer.setData('application/x-docudoc-archive-item', item.id)
+                    event.dataTransfer.setData('application/x-narralab-archive-item', item.id)
                     event.dataTransfer.effectAllowed = 'move'
                   }}
                   onDoubleClick={() => onOpenItem(item.id)}
@@ -366,6 +442,7 @@ function FolderButton({
   collapsible,
   collapsed,
   active,
+  selected,
   dropActive,
   label,
   count,
@@ -385,12 +462,13 @@ function FolderButton({
   collapsible?: boolean
   collapsed?: boolean
   active: boolean
+  selected?: boolean
   dropActive?: boolean
   label: string
   count: number
   color: ArchiveFolder['color']
   depth?: number
-  onClick(): void
+  onClick(event: MouseEvent<HTMLButtonElement>): void
   onDoubleClick?(): void
   onContextMenu?(event: MouseEvent<HTMLDivElement>): void
   onToggleCollapse?(): void
@@ -408,6 +486,8 @@ function FolderButton({
         'flex min-h-8 items-center gap-2 rounded-lg px-1 py-0.5 transition text-muted',
         dropActive
           ? 'bg-accent/12 ring-1 ring-accent/45'
+          : selected
+            ? 'bg-accent/10 text-foreground ring-1 ring-accent/35'
           : active
             ? 'bg-white/[0.05] text-foreground'
             : 'hover:bg-panelMuted/50 hover:text-foreground',
@@ -538,6 +618,28 @@ function hasCollapsedArchiveAncestor(
 
   while (current?.parentId) {
     if (collapsedFolders.includes(current.parentId)) {
+      return true
+    }
+    current = nodeById.get(current.parentId) ?? null
+  }
+
+  return false
+}
+
+function isArchiveFolderDescendantOrSelf(
+  folderId: string,
+  ancestorId: string,
+  nodes: Array<ArchiveFolder & { depth: number; childIds: string[]; itemCount: number }>,
+) {
+  if (folderId === ancestorId) {
+    return true
+  }
+
+  const nodeById = new Map(nodes.map((node) => [node.id, node]))
+  let current = nodeById.get(folderId) ?? null
+
+  while (current?.parentId) {
+    if (current.parentId === ancestorId) {
       return true
     }
     current = nodeById.get(current.parentId) ?? null

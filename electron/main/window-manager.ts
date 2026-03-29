@@ -86,7 +86,7 @@ export class WindowManager {
   ) {
     const settings = this.settingsService.getSettings()
     const browserWindow = this.browserFactory({
-      title: `DocuDoc · ${workspaceLabel(workspace)}`,
+      title: `NarraLab · ${workspaceLabel(workspace)}`,
       workspace,
       bounds: this.resolveWindowBounds(undefined),
     })
@@ -210,7 +210,7 @@ export class WindowManager {
     this.closeDetachedWindows()
     for (const layoutWindow of layout.windows) {
       const browserWindow = this.browserFactory({
-        title: `DocuDoc · ${workspaceLabel(layoutWindow.workspace)}`,
+        title: `NarraLab · ${workspaceLabel(layoutWindow.workspace)}`,
         workspace: layoutWindow.workspace,
         bounds: this.resolveWindowBounds(layoutWindow),
       })

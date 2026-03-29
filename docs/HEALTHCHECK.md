@@ -1,7 +1,7 @@
-# Full Helsesjekk av DocuDoc
+# Full Helsesjekk av NarraLab
 
 ## Lederoppsummering
-DocuDoc er fullt brukbar som lokal Electron-app, men den er ikke robust nok til 6-12 måneders rask featureutvikling uten målrettet hardening. Den største risikoen er ikke én enkelt bug, men at flere kjerneansvar er blandet sammen:
+NarraLab er fullt brukbar som lokal Electron-app, men den er ikke robust nok til 6-12 måneders rask featureutvikling uten målrettet hardening. Den største risikoen er ikke én enkelt bug, men at flere kjerneansvar er blandet sammen:
 
 - renderer bestemmer for mye om board/window-kontekst
 - `ProjectService`, `app-store` og `App.tsx` har blitt brede koordineringspunkter

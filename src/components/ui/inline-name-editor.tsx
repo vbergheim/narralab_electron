@@ -1,4 +1,4 @@
-import type { FocusEvent, KeyboardEvent, Ref } from 'react'
+import type { FocusEvent, KeyboardEvent, ReactNode, Ref } from 'react'
 
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -7,7 +7,7 @@ import { cn } from '@/lib/cn'
 export const inlineEditorClassName =
   'rounded-none border-x-0 border-t-0 border-b border-border/80 bg-transparent px-0 shadow-none focus-visible:border-foreground/40 focus-visible:ring-0'
 
-function shouldSubmitOnBlur<T extends HTMLInputElement | HTMLTextAreaElement>(event: FocusEvent<T>) {
+function shouldSubmitOnBlur<T extends HTMLElement>(event: FocusEvent<T>) {
   const nextTarget = event.relatedTarget
   if (!(nextTarget instanceof HTMLElement)) {
     return true
@@ -19,6 +19,46 @@ function shouldSubmitOnBlur<T extends HTMLInputElement | HTMLTextAreaElement>(ev
   }
 
   return !scope.contains(nextTarget)
+}
+
+function isHandledByScope(element: HTMLElement) {
+  return Boolean(element.closest('[data-inline-edit-scope="true"]'))
+}
+
+export function InlineEditScope({
+  children,
+  className,
+  stopPropagation = false,
+  onSubmit,
+  onCancel,
+}: {
+  children: ReactNode
+  className?: string
+  stopPropagation?: boolean
+  onSubmit(): void
+  onCancel?(): void
+}) {
+  return (
+    <div
+      data-inline-edit-scope="true"
+      className={className}
+      onClick={stopPropagation ? (event) => event.stopPropagation() : undefined}
+      onBlurCapture={(event) => {
+        if (shouldSubmitOnBlur(event)) {
+          onSubmit()
+        }
+      }}
+      onKeyDownCapture={(event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          event.stopPropagation()
+          onCancel?.()
+        }
+      }}
+    >
+      {children}
+    </div>
+  )
 }
 
 export function InlineNameEditor({
@@ -53,6 +93,9 @@ export function InlineNameEditor({
     }
 
     if (event.key === 'Escape') {
+      if (isHandledByScope(event.currentTarget)) {
+        return
+      }
       event.preventDefault()
       onCancel?.()
     }
@@ -70,6 +113,9 @@ export function InlineNameEditor({
       onKeyDownCapture={(event) => event.stopPropagation()}
       onChange={(event) => onChange(event.target.value)}
       onBlur={(event) => {
+        if (isHandledByScope(event.currentTarget)) {
+          return
+        }
         if (shouldSubmitOnBlur(event)) {
           onSubmit()
         }
@@ -109,6 +155,9 @@ export function InlineTextareaEditor({
     }
 
     if (event.key === 'Escape') {
+      if (isHandledByScope(event.currentTarget)) {
+        return
+      }
       event.preventDefault()
       onCancel?.()
     }
@@ -126,6 +175,9 @@ export function InlineTextareaEditor({
       onKeyDownCapture={(event) => event.stopPropagation()}
       onChange={(event) => onChange(event.target.value)}
       onBlur={(event) => {
+        if (isHandledByScope(event.currentTarget)) {
+          return
+        }
         if (shouldSubmitOnBlur(event)) {
           onSubmit()
         }

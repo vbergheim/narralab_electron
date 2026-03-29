@@ -21,7 +21,7 @@ function createMainWindow() {
     return mainWindow
   }
 
-  mainWindow = createBrowserWindow({ title: 'DocuDoc', workspace: 'main' })
+  mainWindow = createBrowserWindow({ title: 'NarraLab', workspace: 'main' })
   windowManager.registerMainWindow(mainWindow)
 
   mainWindow.on('closed', () => {
@@ -37,15 +37,16 @@ function createBrowserWindow(input: {
   bounds?: { x: number; y: number; width: number; height: number }
 }) {
   const iconPath = resolveRuntimeIconPath()
-  const isInspector = input.workspace === 'inspector'
-  const isNotebook = input.workspace === 'notebook' || input.workspace === 'archive'
+  const isMainWindow = input.workspace === 'main'
+  const minWidth = isMainWindow ? 980 : 220
+  const minHeight = isMainWindow ? 720 : 180
   const browserWindow = new BrowserWindow({
     width: input.bounds?.width ?? 1600,
     height: input.bounds?.height ?? 980,
     x: input.bounds?.x,
     y: input.bounds?.y,
-    minWidth: isInspector ? 420 : isNotebook ? 760 : 980,
-    minHeight: isInspector ? 560 : 720,
+    minWidth,
+    minHeight,
     backgroundColor: '#0f1117',
     icon: iconPath,
     title: input.title,
@@ -79,6 +80,14 @@ app.on('open-file', (event, filePath) => {
 })
 
 app.whenReady().then(() => {
+  app.setAboutPanelOptions({
+    applicationName: 'NarraLab',
+    applicationVersion: app.getVersion(),
+    version: app.getVersion(),
+    copyright: 'Copyright © 2026 Vegard Lund Bergheim',
+    authors: ['Vegard Lund Bergheim'],
+    credits: 'Created by Vegard Lund Bergheim',
+  })
   registerIpc(projectService, settingsService, consultantService, windowManager)
   applyDockIcon()
   createMainWindow()
