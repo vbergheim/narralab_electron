@@ -1,7 +1,7 @@
 import type { ArchiveFolderUpdateInput, ArchiveItemUpdateInput } from '@/types/archive'
 import type { AppSettingsUpdateInput, ConsultantChatInput, SavedWindowLayout, WindowWorkspace } from '@/types/ai'
 import type { BoardItemKind, BoardItemUpdateInput, BoardTextItemKind, BoardUpdateInput, BoardViewMode } from '@/types/board'
-import type { ProjectSettingsUpdateInput, WindowContext } from '@/types/project'
+import type { GlobalUiState, ProjectSettingsUpdateInput, WindowContext, WindowDragSession } from '@/types/project'
 import type { SceneColor, SceneStatus, SceneBeatUpdateInput, SceneUpdateInput } from '@/types/scene'
 import type { TagType } from '@/types/tag'
 import type { SceneDensity } from '@/types/view'
@@ -245,6 +245,64 @@ export function parseWindowContextUpdate(
   if (input.viewMode !== undefined) next.viewMode = requireBoardViewMode(input.viewMode, 'Window board view')
   if (input.sceneDensity !== undefined) next.sceneDensity = requireSceneDensity(input.sceneDensity, 'Scene density')
   return next
+}
+
+function optionalNullableId(value: unknown, label: string): string | null | undefined {
+  if (value === undefined) {
+    return undefined
+  }
+  if (value === null) {
+    return null
+  }
+  if (typeof value !== 'string') {
+    throw new Error(`${label} must be a string or null`)
+  }
+  const trimmed = value.trim()
+  return trimmed.length === 0 ? null : trimmed
+}
+
+export function parseGlobalUiStatePatch(value: unknown): Partial<GlobalUiState> {
+  const input = requireObject(value, 'Global UI state update')
+  const next: Partial<GlobalUiState> = {}
+
+  if (input.activeBoardId !== undefined) {
+    next.activeBoardId = optionalNullableId(input.activeBoardId, 'Active board id') ?? null
+  }
+  if (input.selectedBoardId !== undefined) {
+    next.selectedBoardId = optionalNullableId(input.selectedBoardId, 'Selected board id') ?? null
+  }
+  if (input.selectedSceneId !== undefined) {
+    next.selectedSceneId = optionalNullableId(input.selectedSceneId, 'Selected scene id') ?? null
+  }
+  if (input.selectedSceneIds !== undefined) {
+    next.selectedSceneIds = requireStringArray(input.selectedSceneIds, 'Selected scene ids')
+  }
+  if (input.selectedBoardItemId !== undefined) {
+    next.selectedBoardItemId = optionalNullableId(input.selectedBoardItemId, 'Selected board item id') ?? null
+  }
+  if (input.selectedArchiveFolderId !== undefined) {
+    next.selectedArchiveFolderId = optionalNullableId(input.selectedArchiveFolderId, 'Selected archive folder id') ?? null
+  }
+
+  return next
+}
+
+export function parseWindowDragSession(value: unknown): WindowDragSession {
+  if (value === null || value === undefined) {
+    return null
+  }
+  const input = requireObject(value, 'Drag session')
+  if (input.kind !== 'scene') {
+    return null
+  }
+  if (!Array.isArray(input.sceneIds)) {
+    return null
+  }
+  const sceneIds = input.sceneIds.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+  if (sceneIds.length === 0) {
+    return null
+  }
+  return { kind: 'scene', sceneIds }
 }
 
 export function parseBlockTemplateInput(value: unknown) {

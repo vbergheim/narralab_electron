@@ -26,7 +26,9 @@ import {
   parseSceneBeatUpdateInput,
   parseSceneUpdateInput,
   parseTagUpsertInput,
+  parseGlobalUiStatePatch,
   parseWindowContextUpdate,
+  parseWindowDragSession,
   parseWindowWorkspace,
   requireString,
   requireStringArray,
@@ -355,9 +357,13 @@ export function registerIpc(
   )
   ipcMain.handle('windows:getDragSession', () => windowManager.getDragSession())
   ipcMain.handle('windows:consumeDragSession', () => windowManager.consumeDragSession())
-  ipcMain.handle('windows:setDragSession', (_, session) => windowManager.updateDragSession(session))
+  ipcMain.handle('windows:setDragSession', (_, session) =>
+    windowManager.updateDragSession(parseWindowDragSession(session)),
+  )
   ipcMain.handle('windows:getGlobalUiState', () => windowManager.getGlobalUiState())
-  ipcMain.handle('windows:updateGlobalUiState', (_, input) => windowManager.updateGlobalUiState(input))
+  ipcMain.handle('windows:updateGlobalUiState', (_, input) =>
+    windowManager.updateGlobalUiState(parseGlobalUiStatePatch(input)),
+  )
   ipcMain.handle('windows:listLayouts', () => windowManager.listLayouts())
   ipcMain.handle('windows:saveLayout', (_, name: string) => windowManager.saveLayout(requireString(name, 'Layout name')))
   ipcMain.handle('windows:applyLayout', (_, layoutId: string) => windowManager.applyLayout(requireString(layoutId, 'Layout id')))
