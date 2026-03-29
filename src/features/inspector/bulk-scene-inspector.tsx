@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { AlertTriangle, Layers3 } from 'lucide-react'
+import { AlertTriangle, Layers3, Trash2 } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -15,10 +15,11 @@ type Props = {
     status?: Scene['status']
     color?: Scene['color']
   }): void
+  onDelete(): void
   onClear(): void
 }
 
-export function BulkSceneInspector({ count, onApply, onClear }: Props) {
+export function BulkSceneInspector({ count, onApply, onDelete, onClear }: Props) {
   const [category, setCategory] = useState('')
   const [status, setStatus] = useState<Scene['status'] | ''>('')
   const [color, setColor] = useState<Scene['color'] | ''>('')
@@ -113,6 +114,17 @@ export function BulkSceneInspector({ count, onApply, onClear }: Props) {
           >
             <Layers3 className="h-4 w-4" />
             Apply To {count} Scenes
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              if (window.confirm(`Delete ${count} selected scenes from the project? This removes them from every board.`)) {
+                onDelete()
+              }
+            }}
+          >
+            <Trash2 className="h-4 w-4" />
+            Delete Selected
           </Button>
           <Badge>Scene Bank only</Badge>
         </div>

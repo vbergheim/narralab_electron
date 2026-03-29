@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Panel } from '@/components/ui/panel'
+import { StarRating } from '@/components/ui/star-rating'
 import { Textarea } from '@/components/ui/textarea'
 import { formatDateTime } from '@/lib/dates'
 import { sceneColors, sceneStatuses } from '@/lib/constants'
@@ -15,12 +16,14 @@ import type { Tag } from '@/types/tag'
 
 type Draft = {
   id: string
+  sortOrder: number
   title: string
   synopsis: string
   notes: string
   color: Scene['color']
   status: Scene['status']
-  isKeyScene: boolean
+  keyRating: number
+  folder: string
   category: string
   estimatedDurationMinutes: number
   actualDurationMinutes: number
@@ -36,12 +39,14 @@ type Props = {
   tags: Tag[]
   onSave(scene: {
     id: string
+    sortOrder: number
     title: string
     synopsis: string
     notes: string
     color: Scene['color']
     status: Scene['status']
-    isKeyScene: boolean
+    keyRating: number
+    folder: string
     category: string
     estimatedDuration: number
     actualDuration: number
@@ -161,15 +166,19 @@ export function SceneInspector({ scene, tags, onSave, onDelete }: Props) {
           </InspectorField>
         </Grid>
 
-        <InspectorField label="Scene Flags">
-          <label className="flex items-center gap-3 rounded-xl border border-border bg-panel px-3 py-3 text-sm text-foreground">
-            <input
-              type="checkbox"
-              checked={draft.isKeyScene}
-              onChange={(event) => updateDraft(setDraft, 'isKeyScene', event.target.checked)}
-            />
-            Mark as key scene
-          </label>
+        <InspectorField label="Key Rating">
+          <div className="rounded-xl border border-border bg-panel px-3 py-3">
+            <div className="flex items-center justify-between gap-4">
+              <StarRating value={draft.keyRating} size="md" interactive onChange={(value) => updateDraft(setDraft, 'keyRating', value)} />
+              <button
+                type="button"
+                className="text-xs uppercase tracking-[0.16em] text-muted transition hover:text-foreground"
+                onClick={() => updateDraft(setDraft, 'keyRating', 0)}
+              >
+                Clear
+              </button>
+            </div>
+          </div>
         </InspectorField>
 
         <InspectorField label="Color">
@@ -263,12 +272,14 @@ export function SceneInspector({ scene, tags, onSave, onDelete }: Props) {
 function toDraft(scene: Scene, tags: Tag[]): Draft {
   return {
     id: scene.id,
+    sortOrder: scene.sortOrder,
     title: scene.title,
     synopsis: scene.synopsis,
     notes: scene.notes,
     color: scene.color,
     status: scene.status,
-    isKeyScene: scene.isKeyScene,
+    keyRating: scene.keyRating,
+    folder: scene.folder,
     category: scene.category,
     estimatedDurationMinutes: secondsToMinutes(scene.estimatedDuration),
     actualDurationMinutes: secondsToMinutes(scene.actualDuration),
@@ -286,12 +297,14 @@ function toDraft(scene: Scene, tags: Tag[]): Draft {
 function toPayload(draft: Draft) {
   return {
     id: draft.id,
+    sortOrder: draft.sortOrder,
     title: draft.title.trim() || 'Untitled scene',
     synopsis: draft.synopsis,
     notes: draft.notes,
     color: draft.color,
     status: draft.status,
-    isKeyScene: draft.isKeyScene,
+    keyRating: draft.keyRating,
+    folder: draft.folder,
     category: draft.category,
     estimatedDuration: minutesToSeconds(draft.estimatedDurationMinutes || 0),
     actualDuration: minutesToSeconds(draft.actualDurationMinutes || 0),
@@ -312,7 +325,7 @@ function toPayload(draft: Draft) {
 function updateDraft(
   setDraft: Dispatch<SetStateAction<Draft | null>>,
   key: keyof Draft,
-  value: string | number | boolean,
+  value: string | number,
 ) {
   setDraft((current) => (current ? { ...current, [key]: value } : current))
 }

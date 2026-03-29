@@ -3,10 +3,14 @@ import path from 'node:path'
 
 import { app, BrowserWindow, nativeImage } from 'electron'
 
+import { AIConsultantService } from './ai-consultant-service'
+import { AppSettingsService } from './app-settings-service'
 import { registerIpc } from './ipc'
 import { ProjectService } from './project-service'
 
 const projectService = new ProjectService()
+const settingsService = new AppSettingsService()
+const consultantService = new AIConsultantService(projectService, settingsService)
 let mainWindow: BrowserWindow | null = null
 let pendingProjectToOpen: string | null = null
 
@@ -51,7 +55,7 @@ app.on('open-file', (event, filePath) => {
 })
 
 app.whenReady().then(() => {
-  registerIpc(projectService)
+  registerIpc(projectService, settingsService, consultantService)
   applyDockIcon()
   createWindow()
   if (pendingProjectToOpen) {

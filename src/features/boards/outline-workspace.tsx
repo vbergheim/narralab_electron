@@ -1,5 +1,6 @@
 import type { Dispatch, MouseEvent as ReactMouseEvent, PointerEventHandler, ReactNode, RefObject, SetStateAction } from 'react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   closestCenter,
   DndContext,
@@ -22,11 +23,12 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import {
-  ArrowRightLeft,
+  ChevronDown,
+  ChevronRight,
+  Folder,
   GripVertical,
   LayoutPanelTop,
   Plus,
-  Star,
   X,
 } from 'lucide-react'
 
@@ -34,20 +36,25 @@ import { SceneCard } from '@/components/cards/scene-card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ContextMenu, type ContextMenuItem } from '@/components/ui/context-menu'
+import { KeyRatingButton } from '@/components/ui/key-rating-button'
 import { Panel } from '@/components/ui/panel'
+import { usePersistedStringArray } from '@/hooks/use-persisted-string-array'
 import { usePanelResize } from '@/hooks/use-panel-resize'
 import { cn } from '@/lib/cn'
 import { boardBlockKinds, sceneColors } from '@/lib/constants'
 import { formatDuration } from '@/lib/durations'
-import type { Board, BoardItem, BoardTextItemKind } from '@/types/board'
+import type { BlockTemplate, Board, BoardItem, BoardTextItemKind } from '@/types/board'
 import { isSceneBoardItem } from '@/types/board'
-import type { Scene } from '@/types/scene'
+import type { Scene, SceneFolder } from '@/types/scene'
 import type { Tag } from '@/types/tag'
 import type { SceneDensity } from '@/types/view'
 
 type Props = {
   board: Board
+  allBoards: Board[]
   scenes: Scene[]
+  sceneFolders: SceneFolder[]
+  blockTemplates: BlockTemplate[]
   filteredSceneIds: string[]
   tags: Tag[]
   density: SceneDensity
@@ -59,6 +66,10 @@ type Props = {
   onDuplicateScene(sceneId: string, afterItemId?: string | null): void
   onAddScene(sceneId: string, afterItemId?: string | null): void
   onAddBlock(kind: BoardTextItemKind, afterItemId?: string | null): void
+  onAddTemplate(templateId: string, afterItemId?: string | null): void
+  onSaveTemplate(input: { kind: BoardTextItemKind; name: string; title: string; body: string }): void
+  onDeleteTemplate(templateId: string): void
+  onCopyBlockToBoard(itemId: string, boardId: string): void
   onDuplicateBlock(itemId: string): void
   onRemoveBoardItem(itemId: string): void
   onReorder(itemIds: string[]): void
@@ -71,7 +82,10 @@ type DragPayload =
 
 export function OutlineWorkspace({
   board,
+  allBoards,
   scenes,
+  sceneFolders,
+  blockTemplates,
   filteredSceneIds,
   tags,
   density,
@@ -83,17 +97,24 @@ export function OutlineWorkspace({
   onDuplicateScene,
   onAddScene,
   onAddBlock,
+  onAddTemplate,
+  onSaveTemplate,
+  onDeleteTemplate,
+  onCopyBlockToBoard,
   onDuplicateBlock,
   onRemoveBoardItem,
   onReorder,
 }: Props) {
   const [activeDrag, setActiveDrag] = useState<DragPayload>(null)
   const [menuState, setMenuState] = useState<{ itemId: string; x: number; y: number } | null>(null)
+  const [copyMenuState, setCopyMenuState] = useState<{ itemId: string; x: number; y: number } | null>(null)
   const outlineScrollRef = useRef<HTMLDivElement | null>(null)
   const bankResize = usePanelResize({ initial: 320, min: 240, max: 520 })
+  const [collapsedBankFolders, setCollapsedBankFolders] = usePersistedStringArray('docudoc:collapsed:scene-folders')
   const filteredSceneIdSet = useMemo(() => new Set(filteredSceneIds), [filteredSceneIds])
   const boardSceneIds = board.items.filter(isSceneBoardItem).map((item) => item.sceneId)
   const bankScenes = scenes.filter((scene) => filteredSceneIdSet.has(scene.id))
+  const groupedBankScenes = useMemo(() => groupScenesByFolder(bankScenes, sceneFolders), [bankScenes, sceneFolders])
   const totalDuration = board.items.reduce((sum, item) => {
     if (!isSceneBoardItem(item)) return sum
     const scene = scenes.find((entry) => entry.id === item.sceneId)
@@ -125,7 +146,7 @@ export function OutlineWorkspace({
         { label: 'Open Inspector', onSelect: () => onOpenInspector(scene.id, item.id) },
         { label: 'Duplicate Scene', onSelect: () => onDuplicateScene(scene.id, item.id) },
         {
-          label: scene.isKeyScene ? 'Unmark Key Scene' : 'Mark Key Scene',
+          label: scene.keyRating >= 5 ? 'Reset Key Rating' : 'Increase Key Rating',
           onSelect: () => onToggleKeyScene(scene),
         },
         { label: 'Remove from Outline', onSelect: () => onRemoveBoardItem(item.id) },
@@ -134,10 +155,40 @@ export function OutlineWorkspace({
 
     return [
       { label: 'Edit Block', onSelect: () => onOpenInspector(null, item.id) },
+      {
+        label: 'Copy To Board...',
+        onSelect: () => {
+          if (!menuState) return
+          setCopyMenuState({ itemId: item.id, x: menuState.x, y: menuState.y })
+        },
+      },
+      {
+        label: 'Save as Template',
+        onSelect: () =>
+          onSaveTemplate({
+            kind: item.kind,
+            name: item.title.trim() || `${item.kind} template`,
+            title: item.title,
+            body: item.body,
+          }),
+      },
       { label: 'Duplicate Block', onSelect: () => onDuplicateBlock(item.id) },
       { label: 'Remove Block', danger: true, onSelect: () => onRemoveBoardItem(item.id) },
     ]
-  }, [board.items, menuState, onDuplicateBlock, onDuplicateScene, onOpenInspector, onRemoveBoardItem, onToggleKeyScene, scenes])
+  }, [board.items, menuState, onDuplicateBlock, onDuplicateScene, onOpenInspector, onRemoveBoardItem, onSaveTemplate, onToggleKeyScene, scenes])
+
+  const copyMenuItems = useMemo<ContextMenuItem[]>(() => {
+    if (!copyMenuState) return []
+    const item = board.items.find((entry) => entry.id === copyMenuState.itemId)
+    if (!item || isSceneBoardItem(item)) return []
+
+    return allBoards
+      .filter((entry) => entry.id !== board.id)
+      .map((targetBoard) => ({
+        label: targetBoard.name,
+        onSelect: () => onCopyBlockToBoard(item.id, targetBoard.id),
+      }))
+  }, [allBoards, board.id, board.items, copyMenuState, onCopyBlockToBoard])
 
   return (
     <DndContext
@@ -159,33 +210,87 @@ export function OutlineWorkspace({
         <div className="shrink-0" style={{ width: bankResize.size }}>
           <DropPanel id="bank-dropzone" title="Scene Bank" description="Drag scenes into the outline">
             <div className="space-y-3">
-              {bankScenes.map((scene) => {
-                const isOnBoard = boardSceneIds.includes(scene.id)
-                return (
-                  <SceneDraggable
-                    key={scene.id}
-                    id={`scene:${scene.id}`}
-                    scene={scene}
-                    tags={tags.filter((tag) => scene.tagIds.includes(tag.id))}
-                    density={density}
-                    selected={selectedSceneId === scene.id && !selectedBoardItemId}
-                    onClick={() => onSelect(scene.id)}
-                    onDoubleClick={() => onOpenInspector(scene.id)}
-                    onToggleKeyScene={() => onToggleKeyScene(scene)}
-                    onAdd={() => onAddScene(scene.id, resolveInsertAfterItemId(outlineScrollRef.current, selectedBoardItemId))}
-                    showAdd={!isOnBoard}
-                    footer={
-                      isOnBoard ? (
-                        <Badge className="border-accent/40 bg-accent/10 text-accent">On outline</Badge>
-                      ) : (
-                        <Button variant="ghost" size="sm" onClick={() => onAddScene(scene.id)}>
-                          Add
-                        </Button>
+              {groupedBankScenes.groups.map((group) => (
+                <div
+                  key={group.folderPath}
+                  className={cn(
+                    'rounded-xl border border-border/50 bg-panelMuted/20 px-2 py-1.5',
+                    hasCollapsedAncestor(group.folderPath, collapsedBankFolders) && 'hidden',
+                  )}
+                >
+                  <button
+                    type="button"
+                    className="flex min-h-8 w-full items-center justify-between gap-2 px-1 text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-muted transition hover:text-foreground"
+                    style={{ paddingLeft: `${group.depth * 14 + 4}px` }}
+                    onClick={() =>
+                      setCollapsedBankFolders((current) =>
+                        current.includes(group.folderPath)
+                          ? current.filter((entry) => entry !== group.folderPath)
+                          : [...current, group.folderPath],
                       )
                     }
-                  />
-                )
-              })}
+                  >
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      {collapsedBankFolders.includes(group.folderPath) ? (
+                        <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+                      ) : (
+                        <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                      )}
+                      <Folder className="h-3.5 w-3.5 shrink-0" style={{ color: colorHex(group.color) }} />
+                      <span className="truncate">{formatFolderLabel(group.label)}</span>
+                    </div>
+                    <span className="min-w-4 text-right text-[10px] text-muted/80">{group.scenes.length}</span>
+                  </button>
+                  {!collapsedBankFolders.includes(group.folderPath) ? (
+                    <div className="mt-1.5 space-y-3 pl-5">
+                      {group.scenes.map((scene) => (
+                        <BankSceneDraggable
+                          key={scene.id}
+                          scene={scene}
+                          boardSceneIds={boardSceneIds}
+                          tags={tags}
+                          density={density}
+                          selectedSceneId={selectedSceneId}
+                          selectedBoardItemId={selectedBoardItemId}
+                          onSelect={onSelect}
+                          onOpenInspector={onOpenInspector}
+                          onToggleKeyScene={onToggleKeyScene}
+                          onAddScene={onAddScene}
+                          outlineScrollRef={outlineScrollRef}
+                        />
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+
+              {groupedBankScenes.rootScenes.length > 0 ? (
+                <div className={cn(groupedBankScenes.groups.length > 0 && 'pt-1')}>
+                  {groupedBankScenes.groups.length > 0 ? (
+                    <div className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">
+                      Loose Scenes
+                    </div>
+                  ) : null}
+                  <div className="space-y-3">
+                    {groupedBankScenes.rootScenes.map((scene) => (
+                      <BankSceneDraggable
+                        key={scene.id}
+                        scene={scene}
+                        boardSceneIds={boardSceneIds}
+                        tags={tags}
+                        density={density}
+                        selectedSceneId={selectedSceneId}
+                        selectedBoardItemId={selectedBoardItemId}
+                        onSelect={onSelect}
+                        onOpenInspector={onOpenInspector}
+                        onToggleKeyScene={onToggleKeyScene}
+                        onAddScene={onAddScene}
+                        outlineScrollRef={outlineScrollRef}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </div>
           </DropPanel>
         </div>
@@ -202,15 +307,14 @@ export function OutlineWorkspace({
             title={board.name}
             description={`${board.items.length} rows · ${formatDuration(totalDuration)}`}
             headingAction={
-              <div className="flex items-center gap-2">
+              <div className="flex shrink-0 items-center gap-2 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 <AddBlockMenu
+                  templates={blockTemplates}
                   onAddBlock={onAddBlock}
+                  onAddTemplate={onAddTemplate}
+                  onDeleteTemplate={onDeleteTemplate}
                   getInsertAfterItemId={() => resolveInsertAfterItemId(outlineScrollRef.current, selectedBoardItemId)}
                 />
-                <div className="hidden items-center gap-2 text-xs text-muted lg:flex">
-                  <ArrowRightLeft className="h-4 w-4" />
-                  Drag back to bank to remove scenes
-                </div>
               </div>
             }
             bodyRef={outlineScrollRef}
@@ -251,24 +355,24 @@ export function OutlineWorkspace({
 
       <DragOverlay dropAnimation={null}>
         {activeOverlay ? (
-          <div className="w-[360px]">
+          <div className="max-w-[420px] opacity-95">
             {'id' in activeOverlay && 'updatedAt' in activeOverlay && 'kind' in activeOverlay ? (
               isSceneBoardItem(activeOverlay) ? (
                 <OutlineSceneRow
                   index={0}
                   scene={scenes.find((entry) => entry.id === activeOverlay.sceneId) ?? null}
                   tags={tags.filter((tag) => (scenes.find((entry) => entry.id === activeOverlay.sceneId)?.tagIds ?? []).includes(tag.id))}
-                  density="detailed"
+                  density={density}
                   overlay
                 />
               ) : (
-                <OutlineTextRow item={activeOverlay} density="detailed" overlay />
+                <OutlineTextRow item={activeOverlay} density={density} overlay />
               )
             ) : (
               <SceneCard
                 scene={activeOverlay}
                 tags={tags.filter((tag) => activeOverlay.tagIds.includes(tag.id))}
-                density="detailed"
+                density={density}
                 overlay
               />
             )}
@@ -281,6 +385,13 @@ export function OutlineWorkspace({
         y={menuState?.y ?? 0}
         items={menuItems}
         onClose={() => setMenuState(null)}
+      />
+      <ContextMenu
+        open={Boolean(copyMenuState)}
+        x={copyMenuState?.x ?? 0}
+        y={copyMenuState?.y ?? 0}
+        items={copyMenuItems}
+        onClose={() => setCopyMenuState(null)}
       />
     </DndContext>
   )
@@ -371,17 +482,17 @@ function DropPanel({
     <Panel
       ref={setNodeRef}
       className={cn(
-        'flex h-full flex-col overflow-hidden',
+        'flex h-full flex-col',
         isOver && 'border-accent/60 bg-accent/5',
       )}
     >
-      <div className="flex items-start justify-between gap-4 border-b border-border/90 px-4 py-4">
-        <div>
+      <div className="flex min-w-0 items-start justify-between gap-3 border-b border-border/90 px-4 py-4">
+        <div className="min-w-0">
           <div className="flex items-center gap-2 font-display text-sm font-semibold uppercase tracking-[0.16em] text-foreground">
             <LayoutPanelTop className="h-4 w-4 text-accent" />
-            {title}
+            <span className="truncate">{title}</span>
           </div>
-          <div className="mt-1 text-sm text-muted">{description}</div>
+          <div className="mt-1 truncate text-sm text-muted">{description}</div>
         </div>
         {headingAction}
       </div>
@@ -391,14 +502,22 @@ function DropPanel({
 }
 
 function AddBlockMenu({
+  templates,
   onAddBlock,
+  onAddTemplate,
+  onDeleteTemplate,
   getInsertAfterItemId,
 }: {
+  templates: BlockTemplate[]
   onAddBlock(kind: BoardTextItemKind, afterItemId?: string | null): void
+  onAddTemplate(templateId: string, afterItemId?: string | null): void
+  onDeleteTemplate(templateId: string): void
   getInsertAfterItemId(): string | null
 }) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement | null>(null)
+  const menuRef = useRef<HTMLDivElement | null>(null)
+  const [position, setPosition] = useState({ left: 0, top: 0 })
 
   useEffect(() => {
     if (!open) return
@@ -413,14 +532,43 @@ function AddBlockMenu({
     return () => window.removeEventListener('pointerdown', onPointerDown)
   }, [open])
 
+  useEffect(() => {
+    if (!open || !rootRef.current) return
+    const rect = rootRef.current.getBoundingClientRect()
+    setPosition({ left: rect.right - 256, top: rect.bottom + 8 })
+  }, [open])
+
+  useLayoutEffect(() => {
+    if (!open || !menuRef.current) return
+
+    const rect = menuRef.current.getBoundingClientRect()
+    const margin = 12
+    setPosition((current) => ({
+      left: Math.max(margin, Math.min(current.left, window.innerWidth - rect.width - margin)),
+      top: Math.max(margin, Math.min(current.top, window.innerHeight - rect.height - margin)),
+    }))
+  }, [open, templates.length])
+
   return (
     <div ref={rootRef} className="relative">
-      <Button variant="ghost" size="sm" onClick={() => setOpen((current) => !current)}>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => setOpen((current) => !current)}
+        title="Add Block"
+        aria-label="Add Block"
+      >
         <Plus className="h-4 w-4" />
-        Add Block
+        <span className="hidden xl:inline">Add Block</span>
       </Button>
-      {open ? (
-        <div className="absolute right-0 z-20 mt-2 w-52 rounded-2xl border border-border/90 bg-panel p-2 shadow-panel">
+      {open
+        ? createPortal(
+        <div
+          ref={menuRef}
+          className="fixed z-50 w-64 rounded-2xl border border-border/90 bg-panel/95 p-2 shadow-panel backdrop-blur"
+          style={{ left: position.left, top: position.top }}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
           {boardBlockKinds.map((kind) => (
             <button
               key={kind.value}
@@ -435,9 +583,95 @@ function AddBlockMenu({
               <Badge>{kind.shortLabel}</Badge>
             </button>
           ))}
-        </div>
-      ) : null}
+          {templates.length > 0 ? (
+            <>
+              <div className="my-2 h-px bg-border/80" />
+              <div className="px-3 pb-1 pt-0.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">
+                Templates
+              </div>
+              {templates.map((template) => (
+                <div
+                  key={template.id}
+                  className="flex items-center gap-2 rounded-xl px-2 py-1.5 transition hover:bg-panelMuted"
+                >
+                  <button
+                    type="button"
+                    className="flex min-w-0 flex-1 items-center justify-between gap-3 rounded-xl px-1 py-1 text-left text-sm text-foreground"
+                    onClick={() => {
+                      onAddTemplate(template.id, getInsertAfterItemId())
+                      setOpen(false)
+                    }}
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium">{template.name}</span>
+                      <span className="block truncate text-xs text-muted">{template.title || 'Saved block template'}</span>
+                    </span>
+                    <Badge>{boardBlockKinds.find((entry) => entry.value === template.kind)?.shortLabel ?? 'Block'}</Badge>
+                  </button>
+                  <InlineActionButton label="Delete template" onClick={() => onDeleteTemplate(template.id)}>
+                    <X className="h-4 w-4" />
+                  </InlineActionButton>
+                </div>
+              ))}
+            </>
+          ) : null}
+        </div>,
+        document.body,
+      )
+        : null}
     </div>
+  )
+}
+
+function BankSceneDraggable({
+  scene,
+  boardSceneIds,
+  tags,
+  density,
+  selectedSceneId,
+  selectedBoardItemId,
+  onSelect,
+  onOpenInspector,
+  onToggleKeyScene,
+  onAddScene,
+  outlineScrollRef,
+}: {
+  scene: Scene
+  boardSceneIds: string[]
+  tags: Tag[]
+  density: SceneDensity
+  selectedSceneId: string | null
+  selectedBoardItemId: string | null
+  onSelect(sceneId: string | null, boardItemId?: string): void
+  onOpenInspector(sceneId: string | null, boardItemId?: string): void
+  onToggleKeyScene(scene: Scene): void
+  onAddScene(sceneId: string, afterItemId?: string | null): void
+  outlineScrollRef: RefObject<HTMLDivElement | null>
+}) {
+  const isOnBoard = boardSceneIds.includes(scene.id)
+
+  return (
+    <SceneDraggable
+      id={`scene:${scene.id}`}
+      scene={scene}
+      tags={tags.filter((tag) => scene.tagIds.includes(tag.id))}
+      density={density}
+      selected={selectedSceneId === scene.id && !selectedBoardItemId}
+      onClick={() => onSelect(scene.id)}
+      onDoubleClick={() => onOpenInspector(scene.id)}
+      onToggleKeyScene={() => onToggleKeyScene(scene)}
+      onAdd={() => onAddScene(scene.id, resolveInsertAfterItemId(outlineScrollRef.current, selectedBoardItemId))}
+      showAdd={!isOnBoard}
+      footer={
+        isOnBoard ? (
+          <Badge className="border-accent/40 bg-accent/10 text-accent">On outline</Badge>
+        ) : (
+          <Button variant="ghost" size="sm" onClick={() => onAddScene(scene.id)}>
+            Add
+          </Button>
+        )
+      }
+    />
   )
 }
 
@@ -488,16 +722,11 @@ function SceneDraggable({
         onClick={onClick}
         onDoubleClick={onDoubleClick}
         actions={
-          <>
-            <InlineActionButton
-              label={scene.isKeyScene ? 'Unmark key scene' : 'Mark key scene'}
-              onClick={onToggleKeyScene}
-            >
-              <Star className={cn('h-4 w-4', scene.isKeyScene && 'fill-amber-400 text-amber-400')} />
-            </InlineActionButton>
-            {showAdd ? (
-              <InlineActionButton label="Add to outline" onClick={onAdd}>
-                <Plus className="h-4 w-4" />
+            <>
+              <KeyRatingButton value={scene.keyRating} onChange={onToggleKeyScene} />
+              {showAdd ? (
+                <InlineActionButton label="Add to outline" onClick={onAdd}>
+                  <Plus className="h-4 w-4" />
               </InlineActionButton>
             ) : null}
           </>
@@ -519,6 +748,56 @@ function SceneDraggable({
       ) : null}
     </div>
   )
+}
+
+function groupScenesByFolder(scenes: Scene[], folders: SceneFolder[]) {
+  const groups = new Map<string, { folderPath: string; label: string; color: SceneFolder['color']; scenes: Scene[]; depth: number }>()
+  const order = [...folders]
+    .sort((left, right) => left.sortOrder - right.sortOrder || left.path.localeCompare(right.path))
+    .map((folder) => folder.path)
+
+  order.forEach((folderPath) => {
+    const folder = folders.find((entry) => entry.path === folderPath)
+    groups.set(folderPath, {
+      folderPath,
+      label: folder?.name ?? folderPath.split('/').at(-1) ?? '',
+      color: folder?.color ?? 'slate',
+      scenes: [],
+      depth: folderPath.split('/').length - 1,
+    })
+  })
+
+  const rootScenes: Scene[] = []
+
+  scenes.forEach((scene) => {
+    const folderPath = scene.folder.trim()
+    if (!folderPath) {
+      rootScenes.push(scene)
+      return
+    }
+
+    if (!groups.has(folderPath)) {
+      groups.set(folderPath, {
+        folderPath,
+        label: folderPath.split('/').at(-1) ?? folderPath,
+        color: 'slate',
+        scenes: [],
+        depth: folderPath.split('/').length - 1,
+      })
+      order.push(folderPath)
+    }
+
+    groups.get(folderPath)?.scenes.push(scene)
+  })
+
+  return {
+    groups: order.map((folderPath) => groups.get(folderPath)!).filter((group) => group.scenes.length > 0),
+    rootScenes,
+  }
+}
+
+function hasCollapsedAncestor(path: string, collapsedFolders: string[]) {
+  return collapsedFolders.some((collapsedPath) => path !== collapsedPath && path.startsWith(`${collapsedPath}/`))
 }
 
 function BoardSortableItem({
@@ -590,12 +869,7 @@ function BoardSortableItem({
                 </InlineActionButton>
               ) : null}
               {scene ? (
-                <InlineActionButton
-                  label={scene.isKeyScene ? 'Unmark key scene' : 'Mark key scene'}
-                  onClick={onToggleKeyScene}
-                >
-                  <Star className={cn('h-4 w-4', scene.isKeyScene && 'fill-amber-400 text-amber-400')} />
-                </InlineActionButton>
+                <KeyRatingButton value={scene.keyRating} onChange={onToggleKeyScene} />
               ) : null}
               {density === 'detailed' ? (
                 <Button variant="ghost" size="sm" onClick={onRemove}>
@@ -733,7 +1007,6 @@ function OutlineSceneRow({
           <div className="min-w-0">
             <div className="flex items-center gap-2 font-display text-[15px] font-semibold text-foreground">
               {scene.title}
-              {scene.isKeyScene ? <Star className="h-4 w-4 fill-amber-400 text-amber-400" /> : null}
             </div>
             <div className="mt-1 line-clamp-2 text-sm leading-6 text-muted">
               {scene.synopsis || 'No synopsis yet'}
@@ -958,6 +1231,14 @@ function hexToRgba(hex: string, alpha: number) {
   const blue = Number.parseInt(value.slice(4, 6), 16)
 
   return `rgba(${red}, ${green}, ${blue}, ${alpha})`
+}
+
+function colorHex(color: SceneFolder['color']) {
+  return sceneColors.find((entry) => entry.value === color)?.hex ?? '#607086'
+}
+
+function formatFolderLabel(label: string) {
+  return label.toLocaleUpperCase('nb-NO')
 }
 
 function resolveInsertAfterItemId(

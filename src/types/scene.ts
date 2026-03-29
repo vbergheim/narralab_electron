@@ -17,12 +17,14 @@ export type SceneColor =
 
 export type Scene = {
   id: string
+  sortOrder: number
   title: string
   synopsis: string
   notes: string
   color: SceneColor
   status: SceneStatus
-  isKeyScene: boolean
+  keyRating: number
+  folder: string
   category: string
   estimatedDuration: number
   actualDuration: number
@@ -36,3 +38,11 @@ export type Scene = {
 }
 
 export type SceneUpdateInput = Partial<Omit<Scene, 'createdAt' | 'updatedAt'>> & Pick<Scene, 'id'>
+
+export type SceneFolder = {
+  path: string
+  name: string
+  parentPath: string | null
+  color: SceneColor
+  sortOrder: number
+}

@@ -1,12 +1,19 @@
 import { create } from 'zustand'
 
+import type { ArchiveFolder, ArchiveItem } from '@/types/archive'
 import { defaultBoardCloneName } from '@/lib/constants'
-import type { Board, BoardItem, BoardTextItem, BoardTextItemKind } from '@/types/board'
-import type { NotebookDocument, ProjectMeta } from '@/types/project'
-import type { Scene, SceneUpdateInput } from '@/types/scene'
+import type {
+  AppSettings,
+  AppSettingsUpdateInput,
+  ConsultantContextMode,
+  ConsultantMessage,
+} from '@/types/ai'
+import type { BlockTemplate, Board, BoardFolder, BoardItem, BoardTextItem, BoardTextItemKind, BoardUpdateInput } from '@/types/board'
+import type { BoardScriptExportFormat, NotebookDocument, ProjectMeta } from '@/types/project'
+import type { Scene, SceneFolder, SceneUpdateInput } from '@/types/scene'
 import type { Tag, TagType } from '@/types/tag'
 
-type WorkspaceMode = 'outline' | 'bank' | 'notebook'
+type WorkspaceMode = 'outline' | 'bank' | 'notebook' | 'archive' | 'consultant' | 'settings'
 
 type SceneDraftInput = Omit<Scene, 'tagIds' | 'createdAt' | 'updatedAt'> & {
   tagNames: string[]
@@ -23,42 +30,87 @@ type SceneBulkUpdateInput = {
 type AppStore = {
   ready: boolean
   busy: boolean
+  consultantBusy: boolean
   error: string | null
   projectMeta: ProjectMeta | null
+  appSettings: AppSettings
   notebook: NotebookDocument
+  archiveFolders: ArchiveFolder[]
+  archiveItems: ArchiveItem[]
   scenes: Scene[]
+  sceneFolders: SceneFolder[]
   boards: Board[]
+  boardFolders: BoardFolder[]
+  blockTemplates: BlockTemplate[]
   tags: Tag[]
   activeBoardId: string | null
+  selectedBoardId: string | null
   selectedSceneId: string | null
   selectedSceneIds: string[]
   selectedBoardItemId: string | null
+  selectedArchiveFolderId: string | null
+  consultantMessages: ConsultantMessage[]
+  consultantContextMode: ConsultantContextMode
   workspaceMode: WorkspaceMode
+  updateAppSettings(input: AppSettingsUpdateInput): Promise<void>
+  sendConsultantMessage(content: string): Promise<void>
+  setConsultantContextMode(mode: ConsultantContextMode): void
+  clearConsultantConversation(): void
   initialize(): Promise<void>
   refreshAll(): Promise<void>
+  createArchiveFolder(name: string, parentId?: string | null): Promise<void>
+  renameArchiveFolder(folderId: string, name: string): Promise<void>
+  updateArchiveFolder(folderId: string, input: { name?: string; color?: ArchiveFolder['color'] }): Promise<void>
+  deleteArchiveFolder(folderId: string): Promise<void>
+  addArchiveFiles(filePaths?: string[] | null, folderId?: string | null): Promise<void>
+  moveArchiveItem(itemId: string, folderId: string | null): Promise<void>
+  deleteArchiveItem(itemId: string): Promise<void>
+  openArchiveItem(itemId: string): Promise<void>
+  revealArchiveItem(itemId: string): Promise<void>
+  setSelectedArchiveFolder(folderId: string | null): void
   createProject(): Promise<void>
   openProject(): Promise<void>
   saveProjectAs(): Promise<void>
   importJson(): Promise<void>
   exportJson(): Promise<void>
+  exportActiveBoardScript(format: BoardScriptExportFormat): Promise<void>
   createScene(): Promise<void>
+  createSceneFolder(name: string, parentPath?: string | null): Promise<void>
+  updateSceneFolder(currentPath: string, input: { name?: string; color?: SceneFolder['color']; parentPath?: string | null }): Promise<void>
+  deleteSceneFolder(currentPath: string): Promise<void>
+  moveScenesToFolder(sceneIds: string[], folder: string): Promise<void>
+  reorderScenes(sceneIds: string[]): Promise<void>
+  createBoard(name?: string, folder?: string | null): Promise<void>
+  createBoardFolder(name: string, parentPath?: string | null): Promise<void>
+  renameBoardFolder(oldPath: string, newName: string): Promise<void>
+  updateBoardFolder(currentPath: string, input: { name?: string; color?: BoardFolder['color']; parentPath?: string | null }): Promise<void>
+  deleteBoardFolder(currentPath: string): Promise<void>
+  deleteBoard(boardId: string): Promise<void>
   deleteScene(sceneId: string): Promise<void>
+  deleteScenes(sceneIds: string[]): Promise<void>
   persistSceneDraft(input: SceneDraftInput): Promise<void>
   bulkUpdateScenes(input: SceneBulkUpdateInput): Promise<void>
   persistBoardItemDraft(input: BoardItemDraftInput): Promise<void>
   updateNotebookDraft(content: string): void
   persistNotebook(content: string): Promise<void>
   duplicateScene(sceneId: string, options?: { addToBoardAfterItemId?: string | null }): Promise<void>
+  openBoardInspector(boardId: string): void
   selectScene(sceneId: string | null, boardItemId?: string | null): void
   toggleSceneSelection(sceneId: string): void
   setSceneSelection(sceneIds: string[]): void
   clearSceneSelection(): void
   setWorkspaceMode(mode: WorkspaceMode): void
   setActiveBoard(boardId: string): void
-  renameBoard(boardId: string, name: string): Promise<void>
+  updateBoardDraft(input: BoardUpdateInput): Promise<void>
+  reorderBoards(boardIds: string[]): Promise<void>
   cloneBoard(boardId: string): Promise<void>
+  moveBoard(boardId: string, folder: string, beforeBoardId?: string | null): Promise<void>
   addSceneToActiveBoard(sceneId: string, afterItemId?: string | null): Promise<void>
   addBlockToActiveBoard(kind: BoardTextItemKind, afterItemId?: string | null): Promise<void>
+  addBlockTemplateToActiveBoard(templateId: string, afterItemId?: string | null): Promise<void>
+  saveBlockTemplate(input: { kind: BoardTextItemKind; name: string; title: string; body: string }): Promise<void>
+  deleteBlockTemplate(templateId: string): Promise<void>
+  copyBlockToBoard(itemId: string, boardId: string): Promise<void>
   duplicateBoardItem(itemId: string): Promise<void>
   removeBoardItem(itemId: string): Promise<void>
   reorderActiveBoard(itemIds: string[]): Promise<void>
@@ -69,22 +121,48 @@ type AppStore = {
 export const useAppStore = create<AppStore>((set, get) => ({
   ready: false,
   busy: false,
+  consultantBusy: false,
   error: null,
   projectMeta: null,
+  appSettings: {
+    ai: {
+      provider: 'openai',
+      openAiModel: 'gpt-5-mini',
+      geminiModel: 'gemini-2.5-flash',
+      systemPrompt:
+        'Du er en skarp, erfaren dokumentarkonsulent. Gi konkrete, redaksjonelle forslag til struktur, dramaturgi, scenevalg, voiceover, tematiske linjer og hva som mangler. Vær presis og arbeidsnær, ikke vag.',
+      extraInstructions: '',
+      responseStyle: 'structured',
+      hasOpenAiApiKey: false,
+      hasGeminiApiKey: false,
+    },
+  },
   notebook: { content: '', updatedAt: null },
+  archiveFolders: [],
+  archiveItems: [],
   scenes: [],
+  sceneFolders: [],
   boards: [],
+  boardFolders: [],
+  blockTemplates: [],
   tags: [],
   activeBoardId: null,
+  selectedBoardId: null,
   selectedSceneId: null,
   selectedSceneIds: [],
   selectedBoardItemId: null,
+  selectedArchiveFolderId: null,
+  consultantMessages: [],
+  consultantContextMode: 'none',
   workspaceMode: 'outline',
 
   async initialize() {
     try {
-      const meta = await window.docudoc.project.getMeta()
-      set({ ready: true, projectMeta: meta })
+      const [meta, appSettings] = await Promise.all([
+        window.docudoc.project.getMeta(),
+        window.docudoc.settings.get(),
+      ])
+      set({ ready: true, projectMeta: meta, appSettings })
       if (meta) {
         await get().refreshAll()
       }
@@ -99,45 +177,158 @@ export const useAppStore = create<AppStore>((set, get) => ({
       set({
         projectMeta: null,
         notebook: { content: '', updatedAt: null },
+        archiveFolders: [],
+        archiveItems: [],
         scenes: [],
+        sceneFolders: [],
         boards: [],
+        boardFolders: [],
+        blockTemplates: [],
         tags: [],
         activeBoardId: null,
       })
       return
     }
 
-    const [notebook, scenes, boards, tags] = await Promise.all([
+    const [notebook, archiveFolders, archiveItems, scenes, sceneFolders, boards, boardFolders, blockTemplates, tags] = await Promise.all([
       window.docudoc.notebook.get(),
+      window.docudoc.archive.folders.list(),
+      window.docudoc.archive.items.list(),
       window.docudoc.scenes.list(),
+      window.docudoc.sceneFolders.list(),
       window.docudoc.boards.list(),
+      window.docudoc.boardFolders.list(),
+      window.docudoc.blockTemplates.list(),
       window.docudoc.tags.list(),
     ])
 
     set((state) => ({
       projectMeta: meta,
       notebook,
+      archiveFolders,
+      archiveItems,
       scenes,
+      sceneFolders,
       boards,
+      boardFolders,
+      blockTemplates,
       tags,
+      consultantMessages: state.projectMeta?.path === meta.path ? state.consultantMessages : [],
       activeBoardId:
         state.activeBoardId && boards.some((board) => board.id === state.activeBoardId)
           ? state.activeBoardId
           : boards[0]?.id ?? null,
+      selectedBoardId:
+        state.selectedBoardId && boards.some((board) => board.id === state.selectedBoardId)
+          ? state.selectedBoardId
+          : null,
+      selectedArchiveFolderId:
+        state.selectedArchiveFolderId &&
+        archiveFolders.some((folder) => folder.id === state.selectedArchiveFolderId)
+          ? state.selectedArchiveFolderId
+          : null,
     }))
+  },
+
+  async createArchiveFolder(name, parentId = null) {
+    await runProjectAction(set, async () => {
+      const archiveFolders = await window.docudoc.archive.folders.create(name, parentId)
+      set({ archiveFolders })
+    })
+  },
+
+  async renameArchiveFolder(folderId, name) {
+    await runProjectAction(set, async () => {
+      const archiveFolders = await window.docudoc.archive.folders.rename(folderId, name)
+      set({ archiveFolders })
+    })
+  },
+
+  async updateArchiveFolder(folderId, input) {
+    await runProjectAction(set, async () => {
+      const archiveFolders = await window.docudoc.archive.folders.update({ id: folderId, ...input })
+      set({ archiveFolders })
+    })
+  },
+
+  async deleteArchiveFolder(folderId) {
+    await runProjectAction(set, async () => {
+      const archiveFolders = await window.docudoc.archive.folders.delete(folderId)
+      const archiveItems = await window.docudoc.archive.items.list()
+      set((state) => ({
+        archiveFolders,
+        archiveItems,
+        selectedArchiveFolderId: state.selectedArchiveFolderId === folderId ? null : state.selectedArchiveFolderId,
+      }))
+    })
+  },
+
+  async addArchiveFiles(filePaths, folderId = null) {
+    await runProjectAction(set, async () => {
+      const added = await window.docudoc.archive.items.add(filePaths, folderId)
+      if (added.length === 0) return
+      const archiveItems = await window.docudoc.archive.items.list()
+      set((state) => ({
+        archiveItems,
+        selectedArchiveFolderId: folderId ?? state.selectedArchiveFolderId,
+      }))
+    })
+  },
+
+  async moveArchiveItem(itemId, folderId) {
+    await runProjectAction(set, async () => {
+      await window.docudoc.archive.items.update({ id: itemId, folderId })
+      const archiveItems = await window.docudoc.archive.items.list()
+      set({ archiveItems })
+    })
+  },
+
+  async deleteArchiveItem(itemId) {
+    await runProjectAction(set, async () => {
+      await window.docudoc.archive.items.delete(itemId)
+      set((state) => ({
+        archiveItems: state.archiveItems.filter((item) => item.id !== itemId),
+      }))
+    })
+  },
+
+  async openArchiveItem(itemId) {
+    try {
+      await window.docudoc.archive.items.open(itemId)
+    } catch (error) {
+      set({ error: toMessage(error) })
+    }
+  },
+
+  async revealArchiveItem(itemId) {
+    try {
+      await window.docudoc.archive.items.reveal(itemId)
+    } catch (error) {
+      set({ error: toMessage(error) })
+    }
+  },
+
+  setSelectedArchiveFolder(folderId) {
+    set({ selectedArchiveFolderId: folderId })
   },
 
   async createProject() {
     await runProjectAction(set, async () => {
       const meta = await window.docudoc.project.create()
-      if (meta) await get().refreshAll()
+      if (meta) {
+        await get().refreshAll()
+        set({ consultantMessages: [] })
+      }
     })
   },
 
   async openProject() {
     await runProjectAction(set, async () => {
       const meta = await window.docudoc.project.open()
-      if (meta) await get().refreshAll()
+      if (meta) {
+        await get().refreshAll()
+        set({ consultantMessages: [] })
+      }
     })
   },
 
@@ -151,13 +342,96 @@ export const useAppStore = create<AppStore>((set, get) => ({
   async importJson() {
     await runProjectAction(set, async () => {
       const meta = await window.docudoc.project.importJson()
-      if (meta) await get().refreshAll()
+      if (meta) {
+        await get().refreshAll()
+        set({ consultantMessages: [] })
+      }
     })
+  },
+
+  async updateAppSettings(input) {
+    await runProjectAction(set, async () => {
+      const appSettings = await window.docudoc.settings.update(input)
+      set({ appSettings })
+    })
+  },
+
+  async sendConsultantMessage(content) {
+    const message = content.trim()
+    if (!message) return
+
+    const optimisticUserMessage: ConsultantMessage = {
+      id: crypto.randomUUID(),
+      role: 'user',
+      content: message,
+      createdAt: new Date().toISOString(),
+    }
+
+    set((state) => ({
+      consultantBusy: true,
+      consultantMessages: [...state.consultantMessages, optimisticUserMessage],
+    }))
+
+    try {
+      const conversation = [...get().consultantMessages].slice(-8)
+      const result = await window.docudoc.consultant.chat({
+        activeBoardId: get().activeBoardId,
+        contextMode: get().consultantContextMode,
+        messages: conversation.map((entry) => ({
+          role: entry.role,
+          content: entry.content,
+        })),
+      })
+
+      const reply: ConsultantMessage = {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: result.message,
+        createdAt: new Date().toISOString(),
+      }
+
+      set((state) => ({
+        consultantBusy: false,
+        consultantMessages: [...state.consultantMessages, reply],
+      }))
+    } catch (error) {
+      const reply: ConsultantMessage = {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: toMessage(error),
+        createdAt: new Date().toISOString(),
+        error: true,
+      }
+
+      set((state) => ({
+        consultantBusy: false,
+        error: toMessage(error),
+        consultantMessages: [...state.consultantMessages, reply],
+      }))
+    }
+  },
+
+  setConsultantContextMode(mode) {
+    set({ consultantContextMode: mode })
+  },
+
+  clearConsultantConversation() {
+    set({ consultantMessages: [] })
   },
 
   async exportJson() {
     await runProjectAction(set, async () => {
       await window.docudoc.project.exportJson()
+    })
+  },
+
+  async exportActiveBoardScript(format) {
+    await runProjectAction(set, async () => {
+      const activeBoardId = get().activeBoardId
+      if (!activeBoardId) {
+        throw new Error('Select a board before exporting a script')
+      }
+      await window.docudoc.project.exportBoardScript(activeBoardId, null, format)
     })
   },
 
@@ -169,6 +443,128 @@ export const useAppStore = create<AppStore>((set, get) => ({
         selectedSceneId: scene.id,
         selectedSceneIds: [scene.id],
         selectedBoardItemId: null,
+      }))
+    })
+  },
+
+  async createSceneFolder(name, parentPath = null) {
+    await runProjectAction(set, async () => {
+      const sceneFolders = await window.docudoc.sceneFolders.create(name, parentPath)
+      set({ sceneFolders })
+    })
+  },
+
+  async updateSceneFolder(currentPath, input) {
+    await runProjectAction(set, async () => {
+      const sceneFolders = await window.docudoc.sceneFolders.update(currentPath, input)
+      const scenes =
+        input.name !== undefined || input.parentPath !== undefined
+          ? await window.docudoc.scenes.list()
+          : get().scenes
+      set({ sceneFolders, scenes })
+    })
+  },
+
+  async deleteSceneFolder(currentPath) {
+    await runProjectAction(set, async () => {
+      const [sceneFolders, scenes] = await Promise.all([
+        window.docudoc.sceneFolders.delete(currentPath),
+        window.docudoc.scenes.list(),
+      ])
+      set({ sceneFolders, scenes })
+    })
+  },
+
+  async moveScenesToFolder(sceneIds, folder) {
+    await runProjectAction(set, async () => {
+      const uniqueSceneIds = [...new Set(sceneIds.filter(Boolean))]
+      if (uniqueSceneIds.length === 0) return
+
+      const updatedScenes = await Promise.all(
+        uniqueSceneIds.map((sceneId) =>
+          window.docudoc.scenes.update({ id: sceneId, folder } satisfies SceneUpdateInput),
+        ),
+      )
+      const updatesById = new Map(updatedScenes.map((scene) => [scene.id, scene]))
+      set((state) => ({
+        scenes: state.scenes.map((scene) => updatesById.get(scene.id) ?? scene),
+      }))
+    })
+  },
+
+  async reorderScenes(sceneIds) {
+    await runProjectAction(set, async () => {
+      const scenes = await window.docudoc.scenes.reorder(sceneIds)
+      set({ scenes })
+    })
+  },
+
+  async createBoard(name, folder = null) {
+    await runProjectAction(set, async () => {
+      const board = await window.docudoc.boards.create(name?.trim() || 'New Board', folder)
+      const boardFolders = await window.docudoc.boardFolders.list()
+      set((state) => ({
+        boards: [...state.boards, board],
+        boardFolders,
+        activeBoardId: board.id,
+        selectedBoardId: board.id,
+        selectedSceneId: null,
+        selectedSceneIds: [],
+        selectedBoardItemId: null,
+      }))
+    })
+  },
+
+  async createBoardFolder(name, parentPath = null) {
+    await runProjectAction(set, async () => {
+      const boardFolders = await window.docudoc.boardFolders.create(name, parentPath)
+      set({ boardFolders })
+    })
+  },
+
+  async renameBoardFolder(oldPath, newName) {
+    await runProjectAction(set, async () => {
+      const boardFolders = await window.docudoc.boardFolders.rename(oldPath, newName)
+      const boards = await window.docudoc.boards.list()
+      set({ boardFolders, boards })
+    })
+  },
+
+  async updateBoardFolder(currentPath, input) {
+    await runProjectAction(set, async () => {
+      const boardFolders = await window.docudoc.boardFolders.update(currentPath, input)
+      const boards =
+        input.name !== undefined || input.parentPath !== undefined
+          ? await window.docudoc.boards.list()
+          : get().boards
+      set({ boardFolders, boards })
+    })
+  },
+
+  async deleteBoardFolder(currentPath) {
+    await runProjectAction(set, async () => {
+      const [boardFolders, boards] = await Promise.all([
+        window.docudoc.boardFolders.delete(currentPath),
+        window.docudoc.boards.list(),
+      ])
+      set({ boardFolders, boards })
+    })
+  },
+
+  async deleteBoard(boardId) {
+    await runProjectAction(set, async () => {
+      const boards = await window.docudoc.boards.delete(boardId)
+      const boardFolders = await window.docudoc.boardFolders.list()
+      set((state) => ({
+        boards,
+        boardFolders,
+        activeBoardId:
+          state.activeBoardId === boardId
+            ? boards[0]?.id ?? null
+            : state.activeBoardId && boards.some((board) => board.id === state.activeBoardId)
+              ? state.activeBoardId
+              : boards[0]?.id ?? null,
+        selectedBoardId: state.selectedBoardId === boardId ? null : state.selectedBoardId,
       }))
     })
   },
@@ -185,6 +581,36 @@ export const useAppStore = create<AppStore>((set, get) => ({
         selectedSceneIds: state.selectedSceneIds.filter((id) => id !== sceneId),
         selectedSceneId: state.selectedSceneId === sceneId ? null : state.selectedSceneId,
         selectedBoardItemId: state.selectedSceneId === sceneId ? null : state.selectedBoardItemId,
+      }))
+    })
+  },
+
+  async deleteScenes(sceneIds) {
+    await runProjectAction(set, async () => {
+      const uniqueSceneIds = [...new Set(sceneIds.filter(Boolean))]
+      if (uniqueSceneIds.length === 0) return
+
+      await Promise.all(uniqueSceneIds.map((sceneId) => window.docudoc.scenes.delete(sceneId)))
+      const deletedSceneIdSet = new Set(uniqueSceneIds)
+
+      set((state) => ({
+        scenes: state.scenes.filter((scene) => !deletedSceneIdSet.has(scene.id)),
+        boards: state.boards.map((board) => ({
+          ...board,
+          items: board.items.filter((item) => !(item.kind === 'scene' && deletedSceneIdSet.has(item.sceneId))),
+        })),
+        selectedSceneIds: state.selectedSceneIds.filter((id) => !deletedSceneIdSet.has(id)),
+        selectedSceneId:
+          state.selectedSceneId && deletedSceneIdSet.has(state.selectedSceneId) ? null : state.selectedSceneId,
+        selectedBoardItemId:
+          state.selectedBoardItemId &&
+          state.boards.some((board) =>
+            board.items.some(
+              (item) => item.id === state.selectedBoardItemId && item.kind === 'scene' && deletedSceneIdSet.has(item.sceneId),
+            ),
+          )
+            ? null
+            : state.selectedBoardItemId,
       }))
     })
   },
@@ -212,7 +638,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         notes: input.notes,
         color: input.color,
         status: input.status,
-        isKeyScene: input.isKeyScene,
+        keyRating: input.keyRating,
         category: input.category,
         estimatedDuration: input.estimatedDuration,
         actualDuration: input.actualDuration,
@@ -294,7 +720,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         notes: source.notes,
         color: source.color,
         status: source.status,
-        isKeyScene: source.isKeyScene,
+        keyRating: source.keyRating,
         category: source.category,
         estimatedDuration: source.estimatedDuration,
         actualDuration: source.actualDuration,
@@ -307,6 +733,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
       set((state) => ({
         scenes: [duplicated, ...state.scenes],
+        selectedBoardId: null,
         selectedSceneId: duplicated.id,
         selectedSceneIds: [duplicated.id],
         selectedBoardItemId: null,
@@ -318,8 +745,19 @@ export const useAppStore = create<AppStore>((set, get) => ({
     })
   },
 
+  openBoardInspector(boardId) {
+    set({
+      activeBoardId: boardId,
+      selectedBoardId: boardId,
+      selectedSceneId: null,
+      selectedSceneIds: [],
+      selectedBoardItemId: null,
+    })
+  },
+
   selectScene(sceneId, boardItemId = null) {
     set({
+      selectedBoardId: null,
       selectedSceneId: sceneId,
       selectedSceneIds: sceneId ? [sceneId] : [],
       selectedBoardItemId: boardItemId,
@@ -334,6 +772,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         : [...state.selectedSceneIds, sceneId]
 
       return {
+        selectedBoardId: null,
         selectedSceneIds,
         selectedSceneId: selectedSceneIds[0] ?? null,
         selectedBoardItemId: null,
@@ -343,6 +782,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   setSceneSelection(sceneIds) {
     set({
+      selectedBoardId: null,
       selectedSceneIds: sceneIds,
       selectedSceneId: sceneIds[0] ?? null,
       selectedBoardItemId: null,
@@ -351,6 +791,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   clearSceneSelection() {
     set({
+      selectedBoardId: null,
       selectedSceneIds: [],
       selectedSceneId: null,
     })
@@ -361,15 +802,52 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   setActiveBoard(activeBoardId) {
-    set({ activeBoardId })
+    set({ activeBoardId, selectedBoardId: null })
   },
 
-  async renameBoard(boardId, name) {
+  async updateBoardDraft(input) {
     await runProjectAction(set, async () => {
-      const board = await window.docudoc.boards.updateBoard(boardId, name)
+      const [board, boardFolders] = await Promise.all([
+        window.docudoc.boards.updateBoard(input),
+        input.folder !== undefined ? window.docudoc.boardFolders.list() : Promise.resolve(get().boardFolders),
+      ])
       set((state) => ({
         boards: state.boards.map((entry) => (entry.id === board.id ? board : entry)),
+        boardFolders,
+        activeBoardId: state.activeBoardId === board.id ? board.id : state.activeBoardId,
+        selectedBoardId: state.selectedBoardId === board.id ? board.id : state.selectedBoardId,
       }))
+    })
+  },
+
+  async reorderBoards(boardIds) {
+    await runProjectAction(set, async () => {
+      const boards = await window.docudoc.boards.reorderBoards(boardIds)
+      set({ boards })
+    })
+  },
+
+  async moveBoard(boardId, folder, beforeBoardId = null) {
+    await runProjectAction(set, async () => {
+      const currentBoards = get().boards
+      const currentFolders = get().boardFolders
+      const currentBoard = currentBoards.find((board) => board.id === boardId)
+      if (!currentBoard) return
+
+      const nextFolder = folder.trim()
+      const updatedBoard =
+        currentBoard.folder === nextFolder
+          ? currentBoard
+          : await window.docudoc.boards.updateBoard({ id: boardId, folder: nextFolder })
+
+      const boardsAfterMove = currentBoards.map((board) => (board.id === boardId ? updatedBoard : board))
+      const orderIds = buildBoardOrderAfterMove(boardsAfterMove, currentFolders, boardId, nextFolder, beforeBoardId)
+      const [boards, boardFolders] = await Promise.all([
+        window.docudoc.boards.reorderBoards(orderIds),
+        window.docudoc.boardFolders.list(),
+      ])
+
+      set({ boards, boardFolders })
     })
   },
 
@@ -379,6 +857,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       set((state) => ({
         boards: [...state.boards, board],
         activeBoardId: board.id,
+        selectedBoardId: null,
       }))
     })
   },
@@ -400,6 +879,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
               }
             : board,
         ),
+        selectedBoardId: null,
         selectedSceneId: sceneId,
         selectedSceneIds: [sceneId],
         selectedBoardItemId: result.item.id,
@@ -424,8 +904,90 @@ export const useAppStore = create<AppStore>((set, get) => ({
               }
             : board,
         ),
+        selectedBoardId: null,
         selectedSceneId: null,
         selectedBoardItemId: item.id,
+      }))
+    })
+  },
+
+  async addBlockTemplateToActiveBoard(templateId, afterItemId = null) {
+    const activeBoardId = get().activeBoardId
+    if (!activeBoardId) return
+
+    await runProjectAction(set, async () => {
+      const template = get().blockTemplates.find((entry) => entry.id === templateId)
+      if (!template) {
+        throw new Error('Template not found')
+      }
+
+      const created = await window.docudoc.boards.addBlock(activeBoardId, template.kind, afterItemId)
+      const item = await window.docudoc.boards.updateItem({
+        id: created.id,
+        kind: template.kind,
+        title: template.title,
+        body: template.body,
+      })
+
+      set((state) => ({
+        boards: state.boards.map((board) =>
+          board.id === activeBoardId
+            ? {
+                ...board,
+                items: [...board.items.filter((entry) => entry.id !== created.id), item]
+                  .sort((left, right) => left.position - right.position)
+                  .map((entry, index) => ({ ...entry, position: index }) as BoardItem),
+              }
+            : board,
+        ),
+        selectedBoardId: null,
+        selectedSceneId: null,
+        selectedBoardItemId: item.id,
+      }))
+    })
+  },
+
+  async saveBlockTemplate(input) {
+    await runProjectAction(set, async () => {
+      const blockTemplates = await window.docudoc.blockTemplates.create(input)
+      set({ blockTemplates })
+    })
+  },
+
+  async deleteBlockTemplate(templateId) {
+    await runProjectAction(set, async () => {
+      const blockTemplates = await window.docudoc.blockTemplates.delete(templateId)
+      set({ blockTemplates })
+    })
+  },
+
+  async copyBlockToBoard(itemId, boardId) {
+    await runProjectAction(set, async () => {
+      const sourceBoard = get().boards.find((board) => board.items.some((item) => item.id === itemId))
+      const sourceItem = sourceBoard?.items.find((item) => item.id === itemId)
+      if (!sourceItem || sourceItem.kind === 'scene') {
+        throw new Error('Only structure blocks can be copied between boards')
+      }
+
+      const created = await window.docudoc.boards.addBlock(boardId, sourceItem.kind, null)
+      const copied = await window.docudoc.boards.updateItem({
+        id: created.id,
+        kind: sourceItem.kind,
+        title: sourceItem.title,
+        body: sourceItem.body,
+      })
+
+      set((state) => ({
+        boards: state.boards.map((board) =>
+          board.id === boardId
+            ? {
+                ...board,
+                items: [...board.items, copied]
+                  .sort((left, right) => left.position - right.position)
+                  .map((entry, index) => ({ ...entry, position: index }) as BoardItem),
+              }
+            : board,
+        ),
       }))
     })
   },
@@ -444,6 +1006,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
               }
             : board,
         ),
+        selectedBoardId: null,
         selectedSceneId: null,
         selectedBoardItemId: item.id,
       }))
@@ -460,6 +1023,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
             .filter((item) => item.id !== itemId)
             .map((item, index) => ({ ...item, position: index } as BoardItem)),
         })),
+        selectedBoardId: null,
         selectedBoardItemId: state.selectedBoardItemId === itemId ? null : state.selectedBoardItemId,
       }))
     })
@@ -501,6 +1065,63 @@ function inferTagType(name: string): TagType {
   if (name.startsWith('#')) return 'theme'
   if (name.startsWith('/')) return 'location'
   return 'general'
+}
+
+function buildBoardOrderAfterMove(
+  boards: Board[],
+  folders: BoardFolder[],
+  boardId: string,
+  targetFolder: string,
+  beforeBoardId: string | null,
+) {
+  const movedBoard = boards.find((board) => board.id === boardId)
+  if (!movedBoard) {
+    return boards.map((board) => board.id)
+  }
+
+  const remaining = boards.filter((board) => board.id !== boardId)
+  const folderOrder = [''].concat(folders.map((folder) => folder.name))
+  const normalizedTargetFolder = targetFolder.trim()
+
+  if (beforeBoardId) {
+    const insertIndex = remaining.findIndex((board) => board.id === beforeBoardId)
+    if (insertIndex >= 0) {
+      const next = [...remaining]
+      next.splice(insertIndex, 0, { ...movedBoard, folder: normalizedTargetFolder })
+      return next.map((board) => board.id)
+    }
+  }
+
+  const next = [...remaining]
+  const targetFolderIndex = Math.max(0, folderOrder.findIndex((folderName) => folderName === normalizedTargetFolder))
+  const lastIndexInTarget = findLastIndex(next, (board) => board.folder === normalizedTargetFolder)
+
+  if (lastIndexInTarget >= 0) {
+    next.splice(lastIndexInTarget + 1, 0, { ...movedBoard, folder: normalizedTargetFolder })
+    return next.map((board) => board.id)
+  }
+
+  const nextFolderIndex = next.findIndex((board) => {
+    const boardFolderIndex = Math.max(0, folderOrder.findIndex((folderName) => folderName === board.folder))
+    return boardFolderIndex > targetFolderIndex
+  })
+
+  if (nextFolderIndex >= 0) {
+    next.splice(nextFolderIndex, 0, { ...movedBoard, folder: normalizedTargetFolder })
+  } else {
+    next.push({ ...movedBoard, folder: normalizedTargetFolder })
+  }
+
+  return next.map((board) => board.id)
+}
+
+function findLastIndex<T>(items: T[], predicate: (item: T) => boolean) {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    if (predicate(items[index])) {
+      return index
+    }
+  }
+  return -1
 }
 
 async function runProjectAction(

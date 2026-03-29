@@ -1,6 +1,23 @@
 import type { BoardTextItemKind } from '@/types/board'
 import type { SceneColor, SceneStatus } from '@/types/scene'
 
+export const openAiModelOptions = [
+  { value: 'gpt-5.2', label: 'GPT-5.2' },
+  { value: 'gpt-5-mini', label: 'GPT-5 Mini' },
+  { value: 'gpt-5', label: 'GPT-5' },
+  { value: 'gpt-4.1', label: 'GPT-4.1' },
+  { value: 'gpt-4.1-mini', label: 'GPT-4.1 Mini' },
+] as const
+
+export const geminiModelOptions = [
+  { value: 'gemini-3-flash-preview', label: 'Gemini 3 Flash Preview' },
+  { value: 'gemini-3-pro-preview', label: 'Gemini 3 Pro Preview' },
+  { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+  { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
+  { value: 'gemini-2.0-flash-lite', label: 'Gemini 2.0 Flash-Lite' },
+  { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
+] as const
+
 export const sceneStatuses: Array<{ value: SceneStatus; label: string }> = [
   { value: 'candidate', label: 'Candidate' },
   { value: 'selected', label: 'Selected' },

@@ -1,7 +1,8 @@
 import type { KeyboardEvent, MouseEvent, ReactNode } from 'react'
-import { Clock3, Film, MapPin, Star, Users } from 'lucide-react'
+import { Clock3, Film, MapPin, Users } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
+import { KeyRatingMark } from '@/components/ui/key-rating-button'
 import { cn } from '@/lib/cn'
 import { sceneColors } from '@/lib/constants'
 import { formatDuration } from '@/lib/durations'
@@ -65,7 +66,6 @@ export function SceneCard({
             {scene.synopsis || 'No synopsis yet'}
           </div>
           <div className="flex shrink-0 items-center gap-1">
-            {scene.isKeyScene ? <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" /> : null}
             {actions}
           </div>
         </div>
@@ -134,16 +134,13 @@ export function SceneCard({
         <div>
           <div className="flex items-center gap-2 font-display text-[15px] font-semibold text-foreground">
             {scene.title}
-            {scene.isKeyScene ? <Star className="h-4 w-4 fill-amber-400 text-amber-400" /> : null}
           </div>
           <div className="mt-1 line-clamp-2 text-sm text-muted">
             {scene.synopsis || 'No synopsis yet'}
           </div>
         </div>
-        <div className="flex shrink-0 gap-2">
-          {scene.isKeyScene ? (
-            <Badge className="border-amber-400/30 bg-amber-400/10 text-amber-200">Key</Badge>
-          ) : null}
+        <div className="flex shrink-0 items-center gap-2">
+          {actions ?? (scene.keyRating > 0 ? <KeyRatingMark value={scene.keyRating} /> : null)}
           <Badge className="capitalize">{scene.status}</Badge>
         </div>
       </div>

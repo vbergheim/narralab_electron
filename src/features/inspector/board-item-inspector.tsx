@@ -16,10 +16,11 @@ type Draft = Pick<BoardTextItem, 'id' | 'kind' | 'title' | 'body'>
 type Props = {
   item: BoardTextItem | null
   onSave(input: Draft): void
+  onSaveTemplate(input: { kind: BoardTextItemKind; name: string; title: string; body: string }): void
   onDelete(itemId: string): void
 }
 
-export function BoardItemInspector({ item, onSave, onDelete }: Props) {
+export function BoardItemInspector({ item, onSave, onSaveTemplate, onDelete }: Props) {
   const [draft, setDraft] = useState<Draft | null>(() => (item ? toDraft(item) : null))
 
   const payload = useMemo(() => (draft ? toPayload(draft) : null), [draft])
@@ -62,6 +63,22 @@ export function BoardItemInspector({ item, onSave, onDelete }: Props) {
           </div>
           <div className="mt-1 text-sm text-muted">Autosaves locally while you work.</div>
         </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            const fallbackName = kindMeta?.label ?? 'Block'
+            onSaveTemplate({
+              kind: draft.kind,
+              name: draft.title.trim() || `${fallbackName} template`,
+              title: draft.title.trim(),
+              body: draft.body,
+            })
+          }}
+        >
+          <FileStack className="h-4 w-4" />
+          Save Template
+        </Button>
         <Button
           variant="danger"
           size="sm"
