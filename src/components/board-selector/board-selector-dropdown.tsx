@@ -73,92 +73,94 @@ export function BoardSelectorDropdown({
     <>
       <div className="fixed inset-0 z-[100]" onClick={onClose} />
       <div 
-        className="fixed z-[101] w-80 rounded-lg border border-border bg-panel shadow-2xl"
+        className="fixed z-[101] w-[360px] rounded-xl border border-border/60 bg-panel shadow-2xl"
         style={{
           top: `${position.top}px`,
           left: `${position.left}px`,
         }}
       >
-        <div className="p-2">
+        <div className="p-4">
           <input
             type="text"
             placeholder="Search boards..."
             value={searchQuery}
             onChange={(event) => setSearchQuery(event.target.value)}
-            className="h-8 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+            className="h-10 w-full rounded-lg border border-border/60 bg-background/50 px-4 text-sm text-foreground placeholder:text-muted/70 transition focus:border-accent/60 focus:bg-background focus:outline-none focus:ring-2 focus:ring-accent/20"
             autoFocus
           />
         </div>
 
-        <div className="max-h-[400px] overflow-y-auto overscroll-contain px-1 pb-1">
+        <div className="max-h-[420px] overflow-y-auto overscroll-contain px-3 pb-3">
           {filteredGroups.length === 0 ? (
-            <div className="px-2 py-8 text-center text-sm text-muted">
+            <div className="px-3 py-12 text-center text-sm text-muted/80">
               {searchQuery.trim() ? 'No boards match your search' : 'No boards available'}
             </div>
           ) : (
-            filteredGroups.map((group) => (
-              <div key={group.folderPath || '__root'}>
-                {group.folderPath ? (
-                  <button
-                    type="button"
-                    className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition hover:bg-panelMuted"
-                    onClick={() =>
-                      setCollapsedFolders((current) =>
-                        current.includes(group.folderPath)
-                          ? current.filter((entry) => entry !== group.folderPath)
-                          : [...current, group.folderPath],
-                      )
-                    }
-                  >
-                    {collapsedFolders.includes(group.folderPath) ? (
-                      <ChevronRight className="h-3 w-3" />
-                    ) : (
-                      <ChevronDown className="h-3 w-3" />
-                    )}
-                    <Folder className="h-3 w-3" style={{ color: colorHex(group.color) }} />
-                    <span className="truncate font-semibold uppercase tracking-wider text-muted">{group.label}</span>
-                    <span className="ml-auto text-[10px] text-muted/60">{group.boards.length}</span>
-                  </button>
-                ) : null}
+            <div className="space-y-1">
+              {filteredGroups.map((group) => (
+                <div key={group.folderPath || '__root'} className="space-y-1">
+                  {group.folderPath ? (
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left transition hover:bg-panelMuted/60"
+                      onClick={() =>
+                        setCollapsedFolders((current) =>
+                          current.includes(group.folderPath)
+                            ? current.filter((entry) => entry !== group.folderPath)
+                            : [...current, group.folderPath],
+                        )
+                      }
+                    >
+                      {collapsedFolders.includes(group.folderPath) ? (
+                        <ChevronRight className="h-3.5 w-3.5 text-muted/60" />
+                      ) : (
+                        <ChevronDown className="h-3.5 w-3.5 text-muted/60" />
+                      )}
+                      <Folder className="h-4 w-4" style={{ color: colorHex(group.color) }} />
+                      <span className="truncate text-xs font-semibold uppercase tracking-[0.12em] text-muted">{group.label}</span>
+                      <span className="ml-auto text-xs text-muted/50">{group.boards.length}</span>
+                    </button>
+                  ) : null}
 
-                {!collapsedFolders.includes(group.folderPath) && (
-                  <div className={cn(group.folderPath && 'ml-3 space-y-0.5')}>
-                    {group.boards.map((board) => (
-                      <button
-                        key={board.id}
-                        type="button"
-                        className={cn(
-                          'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition',
-                          board.id === activeBoardId
-                            ? 'bg-accent/15 text-foreground ring-1 ring-accent/30'
-                            : 'hover:bg-panelMuted',
-                        )}
-                        onClick={() => {
-                          onSelectBoard(board.id)
-                          onClose()
-                        }}
-                      >
-                        <div
-                          className="h-2 w-2 shrink-0 rounded-full"
-                          style={{ backgroundColor: colorHex(board.color) }}
-                        />
-                        <span className="min-w-0 flex-1 truncate">{board.name}</span>
-                        {board.id === activeBoardId && <Layers3 className="h-3.5 w-3.5 text-accent" />}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))
+                  {!collapsedFolders.includes(group.folderPath) && (
+                    <div className={cn(group.folderPath ? 'ml-6 space-y-1' : 'space-y-1')}>
+                      {group.boards.map((board) => (
+                        <button
+                          key={board.id}
+                          type="button"
+                          className={cn(
+                            'flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left transition',
+                            board.id === activeBoardId
+                              ? 'bg-accent/12 text-foreground shadow-sm ring-1 ring-accent/25'
+                              : 'hover:bg-panelMuted/50',
+                          )}
+                          onClick={() => {
+                            onSelectBoard(board.id)
+                            onClose()
+                          }}
+                        >
+                          <div
+                            className="h-2.5 w-2.5 shrink-0 rounded-full shadow-sm"
+                            style={{ backgroundColor: colorHex(board.color) }}
+                          />
+                          <span className="min-w-0 flex-1 truncate font-medium">{board.name}</span>
+                          {board.id === activeBoardId && <Layers3 className="h-4 w-4 text-accent" />}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           )}
         </div>
 
-        <div className="flex gap-2 border-t border-border p-2">
-          <Button variant="ghost" size="sm" className="flex-1" onClick={() => { onCreateBoard(); onClose(); }}>
+        <div className="flex gap-2 border-t border-border/40 p-3">
+          <Button variant="ghost" size="sm" className="flex-1 py-2" onClick={() => { onCreateBoard(); onClose(); }}>
             <Plus className="h-4 w-4" />
             New Board
           </Button>
-          <Button variant="ghost" size="sm" className="flex-1" onClick={() => { onOpenManager(); onClose(); }}>
+          <Button variant="ghost" size="sm" className="flex-1 py-2" onClick={() => { onOpenManager(); onClose(); }}>
             <Settings className="h-4 w-4" />
             Manage...
           </Button>
