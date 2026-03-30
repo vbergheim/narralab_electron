@@ -4,7 +4,7 @@ import type { SceneDensity } from './view'
 export type AIProvider = 'openai' | 'gemini'
 export type ConsultantResponseStyle = 'structured' | 'concise' | 'exploratory'
 export type ConsultantContextMode = 'none' | 'active-board'
-export type WindowWorkspace = 'outline' | 'bank' | 'inspector' | 'notebook' | 'archive'
+export type WindowWorkspace = 'outline' | 'bank' | 'inspector' | 'notebook' | 'archive' | 'board-manager'
 
 export type SavedWindowLayoutWindow = {
   id: string

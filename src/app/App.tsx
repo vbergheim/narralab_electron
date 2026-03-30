@@ -29,6 +29,7 @@ import { NotebookEditor } from '@/features/notebook/notebook-editor'
 import { ProjectsToolbar } from '@/features/projects/projects-toolbar'
 import { SceneBankView } from '@/features/scenes/scene-bank-view'
 import { SettingsWorkspace } from '@/features/settings/settings-workspace'
+import { BoardManagerDialog } from '@/components/board-selector/board-manager-dialog'
 import { Button } from '@/components/ui/button'
 import { ContextMenu, type ContextMenuItem } from '@/components/ui/context-menu'
 import { Panel } from '@/components/ui/panel'
@@ -392,6 +393,8 @@ export function App() {
         ? `${consultantMessages.length} messages in current conversation`
       : workspaceMode === 'archive'
         ? `${archiveItems.length} files in archive`
+      : workspaceMode === 'board-manager'
+        ? `${boards.length} boards, ${boardFolders.length} folders`
       : workspaceMode === 'notebook'
       ? notebook.updatedAt
         ? `Notebook saved ${new Date(notebook.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
@@ -400,7 +403,7 @@ export function App() {
         ? `${activeBoard.items.length} rows in active outline`
         : 'No board selected'
   const showDensityControl = workspaceMode === 'outline' || workspaceMode === 'bank'
-  const showInspector = workspaceMode !== 'consultant' && workspaceMode !== 'settings' && workspaceMode !== 'archive'
+  const showInspector = workspaceMode !== 'consultant' && workspaceMode !== 'settings' && workspaceMode !== 'archive' && workspaceMode !== 'board-manager'
   const densityOption = densityOptions.find((option) => option.value === sceneDensity) ?? densityOptions[1]
   const densityMenuItems = useMemo<ContextMenuItem[]>(
     () =>
@@ -802,6 +805,26 @@ export function App() {
                 onRevealItem={(itemId) => void revealArchiveItem(itemId)}
                 onDeleteItem={(itemId) => void deleteArchiveItem(itemId)}
               />
+            ) : workspaceMode === 'board-manager' && projectMeta ? (
+              <BoardManagerDialog
+                boards={boards}
+                folders={boardFolders}
+                activeBoardId={activeBoardId}
+                open={true}
+                embedded={true}
+                onClose={() => setWorkspaceMode('outline')}
+                onSelectBoard={setActiveBoard}
+                onOpenBoardInspector={openBoardDetails}
+                onInlineUpdateBoard={(boardId, input) => void updateBoardDraft({ id: boardId, ...input })}
+                onDuplicateBoard={(boardId) => void cloneBoard(boardId)}
+                onCreateBoard={(folder) => void createBoard('New Board', folder)}
+                onCreateFolder={(name, parentPath) => void createBoardFolder(name, parentPath)}
+                onUpdateFolder={(currentPath, input) => void updateBoardFolder(currentPath, input)}
+                onDeleteFolder={(currentPath) => void deleteBoardFolder(currentPath)}
+                onDeleteBoard={(boardId) => void deleteBoard(boardId)}
+                onMoveBoard={(boardId, folder, beforeBoardId) => void moveBoard(boardId, folder, beforeBoardId)}
+                onReorderBoards={(boardIds) => void reorderBoards(boardIds)}
+              />
             ) : projectMeta && activeBoard ? (
               workspaceMode === 'outline' ? (
                 <OutlineWorkspace
@@ -1106,6 +1129,7 @@ function isTextInputTarget(target: EventTarget | null) {
 
 function detachedLabel(workspace: WindowWorkspace) {
   if (workspace === 'bank') return 'Scene Bank Window'
+  if (workspace === 'board-manager') return 'Board Manager Window'
   if (workspace === 'inspector') return 'Inspector Window'
   if (workspace === 'notebook') return 'Notebook Window'
   if (workspace === 'archive') return 'Archive Window'

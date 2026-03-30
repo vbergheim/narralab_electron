@@ -267,6 +267,7 @@ export function ProjectsToolbar({
               {([
                 ['outline', 'Open Outline'],
                 ['bank', 'Open Scene Bank'],
+                ['board-manager', 'Open Board Manager'],
                 ['inspector', 'Open Inspector'],
                 ['notebook', 'Open Notebook'],
                 ['archive', 'Open Archive'],

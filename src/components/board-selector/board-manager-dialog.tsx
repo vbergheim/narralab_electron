@@ -5,6 +5,7 @@ import { ChevronDown, ChevronRight, Folder, FolderPlus, Layers3, Plus, X } from 
 import { Button } from '@/components/ui/button'
 import { ContextMenu, type ContextMenuItem } from '@/components/ui/context-menu'
 import { InlineEditActions, InlineEditScope, InlineNameEditor } from '@/components/ui/inline-name-editor'
+import { Panel } from '@/components/ui/panel'
 import { usePersistedStringArray } from '@/hooks/use-persisted-string-array'
 import { cn } from '@/lib/cn'
 import { sceneColors } from '@/lib/constants'
@@ -24,6 +25,7 @@ type Props = {
   folders: BoardFolder[]
   activeBoardId: string | null
   open: boolean
+  embedded?: boolean
   onClose(): void
   onSelectBoard(boardId: string): void
   onOpenBoardInspector(boardId: string): void
@@ -43,6 +45,7 @@ export function BoardManagerDialog({
   folders,
   activeBoardId,
   open,
+  embedded = false,
   onClose,
   onSelectBoard,
   onOpenBoardInspector,
@@ -250,30 +253,21 @@ export function BoardManagerDialog({
 
   if (!open) return null
 
-  return (
+  const contentArea = (
     <>
-      <div className="fixed inset-0 z-50 bg-black/50" onClick={onClose} />
-      <div className="fixed left-1/2 top-1/2 z-50 w-[600px] max-w-[90vw] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-panel shadow-2xl">
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <div className="flex items-center gap-2">
-            <Layers3 className="h-4 w-4 text-accent" />
-            <h2 className="font-semibold text-foreground">Manage Boards</h2>
-          </div>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
-
-        <div
-          className="max-h-[70vh] overflow-y-auto overscroll-contain p-4"
-          onClick={(event) => {
-            if (event.target === event.currentTarget) {
-              setSelectedFolderPaths([])
-              setSelectedBoardIds([])
-            }
-          }}
-        >
-          <div className="mb-3 flex items-center gap-2">
+      <div
+        className={cn(
+          'overflow-y-auto overscroll-contain',
+          embedded ? 'h-full p-4' : 'max-h-[70vh] p-4',
+        )}
+        onClick={(event) => {
+          if (event.target === event.currentTarget) {
+            setSelectedFolderPaths([])
+            setSelectedBoardIds([])
+          }
+        }}
+      >
+        <div className="mb-3 flex items-center gap-2">
             <Button
               variant="ghost"
               size="sm"
@@ -658,6 +652,35 @@ export function BoardManagerDialog({
           items={folderMenuItems}
           onClose={() => setFolderMenuState(null)}
         />
+      </>
+    )
+
+  if (embedded) {
+    return (
+      <Panel
+        heading="Board Manager"
+        icon={<Layers3 className="h-4 w-4 text-accent" />}
+        summary={`${boards.length} boards, ${boardFolders.length} folders`}
+      >
+        {contentArea}
+      </Panel>
+    )
+  }
+
+  return (
+    <>
+      <div className="fixed inset-0 z-50 bg-black/50" onClick={onClose} />
+      <div className="fixed left-1/2 top-1/2 z-50 w-[600px] max-w-[90vw] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border bg-panel shadow-2xl">
+        <div className="flex items-center justify-between border-b border-border px-4 py-3">
+          <div className="flex items-center gap-2">
+            <Layers3 className="h-4 w-4 text-accent" />
+            <h2 className="font-semibold text-foreground">Manage Boards</h2>
+          </div>
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+        {contentArea}
       </div>
     </>
   )
