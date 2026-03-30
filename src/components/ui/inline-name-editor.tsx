@@ -1,4 +1,5 @@
 import type { FocusEvent, KeyboardEvent, ReactNode, Ref } from 'react'
+import { Check, X } from 'lucide-react'
 
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -57,6 +58,41 @@ export function InlineEditScope({
       }}
     >
       {children}
+    </div>
+  )
+}
+
+export function InlineEditActions({ onSave, onCancel }: { onSave(): void; onCancel(): void }) {
+  return (
+    <div className="flex shrink-0 items-center gap-1">
+      <button
+        type="button"
+        tabIndex={-1}
+        className="inline-flex h-5 w-5 items-center justify-center text-green-500 transition hover:text-green-400"
+        onClick={(event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          onSave()
+        }}
+        onMouseDown={(event) => event.preventDefault()}
+        title="Save (Enter)"
+      >
+        <Check className="h-4 w-4" />
+      </button>
+      <button
+        type="button"
+        tabIndex={-1}
+        className="inline-flex h-5 w-5 items-center justify-center text-red-500 transition hover:text-red-400"
+        onClick={(event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          onCancel()
+        }}
+        onMouseDown={(event) => event.preventDefault()}
+        title="Cancel (Escape)"
+      >
+        <X className="h-4 w-4" />
+      </button>
     </div>
   )
 }
@@ -149,7 +185,7 @@ export function InlineTextareaEditor({
   onCancel?(): void
 }) {
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+    if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault()
       onSubmit()
     }

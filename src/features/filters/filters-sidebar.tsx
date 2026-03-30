@@ -4,7 +4,7 @@ import { ChevronDown, ChevronRight, CircleOff, Filter, Folder, FolderPlus, Layer
 
 import { Button } from '@/components/ui/button'
 import { ContextMenu, type ContextMenuItem } from '@/components/ui/context-menu'
-import { InlineEditScope, InlineNameEditor } from '@/components/ui/inline-name-editor'
+import { InlineEditActions, InlineEditScope, InlineNameEditor } from '@/components/ui/inline-name-editor'
 import { usePersistedStringArray } from '@/hooks/use-persisted-string-array'
 import { cn } from '@/lib/cn'
 import { sceneColors, sceneStatuses } from '@/lib/constants'
@@ -210,7 +210,14 @@ export function FiltersSidebar({
   }
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto overscroll-contain px-4 pb-4 pt-3">
+    <div
+      className="flex h-full flex-col overflow-y-auto overscroll-contain px-4 pb-4 pt-3"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) {
+          setSelectedFolderPaths([])
+        }
+      }}
+    >
       <SectionHeader
         icon={<Layers3 className="h-4 w-4 text-accent" />}
         title="Boards"
@@ -282,6 +289,7 @@ export function FiltersSidebar({
                 : 'transition',
               (draggedBoardId || draggedFolderPath) && 'bg-white/[0.01]',
               group.folderPath && hasCollapsedAncestor(group.folderPath, collapsedFolders) && 'hidden',
+              group.folderPath && visibleSelectedFolderPaths.includes(group.folderPath) && 'border-accent/60 bg-accent/10 ring-2 ring-accent/15',
             )}
             onDragOver={(event) => {
               event.preventDefault()
@@ -301,16 +309,25 @@ export function FiltersSidebar({
             {group.folderPath ? (
               <div
                 draggable
-                className={cn(
-                  'flex min-h-8 items-center justify-between gap-2 rounded-lg px-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted transition',
-                  visibleSelectedFolderPaths.includes(group.folderPath) && 'bg-accent/10 text-foreground ring-1 ring-accent/35',
-                )}
+                className="flex min-h-8 items-center justify-between gap-2 px-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted"
                 style={{ paddingLeft: `${group.depth * 14 + 4}px` }}
                 onDragStart={() => setDraggedFolderPath(group.folderPath)}
                 onDragEnd={() => setDraggedFolderPath(null)}
-                onClick={(event) => handleFolderSelection(event, group.folderPath)}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  if (event.metaKey || event.ctrlKey) {
+                    handleFolderSelection(event, group.folderPath)
+                  } else {
+                    setCollapsedFolders((current) =>
+                      current.includes(group.folderPath)
+                        ? current.filter((entry) => entry !== group.folderPath)
+                        : [...current, group.folderPath],
+                    )
+                  }
+                }}
                 onContextMenu={(event) => {
                   event.preventDefault()
+                  event.stopPropagation()
                   const nextSelection = ensureContextSelection(group.folderPath, visibleSelectedFolderPaths, folderPathOrder)
                   setSelectedFolderPaths(nextSelection)
                   folderSelectionAnchorRef.current = folderPathOrder.indexOf(group.folderPath)
@@ -321,14 +338,6 @@ export function FiltersSidebar({
                   <button
                     type="button"
                     className="flex shrink-0 items-center rounded-md px-1 py-0.5 transition hover:bg-panelMuted hover:text-foreground"
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      setCollapsedFolders((current) =>
-                        current.includes(group.folderPath)
-                          ? current.filter((entry) => entry !== group.folderPath)
-                          : [...current, group.folderPath],
-                      )
-                    }}
                   >
                     {collapsedFolders.includes(group.folderPath) ? (
                       <ChevronRight className="h-3.5 w-3.5" />
@@ -376,17 +385,26 @@ export function FiltersSidebar({
                   setEditingFolderDraft('')
                 }}
               >
-                <InlineNameEditor
-                  autoFocus
-                  value={editingFolderDraft}
-                  onChange={setEditingFolderDraft}
-                  onSubmit={submitFolderEdit}
-                  onCancel={() => {
-                    setEditingFolderName(null)
-                    setEditingFolderDraft('')
-                  }}
-                  className="h-7 min-w-[120px] text-xs"
-                />
+                <div className="flex items-center gap-2">
+                  <InlineNameEditor
+                    autoFocus
+                    value={editingFolderDraft}
+                    onChange={setEditingFolderDraft}
+                    onSubmit={submitFolderEdit}
+                    onCancel={() => {
+                      setEditingFolderName(null)
+                      setEditingFolderDraft('')
+                    }}
+                    className="h-7 min-w-[120px] flex-1 text-xs"
+                  />
+                  <InlineEditActions
+                    onSave={submitFolderEdit}
+                    onCancel={() => {
+                      setEditingFolderName(null)
+                      setEditingFolderDraft('')
+                    }}
+                  />
+                </div>
                 <div className="flex flex-wrap gap-1">
                   {sceneColors.map((color) => (
                     <button
@@ -491,7 +509,21 @@ export function FiltersSidebar({
                               setEditingBoardId(null)
                               setEditingBoardDraft('')
                             }}
-                            className="h-7 text-sm"
+                            className="h-7 flex-1 text-sm"
+                          />
+                          <InlineEditActions
+                            onSave={() => {
+                              const nextName = editingBoardDraft.trim()
+                              if (nextName) {
+                                onInlineUpdateBoard(board.id, { name: nextName })
+                              }
+                              setEditingBoardId(null)
+                              setEditingBoardDraft('')
+                            }}
+                            onCancel={() => {
+                              setEditingBoardId(null)
+                              setEditingBoardDraft('')
+                            }}
                           />
                           <button
                             type="button"

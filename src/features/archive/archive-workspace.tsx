@@ -16,7 +16,7 @@ import {
 
 import { Button } from '@/components/ui/button'
 import { ContextMenu, type ContextMenuItem } from '@/components/ui/context-menu'
-import { InlineEditScope, InlineNameEditor } from '@/components/ui/inline-name-editor'
+import { InlineEditActions, InlineEditScope, InlineNameEditor } from '@/components/ui/inline-name-editor'
 import { Panel } from '@/components/ui/panel'
 import { usePersistedStringArray } from '@/hooks/use-persisted-string-array'
 import { cn } from '@/lib/cn'
@@ -187,7 +187,14 @@ export function ArchiveWorkspace({
 
   return (
     <div className="grid min-h-0 gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
-      <Panel className="min-h-0 overflow-y-auto overscroll-contain p-4">
+      <Panel
+        className="min-h-0 overflow-y-auto overscroll-contain p-4"
+        onClick={(event) => {
+          if (event.target === event.currentTarget) {
+            setSelectedFolderIds([])
+          }
+        }}
+      >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 font-display text-sm font-semibold uppercase tracking-[0.16em] text-foreground">
             <LibraryBig className="h-4 w-4 text-accent" />
@@ -229,8 +236,10 @@ export function ArchiveWorkspace({
                 label="All Files"
                 count={items.length}
                 color="slate"
-                onClick={() => {
-                  setSelectedFolderIds([])
+                onClick={(event) => {
+                  if (event.metaKey || event.ctrlKey) {
+                    setSelectedFolderIds([])
+                  }
                   onSelectFolder(null)
                 }}
               onDragEnter={() => setDragOverFolderId('root')}
@@ -249,6 +258,7 @@ export function ArchiveWorkspace({
               className={cn(
                 'rounded-xl border border-border/50 bg-panelMuted/20 px-2 py-1.5 transition',
                 dragOverFolderId === folder.id && 'border-accent/60 bg-accent/10',
+                visibleSelectedFolderIds.includes(folder.id) && 'border-accent/60 bg-accent/10 ring-2 ring-accent/15',
                 hasCollapsedArchiveAncestor(folder.id, folderNodes, collapsedFolders) && 'hidden',
               )}
             >
@@ -268,24 +278,40 @@ export function ArchiveWorkspace({
                     setEditingFolderDraft('')
                   }}
                 >
-                  <InlineNameEditor
-                    autoFocus
-                    value={editingFolderDraft}
-                    onChange={setEditingFolderDraft}
-                    onSubmit={() => {
-                      const nextName = editingFolderDraft.trim()
-                      if (nextName) {
-                        onUpdateFolder(folder.id, { name: nextName, color: editingFolderColor })
-                      }
-                      setEditingFolderId(null)
-                      setEditingFolderDraft('')
-                    }}
-                    onCancel={() => {
-                      setEditingFolderId(null)
-                      setEditingFolderDraft('')
-                    }}
-                    className="h-7 text-xs"
-                  />
+                  <div className="flex items-center gap-2">
+                    <InlineNameEditor
+                      autoFocus
+                      value={editingFolderDraft}
+                      onChange={setEditingFolderDraft}
+                      onSubmit={() => {
+                        const nextName = editingFolderDraft.trim()
+                        if (nextName) {
+                          onUpdateFolder(folder.id, { name: nextName, color: editingFolderColor })
+                        }
+                        setEditingFolderId(null)
+                        setEditingFolderDraft('')
+                      }}
+                      onCancel={() => {
+                        setEditingFolderId(null)
+                        setEditingFolderDraft('')
+                      }}
+                      className="h-7 flex-1 text-xs"
+                    />
+                    <InlineEditActions
+                      onSave={() => {
+                        const nextName = editingFolderDraft.trim()
+                        if (nextName) {
+                          onUpdateFolder(folder.id, { name: nextName, color: editingFolderColor })
+                        }
+                        setEditingFolderId(null)
+                        setEditingFolderDraft('')
+                      }}
+                      onCancel={() => {
+                        setEditingFolderId(null)
+                        setEditingFolderDraft('')
+                      }}
+                    />
+                  </div>
                   <div className="flex flex-wrap gap-1">
                     {sceneColors.map((color) => (
                       <button
@@ -314,7 +340,19 @@ export function ArchiveWorkspace({
                   count={folder.itemCount}
                   color={folder.color}
                   depth={folder.depth}
-                  onClick={(event) => handleFolderSelection(event, folder.id)}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    if (event.metaKey || event.ctrlKey) {
+                      handleFolderSelection(event, folder.id)
+                      onSelectFolder(folder.id)
+                    } else {
+                      setCollapsedFolders((current) =>
+                        current.includes(folder.id)
+                          ? current.filter((entry) => entry !== folder.id)
+                          : [...current, folder.id],
+                      )
+                    }
+                  }}
                   onDoubleClick={() => {
                     setEditingFolderId(folder.id)
                     setEditingFolderDraft(folder.name)
@@ -328,13 +366,6 @@ export function ArchiveWorkspace({
                     onSelectFolder(folder.id)
                     setFolderMenuState({ folderId: folder.id, folderName: folder.name, x: event.clientX, y: event.clientY })
                   }}
-                  onToggleCollapse={() =>
-                    setCollapsedFolders((current) =>
-                      current.includes(folder.id)
-                        ? current.filter((entry) => entry !== folder.id)
-                        : [...current, folder.id],
-                    )
-                  }
                   onDragStart={() => setDraggedFolderId(folder.id)}
                   onDragEnd={() => setDraggedFolderId(null)}
                   onDragEnter={() => setDragOverFolderId(folder.id)}
@@ -468,10 +499,9 @@ function FolderButton({
   count: number
   color: ArchiveFolder['color']
   depth?: number
-  onClick(event: MouseEvent<HTMLButtonElement>): void
+  onClick(event: MouseEvent<HTMLDivElement>): void
   onDoubleClick?(): void
   onContextMenu?(event: MouseEvent<HTMLDivElement>): void
-  onToggleCollapse?(): void
   onDragStart?(): void
   onDragEnd?(): void
   onDragEnter?(): void
@@ -507,6 +537,8 @@ function FolderButton({
         onDragOver?.(event)
       }}
       onDrop={onDrop}
+      onClick={onClick}
+      onDoubleClick={onDoubleClick}
       onContextMenu={onContextMenu}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
@@ -516,10 +548,6 @@ function FolderButton({
         <button
           type="button"
           className="flex shrink-0 items-center rounded-md px-1 py-0.5 transition hover:bg-panelMuted hover:text-foreground"
-          onClick={(event) => {
-            event.stopPropagation()
-            onToggleCollapse?.()
-          }}
         >
           {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
         </button>
@@ -527,16 +555,11 @@ function FolderButton({
         <span className="w-3.5 shrink-0" />
       )}
       <Folder className="h-3.5 w-3.5 shrink-0" style={{ color: colorHex(color) }} />
-      <button
-        type="button"
-        className="min-w-0 flex-1 text-left"
-        onClick={onClick}
-        onDoubleClick={onDoubleClick}
-      >
+      <div className="min-w-0 flex-1 text-left">
         <span className="block truncate text-[11px] font-semibold uppercase tracking-[0.18em]">
           {formatFolderLabel(label)}
         </span>
-      </button>
+      </div>
       <div className="ml-2 flex shrink-0 items-center gap-2 text-[10px] text-muted/80">
         <span className="min-w-4 text-right">{count}</span>
       </div>

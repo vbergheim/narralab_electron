@@ -108,10 +108,10 @@ function AppSettingsPanel({
           checked={restoreLastLayout}
           onChange={setRestoreLastLayout}
         />
-        <Field label="Default Board View">
+        <Field label="Default View Mode">
           <select className={selectClassName} value={defaultBoardView} onChange={(event) => setDefaultBoardView(event.target.value as typeof defaultBoardView)}>
             <option value="outline">Outline</option>
-            <option value="board">Board</option>
+            <option value="canvas">Canvas</option>
           </select>
         </Field>
         <Field label="Default Scene Density">
@@ -220,10 +220,10 @@ function ProjectSettingsPanel({
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
-        <Field label="Default Board View">
+        <Field label="Default View Mode">
           <select className={selectClassName} value={defaultBoardView} onChange={(event) => setDefaultBoardView(event.target.value as typeof defaultBoardView)}>
             <option value="outline">Outline</option>
-            <option value="board">Board</option>
+            <option value="canvas">Canvas</option>
           </select>
         </Field>
       </div>
@@ -507,8 +507,10 @@ function ToggleField({
   )
 }
 
-function normalizeBoardView(value: 'outline' | 'timeline' | 'board') {
-  return value === 'timeline' ? 'outline' : value
+function normalizeBoardView(value: 'outline' | 'timeline' | 'canvas' | 'board') {
+  if (value === 'timeline') return 'outline'
+  if (value === 'board') return 'canvas'
+  return value
 }
 
 function swap<T>(items: T[], fromIndex: number, toIndex: number) {

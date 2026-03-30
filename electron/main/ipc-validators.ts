@@ -24,7 +24,7 @@ const sceneColors = new Set<SceneColor>([
 ])
 const sceneStatuses = new Set<SceneStatus>(['candidate', 'selected', 'maybe', 'omitted', 'locked'])
 const boardTextKinds = new Set<BoardTextItemKind>(['chapter', 'voiceover', 'narration', 'text-card', 'note'])
-const boardViews = new Set<BoardViewMode>(['outline', 'timeline', 'board'])
+const boardViews = new Set<BoardViewMode>(['outline', 'timeline', 'canvas'])
 const sceneDensities = new Set<SceneDensity>(['table', 'compact', 'detailed'])
 const windowWorkspaces = new Set<WindowWorkspace>(['outline', 'bank', 'inspector', 'notebook', 'archive'])
 const aiProviders = new Set(['openai', 'gemini'] as const)

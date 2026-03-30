@@ -47,9 +47,10 @@ import { SceneCard } from '@/components/cards/scene-card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ContextMenu, type ContextMenuItem } from '@/components/ui/context-menu'
-import { InlineEditScope, InlineNameEditor, InlineTextareaEditor } from '@/components/ui/inline-name-editor'
+import { InlineEditActions, InlineEditScope, InlineNameEditor, InlineTextareaEditor } from '@/components/ui/inline-name-editor'
 import { KeyRatingButton } from '@/components/ui/key-rating-button'
 import { Panel } from '@/components/ui/panel'
+import { SceneReorderGap } from '@/components/ui/scene-reorder-gap'
 import { SceneBankView } from '@/features/scenes/scene-bank-view'
 import { usePersistedStringArray } from '@/hooks/use-persisted-string-array'
 import { usePersistedNumber } from '@/hooks/use-persisted-number'
@@ -92,7 +93,6 @@ type Props = {
   onUpdateSceneFolder(currentPath: string, input: { name?: string; color?: SceneFolder['color']; parentPath?: string | null }): void
   onDeleteSceneFolder(currentPath: string): void
   onMoveScenesToFolder(sceneIds: string[], folder: string): void
-  onReorderScenes(sceneIds: string[]): void
   onToggleKeyScene(scene: Scene): void
   onDuplicateScene(sceneId: string, afterItemId?: string | null): void
   onDeleteScene(sceneId: string): void
@@ -153,7 +153,6 @@ export function OutlineWorkspace({
   onUpdateSceneFolder,
   onDeleteSceneFolder,
   onMoveScenesToFolder,
-  onReorderScenes,
   onToggleKeyScene,
   onDuplicateScene,
   onDeleteScene,
@@ -182,6 +181,7 @@ export function OutlineWorkspace({
   const [bankCollapsed, setBankCollapsed] = useState(defaultBankCollapsed)
   const [nativeSceneDropActive, setNativeSceneDropActive] = useState(false)
   const [nativeSceneInsertAfterId, setNativeSceneInsertAfterId] = useState<string | null>(null)
+  const [nativeDraggedSceneCount, setNativeDraggedSceneCount] = useState(0)
   const [sceneDragDropActive, setSceneDragDropActive] = useState(false)
   const [sceneDragInsertAfterId, setSceneDragInsertAfterId] = useState<string | null>(null)
   const outlineScrollRef = useRef<HTMLDivElement | null>(null)
@@ -288,9 +288,11 @@ export function OutlineWorkspace({
     }
 
     const container = outlineScrollRef.current
-    if (viewMode !== 'board') {
+    if (viewMode !== 'canvas') {
       const item = container?.querySelector<HTMLElement>(`[data-board-item-id="${selectedBoardItemId}"]`)
       item?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    } else {
+      boardCanvasHandleRef.current?.revealItem(selectedBoardItemId)
     }
   }, [selectedBoardItemId, viewMode])
 
@@ -321,7 +323,6 @@ export function OutlineWorkspace({
             <SceneBankView
               embedded
               scenes={bankScenes}
-              allScenes={scenes}
               folders={sceneFolders}
               tags={tags}
               board={board}
@@ -340,7 +341,6 @@ export function OutlineWorkspace({
               onUpdateFolder={onUpdateSceneFolder}
               onDeleteFolder={onDeleteSceneFolder}
               onMoveToFolder={onMoveScenesToFolder}
-              onReorderScenes={onReorderScenes}
               onDuplicate={(sceneId) => onDuplicateScene(sceneId)}
               onDelete={onDeleteScene}
               onDeleteSelected={onDeleteSelectedScenes}
@@ -393,7 +393,7 @@ export function OutlineWorkspace({
               <div className="pointer-events-none absolute right-5 top-5 z-20 flex items-center gap-2">
                 <div className="pointer-events-auto flex items-center gap-2 rounded-xl border border-border/80 bg-panel/85 px-3 py-2 shadow-panel backdrop-blur">
                   <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">
-                    {viewMode === 'board' ? 'Board Focus' : 'Outline Focus'}
+                    {viewMode === 'canvas' ? 'Canvas Focus' : 'Outline Focus'}
                   </span>
                   {onToggleImmersive ? (
                     <Button variant="ghost" size="sm" onClick={onToggleImmersive} title="Exit fullscreen focus" aria-label="Exit fullscreen focus">
@@ -420,6 +420,7 @@ export function OutlineWorkspace({
                     event.stopPropagation()
                     event.dataTransfer.dropEffect = 'copy'
                     setNativeSceneDropActive(true)
+                    setNativeDraggedSceneCount(sceneIds.length)
                     setNativeSceneInsertAfterId(
                       resolveInsertAfterItemIdAtPoint(outlineScrollRef.current, event.clientY, selectedBoardItemId),
                     )
@@ -430,6 +431,7 @@ export function OutlineWorkspace({
                     }
                     setNativeSceneDropActive(false)
                     setNativeSceneInsertAfterId(null)
+                    setNativeDraggedSceneCount(0)
                   }}
                   onDrop={async (event) => {
                     event.preventDefault()
@@ -438,23 +440,31 @@ export function OutlineWorkspace({
                     if (sceneIds.length === 0) {
                       return
                     }
-                    setNativeSceneDropActive(false)
                     const insertAfterItemId = resolveInsertAfterItemIdAtPoint(
                       outlineScrollRef.current,
                       event.clientY,
                       selectedBoardItemId,
                     )
-                    setNativeSceneInsertAfterId(null)
                     const sceneId = sceneIds[0]
                     if (!sceneId) {
+                      setNativeSceneDropActive(false)
+                      setNativeSceneInsertAfterId(null)
+                      setNativeDraggedSceneCount(0)
                       return
                     }
-                    onAddScene(sceneId, insertAfterItemId)
+                    await onAddScene(sceneId, insertAfterItemId)
+                    requestAnimationFrame(() => {
+                      requestAnimationFrame(() => {
+                        setNativeSceneDropActive(false)
+                        setNativeSceneInsertAfterId(null)
+                        setNativeDraggedSceneCount(0)
+                      })
+                    })
                   }}
                 >
                   {nativeSceneDropActive || sceneDragDropActive ? (
                     (nativeSceneDropActive ? nativeSceneInsertAfterId : sceneDragInsertAfterId) === null ? (
-                      <OutlineInsertIndicator />
+                      <SceneReorderGap variant="outline" density={density} count={nativeDraggedSceneCount} />
                     ) : null
                   ) : null}
                   {board.items.map((item, index) => {
@@ -499,7 +509,9 @@ export function OutlineWorkspace({
                             setMenuState({ itemId: item.id, x: event.clientX, y: event.clientY })
                           }}
                         />
-                        {showInsertAfter ? <OutlineInsertIndicator /> : null}
+                        {showInsertAfter ? (
+                          <SceneReorderGap variant="outline" density={density} count={nativeDraggedSceneCount} />
+                        ) : null}
                       </div>
                     )
                   })}
@@ -753,7 +765,7 @@ function handleDragEnd(
     const dropCenterX = dropRect ? dropRect.left + dropRect.width / 2 : null
     const dropCenterY = dropRect ? dropRect.top + dropRect.height / 2 : null
     const dropPosition =
-      viewMode === 'board' && overId === 'board-dropzone' && dropCenterX !== null && dropCenterY !== null
+      viewMode === 'canvas' && overId === 'board-dropzone' && dropCenterX !== null && dropCenterY !== null
         ? boardCanvasHandleRef.current?.resolveDropPosition(dropCenterX, dropCenterY) ?? null
         : null
 
@@ -1028,7 +1040,7 @@ function ViewModeToggle({
 }) {
   const options: Array<{ value: BoardViewMode; label: string }> = [
     { value: 'outline', label: 'Outline' },
-    { value: 'board', label: 'Board' },
+    { value: 'canvas', label: 'Canvas' },
   ]
 
   return (
@@ -1183,9 +1195,26 @@ function BoardCanvasView({
           return
         }
 
-        const targetLeft = Math.max(0, item.boardX * zoom - container.clientWidth / 2 + item.boardW * zoom / 2)
-        const targetTop = Math.max(0, item.boardY * zoom - container.clientHeight / 2 + item.boardH * zoom / 2)
-        container.scrollTo({ left: targetLeft, top: targetTop, behavior: 'smooth' })
+        const itemLeft = item.boardX * zoom
+        const itemTop = item.boardY * zoom
+        const itemWidth = item.boardW * zoom
+        const itemHeight = item.boardH * zoom
+        const viewportLeft = container.scrollLeft
+        const viewportTop = container.scrollTop
+        const viewportRight = viewportLeft + container.clientWidth
+        const viewportBottom = viewportTop + container.clientHeight
+
+        const isVisible =
+          itemLeft >= viewportLeft &&
+          itemTop >= viewportTop &&
+          itemLeft + itemWidth <= viewportRight &&
+          itemTop + itemHeight <= viewportBottom
+
+        if (!isVisible) {
+          const targetLeft = Math.max(0, item.boardX * zoom - container.clientWidth / 2 + item.boardW * zoom / 2)
+          const targetTop = Math.max(0, item.boardY * zoom - container.clientHeight / 2 + item.boardH * zoom / 2)
+          container.scrollTo({ left: targetLeft, top: targetTop, behavior: 'smooth' })
+        }
       },
     }
 
@@ -1992,15 +2021,18 @@ function BoardCanvasSceneEditor({
     >
       <div className="flex items-start justify-between gap-3">
         <InlineEditScope className="min-w-0 flex-1 space-y-2" onSubmit={onSave} onCancel={onCancel}>
-          <InlineNameEditor
-            value={title}
-            onChange={onChangeTitle}
-            onSubmit={onSave}
-            onEnterKey={() => synopsisRef.current?.focus()}
-            onCancel={onCancel}
-            className="h-9"
-            autoFocus={true}
-          />
+          <div className="flex items-center gap-2">
+            <InlineNameEditor
+              value={title}
+              onChange={onChangeTitle}
+              onSubmit={onSave}
+              onEnterKey={() => synopsisRef.current?.focus()}
+              onCancel={onCancel}
+              className="h-9 flex-1"
+              autoFocus={true}
+            />
+            <InlineEditActions onSave={onSave} onCancel={onCancel} />
+          </div>
           <InlineTextareaEditor
             textareaRef={synopsisRef}
             value={synopsis}
@@ -2061,15 +2093,18 @@ function BoardCanvasTextEditor({
     >
       <div className="flex items-start justify-between gap-3">
         <InlineEditScope className="min-w-0 flex-1 space-y-2" onSubmit={onSave} onCancel={onCancel}>
-          <InlineNameEditor
-            value={title}
-            onChange={onChangeTitle}
-            onSubmit={onSave}
-            onEnterKey={() => bodyRef.current?.focus()}
-            onCancel={onCancel}
-            className="h-9"
-            autoFocus={true}
-          />
+          <div className="flex items-center gap-2">
+            <InlineNameEditor
+              value={title}
+              onChange={onChangeTitle}
+              onSubmit={onSave}
+              onEnterKey={() => bodyRef.current?.focus()}
+              onCancel={onCancel}
+              className="h-9 flex-1"
+              autoFocus={true}
+            />
+            <InlineEditActions onSave={onSave} onCancel={onCancel} />
+          </div>
           <InlineTextareaEditor
             textareaRef={bodyRef}
             value={body}
@@ -2436,6 +2471,7 @@ function OutlineSceneRow({
                   onCancel={() => setEditing(false)}
                   className="h-8 min-w-[14rem] flex-1"
                 />
+                <InlineEditActions onSave={save} onCancel={() => setEditing(false)} />
               </InlineEditScope>
             ) : (
               <>
@@ -2516,14 +2552,17 @@ function OutlineSceneRow({
                 onSubmit={save}
                 onCancel={() => setEditing(false)}
               >
-                <InlineNameEditor
-                  value={draftTitle}
-                  onChange={setDraftTitle}
-                  onSubmit={save}
-                  onCancel={() => setEditing(false)}
-                  className="h-9"
-                  autoFocus={true}
-                />
+                <div className="flex items-center gap-2">
+                  <InlineNameEditor
+                    value={draftTitle}
+                    onChange={setDraftTitle}
+                    onSubmit={save}
+                    onCancel={() => setEditing(false)}
+                    className="h-9 flex-1"
+                    autoFocus={true}
+                  />
+                  <InlineEditActions onSave={save} onCancel={() => setEditing(false)} />
+                </div>
                 <InlineTextareaEditor
                   value={draftSynopsis}
                   onChange={setDraftSynopsis}
@@ -2820,14 +2859,17 @@ function OutlineTextRow({
               onSubmit={save}
               onCancel={() => setEditing(false)}
             >
-              <InlineNameEditor
-                value={draftTitle}
-                onChange={setDraftTitle}
-                onSubmit={save}
-                onCancel={() => setEditing(false)}
-                className="h-9"
-                autoFocus={true}
-              />
+              <div className="flex items-center gap-2">
+                <InlineNameEditor
+                  value={draftTitle}
+                  onChange={setDraftTitle}
+                  onSubmit={save}
+                  onCancel={() => setEditing(false)}
+                  className="h-9 flex-1"
+                  autoFocus={true}
+                />
+                <InlineEditActions onSave={save} onCancel={() => setEditing(false)} />
+              </div>
               <InlineTextareaEditor
                 value={draftBody}
                 onChange={setDraftBody}
@@ -2968,13 +3010,6 @@ function hexToRgba(hex: string, alpha: number) {
   return `rgba(${red}, ${green}, ${blue}, ${alpha})`
 }
 
-function OutlineInsertIndicator() {
-  return (
-    <div className="pointer-events-none flex h-3 items-center px-2">
-      <div className="h-[3px] w-full rounded-full bg-accent shadow-[0_0_0_1px_rgba(103,194,255,0.18),0_0_18px_rgba(103,194,255,0.22)]" />
-    </div>
-  )
-}
 
 function resolveInsertAfterItemId(
   container: HTMLDivElement | null,
@@ -3016,12 +3051,8 @@ function resolveInsertAfterItemIdAtPoint(
   clientY: number,
   selectedBoardItemId: string | null,
 ) {
-  if (selectedBoardItemId) {
-    return selectedBoardItemId
-  }
-
   if (!container) {
-    return null
+    return selectedBoardItemId
   }
 
   const nodes = Array.from(container.querySelectorAll<HTMLElement>('[data-board-item-id]'))

@@ -20,7 +20,7 @@ export type BlockTemplate = {
 
 export type BoardItemKind = 'scene' | 'chapter' | 'voiceover' | 'narration' | 'text-card' | 'note'
 export type BoardTextItemKind = Exclude<BoardItemKind, 'scene'>
-export type BoardViewMode = 'outline' | 'timeline' | 'board'
+export type BoardViewMode = 'outline' | 'timeline' | 'canvas'
 
 type BoardItemBase = {
   id: string

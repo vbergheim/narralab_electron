@@ -1549,15 +1549,14 @@ function normalizeBlockKindList(value: unknown): ProjectSettings['enabledBlockKi
 }
 
 function isBoardView(value: unknown): value is ProjectSettings['defaultBoardView'] {
-  return value === 'outline' || value === 'timeline' || value === 'board'
+  return value === 'outline' || value === 'timeline' || value === 'canvas'
 }
 
 function normalizeStoredBoardView(value: unknown): ProjectSettings['defaultBoardView'] {
-  if (!isBoardView(value)) {
-    return 'outline'
-  }
-
-  return value === 'timeline' ? 'outline' : value
+  if (value === 'board') return 'canvas'
+  if (value === 'timeline') return 'outline'
+  if (!isBoardView(value)) return 'outline'
+  return value
 }
 
 function normalizeSnapshotBoardItem(item: ProjectSnapshotV1['boards'][number]['items'][number]): BoardItem {

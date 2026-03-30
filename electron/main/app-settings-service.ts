@@ -246,11 +246,11 @@ function normalizeLayouts(value?: SavedWindowLayout[] | null): SavedWindowLayout
     .filter((layout) => layout.id && layout.name)
 }
 
-function normalizeDefaultBoardView(value?: BoardViewMode | null): BoardViewMode {
-  if (value === 'board') {
-    return 'board'
-  }
-
+function normalizeDefaultBoardView(value?: BoardViewMode | string | null): BoardViewMode {
+  if (value === 'board') return 'canvas'
+  if (value === 'canvas') return 'canvas'
+  if (value === 'timeline') return 'outline'
+  if (value === 'outline') return 'outline'
   return 'outline'
 }
 

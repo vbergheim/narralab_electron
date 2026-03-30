@@ -37,6 +37,8 @@ function createBrowserWindow(input: {
   bounds?: { x: number; y: number; width: number; height: number }
 }) {
   const iconPath = resolveRuntimeIconPath()
+  const runtimeRoot = app.isPackaged ? app.getAppPath() : process.cwd()
+  const preloadPath = path.join(runtimeRoot, 'dist-electron', 'index.js')
   const isMainWindow = input.workspace === 'main'
   const minWidth = isMainWindow ? 980 : 220
   const minHeight = isMainWindow ? 720 : 180
@@ -53,7 +55,7 @@ function createBrowserWindow(input: {
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 18, y: 18 },
     webPreferences: {
-      preload: path.join(__dirname, 'index.js'),
+      preload: preloadPath,
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,

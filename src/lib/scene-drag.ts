@@ -45,3 +45,12 @@ export function readSceneDragData(dataTransfer: DataTransfer) {
 
   return []
 }
+
+export function getDraggedSceneIds(dataTransfer: DataTransfer) {
+  const session = window.narralab.windows.getDragSession()
+  if (session?.kind === 'scene') {
+    return session.sceneIds
+  }
+
+  return readSceneDragData(dataTransfer)
+}

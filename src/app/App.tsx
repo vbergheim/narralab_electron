@@ -46,7 +46,7 @@ import type { Scene } from '@/types/scene'
 import type { SceneDensity } from '@/types/view'
 
 const workspaceTabs = [
-  { value: 'outline', label: 'Outline Board', shortLabel: 'Outline', icon: Rows3 },
+  { value: 'outline', label: 'Outline', shortLabel: 'Outline', icon: Rows3 },
   { value: 'bank', label: 'Scene Bank', shortLabel: 'Bank', icon: LayoutGrid },
   { value: 'notebook', label: 'Notebook', shortLabel: 'Notebook', icon: NotebookText },
   { value: 'archive', label: 'Archive', shortLabel: 'Archive', icon: ArchiveIcon },
@@ -122,7 +122,6 @@ export function App() {
     reorderSceneBeats,
     deleteSceneFolder,
     moveScenesToFolder,
-    reorderScenes,
     createBoard,
     createBoardFolder,
     updateBoardFolder,
@@ -168,6 +167,11 @@ export function App() {
   }, [initialize])
 
   useEffect(() => {
+    if (!window.narralab) {
+      console.error('[App] window.narralab is undefined - preload script did not load')
+      return
+    }
+
     const loadWindowState = async () => {
       const [context, layouts] = await Promise.all([
         window.narralab.windows.getContext(),
@@ -583,7 +587,6 @@ export function App() {
               onUpdateSceneFolder={(currentPath, input) => void updateSceneFolder(currentPath, input)}
               onDeleteSceneFolder={(currentPath) => void deleteSceneFolder(currentPath)}
               onMoveScenesToFolder={(sceneIds, folder) => void moveScenesToFolder(sceneIds, folder)}
-              onReorderScenes={(sceneIds) => void reorderScenes(sceneIds)}
               onToggleKeyScene={toggleKeyScene}
               onDuplicateScene={(sceneId, afterItemId) =>
                 void duplicateScene(sceneId, { addToBoardAfterItemId: afterItemId ?? null })}
@@ -609,7 +612,6 @@ export function App() {
           ) : detachedWorkspace === 'bank' && activeBoard ? (
             <SceneBankView
               scenes={filteredScenes}
-              allScenes={scenes}
               folders={sceneFolders}
               tags={tags}
               board={activeBoard}
@@ -628,7 +630,6 @@ export function App() {
               onUpdateFolder={(currentPath, input) => void updateSceneFolder(currentPath, input)}
               onDeleteFolder={(currentPath) => void deleteSceneFolder(currentPath)}
               onMoveToFolder={(sceneIds, folder) => void moveScenesToFolder(sceneIds, folder)}
-              onReorderScenes={(sceneIds) => void reorderScenes(sceneIds)}
               onDuplicate={(sceneId) => void duplicateScene(sceneId)}
               onDelete={(sceneId) => void deleteScene(sceneId)}
               onDeleteSelected={() => void deleteScenes(selectedSceneIds)}
@@ -850,7 +851,6 @@ export function App() {
                   onUpdateSceneFolder={(currentPath, input) => void updateSceneFolder(currentPath, input)}
                   onDeleteSceneFolder={(currentPath) => void deleteSceneFolder(currentPath)}
                   onMoveScenesToFolder={(sceneIds, folder) => void moveScenesToFolder(sceneIds, folder)}
-                  onReorderScenes={(sceneIds) => void reorderScenes(sceneIds)}
                   onToggleKeyScene={toggleKeyScene}
                   onDuplicateScene={(sceneId, afterItemId) => void duplicateScene(sceneId, { addToBoardAfterItemId: afterItemId ?? null })}
                   onDeleteScene={(sceneId) => void deleteScene(sceneId)}
@@ -881,7 +881,6 @@ export function App() {
               ) : (
                 <SceneBankView
                   scenes={filteredScenes}
-                  allScenes={scenes}
                   folders={sceneFolders}
                   tags={tags}
                   board={activeBoard}
@@ -900,7 +899,6 @@ export function App() {
                   onUpdateFolder={(currentPath, input) => void updateSceneFolder(currentPath, input)}
                   onDeleteFolder={(currentPath) => void deleteSceneFolder(currentPath)}
                   onMoveToFolder={(sceneIds, folder) => void moveScenesToFolder(sceneIds, folder)}
-                  onReorderScenes={(sceneIds) => void reorderScenes(sceneIds)}
                   onDuplicate={(sceneId) => void duplicateScene(sceneId)}
                   onDelete={(sceneId) => void deleteScene(sceneId)}
                   onDeleteSelected={() => void deleteScenes(selectedSceneIds)}
