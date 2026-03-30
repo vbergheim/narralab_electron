@@ -548,6 +548,17 @@ export function BoardManagerDialog({
                         onClick={(event) => {
                           if (editingBoardId === board.id) return
                           event.stopPropagation()
+                          
+                          // If it's a plain click (no modifiers), select board and close dialog
+                          if (!event.shiftKey && !event.metaKey && !event.ctrlKey) {
+                            onSelectBoard(board.id)
+                            setSelectedBoardIds([])
+                            setSelectedFolderPaths([])
+                            onClose()
+                            return
+                          }
+                          
+                          // Otherwise, handle multi-selection
                           handleBoardSelection(event, board.id, group.folderPath)
                         }}
                         onContextMenu={(event) => {
@@ -620,16 +631,8 @@ export function BoardManagerDialog({
                               />
                             </InlineEditScope>
                           ) : (
-                            <button
-                              type="button"
-                              className="w-full truncate text-left text-sm font-medium text-foreground transition hover:text-accent"
-                              onClick={(event) => {
-                                event.stopPropagation()
-                                if (!event.shiftKey && !event.metaKey && !event.ctrlKey) {
-                                  onSelectBoard(board.id)
-                                  onClose()
-                                }
-                              }}
+                            <div
+                              className="w-full truncate text-left text-sm font-medium text-foreground"
                               onDoubleClick={(event) => {
                                 event.preventDefault()
                                 event.stopPropagation()
@@ -638,7 +641,7 @@ export function BoardManagerDialog({
                               }}
                             >
                               {board.name}
-                            </button>
+                            </div>
                           )}
                           <div className="mt-0.5 text-xs text-muted">{board.items.length} rows</div>
                         </div>
@@ -728,7 +731,7 @@ function groupBoards(boards: Board[], folders: BoardFolder[]): BoardGroup[] {
 }
 
 function formatFolderLabel(label: string) {
-  return label
+  return label.toLocaleUpperCase('nb-NO')
 }
 
 function hasCollapsedAncestor(path: string, collapsedPaths: string[]): boolean {
