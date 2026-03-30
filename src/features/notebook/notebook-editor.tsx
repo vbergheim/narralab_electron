@@ -253,7 +253,7 @@ export function NotebookEditor({ notebook, onChange, onSave }: Props) {
         })}
         <Button type="button" variant="ghost" size="sm" className="shrink-0 gap-1" onClick={addTab}>
           <Plus className="h-4 w-4" />
-          Tab
+          New note
         </Button>
       </div>
 
