@@ -4,6 +4,7 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  Filter,
   Folder,
   FolderPlus,
   LayoutGrid,
@@ -20,6 +21,7 @@ import { Button } from '@/components/ui/button'
 import { ContextMenu, type ContextMenuItem } from '@/components/ui/context-menu'
 import { InlineEditActions, InlineEditScope, InlineNameEditor, InlineTextareaEditor } from '@/components/ui/inline-name-editor'
 import { KeyRatingButton } from '@/components/ui/key-rating-button'
+import { SceneBankFilters } from '@/features/scenes/scene-bank-filters'
 import { usePersistedStringArray } from '@/hooks/use-persisted-string-array'
 import { sceneColors } from '@/lib/constants'
 import { comparePathDepthDesc, computeListSelection, ensureContextSelection } from '@/lib/selection'
@@ -101,6 +103,7 @@ export function SceneBankView({
   const [draggedFolderPath, setDraggedFolderPath] = useState<string | null>(null)
   const [selectedFolderPaths, setSelectedFolderPaths] = useState<string[]>([])
   const folderSelectionAnchorRef = useRef<number | null>(null)
+  const [filtersExpanded, setFiltersExpanded] = useState(false)
 
   const groupedScenes = useMemo(() => groupScenes(scenes, folders), [scenes, folders])
   const folderPathOrder = useMemo(() => groupedScenes.groups.map((group) => group.folderPath), [groupedScenes.groups])
@@ -265,7 +268,7 @@ export function SceneBankView({
     <div className={cn(embedded ? 'border-b border-border/80 pb-3' : 'border-b border-border/90 px-4 py-4')}>
       {!embedded ? (
         <div className="mb-3 flex min-w-0 items-start justify-between gap-3">
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 font-display text-sm font-semibold uppercase tracking-[0.16em] text-foreground">
               <LayoutGrid className="h-4 w-4 text-accent" />
               <span>Scene Bank</span>
@@ -274,6 +277,25 @@ export function SceneBankView({
               Browse the full scene pool and add candidates to the active outline.
             </div>
           </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setFiltersExpanded(!filtersExpanded)}
+            className="shrink-0"
+          >
+            <Filter className="h-4 w-4" />
+            <span className="hidden lg:inline">Filters</span>
+            {filtersExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+          </Button>
+        </div>
+      ) : null}
+      {!embedded && filtersExpanded ? (
+        <div className="mb-3">
+          <SceneBankFilters scenes={scenes} tags={tags} expanded={filtersExpanded} />
+        </div>
+      ) : !embedded ? (
+        <div className="mb-3">
+          <SceneBankFilters scenes={scenes} tags={tags} expanded={false} />
         </div>
       ) : null}
       <div className="flex shrink-0 items-center gap-1 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">

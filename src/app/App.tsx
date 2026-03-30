@@ -18,7 +18,6 @@ import {
   X,
 } from 'lucide-react'
 
-import { FiltersSidebar } from '@/features/filters/filters-sidebar'
 import { ArchiveWorkspace } from '@/features/archive/archive-workspace'
 import { OutlineWorkspace } from '@/features/boards/outline-workspace'
 import { ConsultantWorkspace } from '@/features/consultant/consultant-workspace'
@@ -55,7 +54,6 @@ const workspaceTabs = [
 export function App() {
   const searchRef = useRef<HTMLInputElement | null>(null)
   const viewButtonRef = useRef<HTMLButtonElement | null>(null)
-  const [leftCollapsed, setLeftCollapsed] = useState(false)
   const [rightCollapsed, setRightCollapsed] = useState(true)
   const [consultantDockOpen, setConsultantDockOpen] = useState(false)
   const [sceneDensity, setSceneDensity] = useState<SceneDensity>('compact')
@@ -562,6 +560,7 @@ export function App() {
             <OutlineWorkspace
               board={activeBoard}
               allBoards={boards}
+              boardFolders={boardFolders}
               scenes={scenes}
               sceneFolders={sceneFolders}
               blockTemplates={blockTemplates}
@@ -574,6 +573,17 @@ export function App() {
               defaultBankCollapsed
               onToggleImmersive={() => void toggleOutlineImmersive()}
               onChangeViewMode={(mode) => setBoardViewMode(normalizeBoardViewMode(mode))}
+              onSelectBoard={setActiveBoard}
+              onOpenBoardInspector={openBoardDetails}
+              onInlineUpdateBoard={(boardId, input) => void updateBoardDraft({ id: boardId, ...input })}
+              onDuplicateBoard={(boardId) => void cloneBoard(boardId)}
+              onCreateBoard={(folder) => void createBoard('New Board', folder)}
+              onCreateBoardFolder={(name, parentPath) => void createBoardFolder(name, parentPath)}
+              onUpdateBoardFolder={(currentPath, input) => void updateBoardFolder(currentPath, input)}
+              onDeleteBoardFolder={(currentPath) => void deleteBoardFolder(currentPath)}
+              onDeleteBoard={(boardId) => void deleteBoard(boardId)}
+              onMoveBoard={(boardId, folder, beforeBoardId) => void moveBoard(boardId, folder, beforeBoardId)}
+              onReorderBoards={(boardIds) => void reorderBoards(boardIds)}
               selectedSceneId={selectedSceneId}
               selectedSceneIds={selectedSceneIds}
               selectedBoardItemId={selectedBoardItemId}
@@ -755,39 +765,7 @@ export function App() {
           </div>
         </Panel>
 
-        <div
-          className="grid min-h-0 flex-1 gap-4"
-          style={{
-            gridTemplateColumns: `${leftCollapsed ? '56px' : '300px'} minmax(0,1fr)`,
-          }}
-        >
-        {leftCollapsed ? (
-          <CollapsedRail side="left" title="Filters" onExpand={() => setLeftCollapsed(false)} />
-        ) : (
-          <Panel className="min-h-0 overflow-hidden">
-            <FiltersSidebar
-              boards={boards}
-              folders={boardFolders}
-              scenes={scenes}
-              tags={tags}
-              activeBoardId={activeBoardId}
-              onCollapse={() => setLeftCollapsed(true)}
-              onSelectBoard={setActiveBoard}
-              onOpenBoardInspector={openBoardDetails}
-              onInlineUpdateBoard={(boardId, input) => void updateBoardDraft({ id: boardId, ...input })}
-              onDuplicateBoard={(boardId) => void cloneBoard(boardId)}
-              onCreateBoard={(folder) => void createBoard('New Board', folder)}
-              onCreateFolder={(name, parentPath) => void createBoardFolder(name, parentPath)}
-              onUpdateFolder={(currentPath, input) => void updateBoardFolder(currentPath, input)}
-              onDeleteFolder={(currentPath) => void deleteBoardFolder(currentPath)}
-              onDeleteBoard={(boardId) => void deleteBoard(boardId)}
-              onMoveBoard={(boardId, folder, beforeBoardId) => void moveBoard(boardId, folder, beforeBoardId)}
-              onReorderBoards={(boardIds) => void reorderBoards(boardIds)}
-            />
-          </Panel>
-        )}
-
-        <div className="flex min-h-0 min-w-0 gap-4">
+        <div className="flex min-h-0 flex-1 gap-4">
           <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4">
             {workspaceMode === 'settings' ? (
               <SettingsWorkspace
@@ -829,15 +807,27 @@ export function App() {
                 <OutlineWorkspace
                   board={activeBoard}
                   allBoards={boards}
+                  boardFolders={boardFolders}
                   scenes={scenes}
                   sceneFolders={sceneFolders}
                   blockTemplates={blockTemplates}
                   filteredSceneIds={filteredSceneIds}
                   tags={tags}
                   density={sceneDensity}
-                      viewMode={effectiveBoardViewMode}
+                  viewMode={effectiveBoardViewMode}
                   availableBlockKinds={boardBlockKindsForProject}
                   onChangeViewMode={(mode) => setBoardViewMode(normalizeBoardViewMode(mode))}
+                  onSelectBoard={setActiveBoard}
+                  onOpenBoardInspector={openBoardDetails}
+                  onInlineUpdateBoard={(boardId, input) => void updateBoardDraft({ id: boardId, ...input })}
+                  onDuplicateBoard={(boardId) => void cloneBoard(boardId)}
+                  onCreateBoard={(folder) => void createBoard('New Board', folder)}
+                  onCreateBoardFolder={(name, parentPath) => void createBoardFolder(name, parentPath)}
+                  onUpdateBoardFolder={(currentPath, input) => void updateBoardFolder(currentPath, input)}
+                  onDeleteBoardFolder={(currentPath) => void deleteBoardFolder(currentPath)}
+                  onDeleteBoard={(boardId) => void deleteBoard(boardId)}
+                  onMoveBoard={(boardId, folder, beforeBoardId) => void moveBoard(boardId, folder, beforeBoardId)}
+                  onReorderBoards={(boardIds) => void reorderBoards(boardIds)}
                   selectedSceneId={selectedSceneId}
                   selectedSceneIds={selectedSceneIds}
                   selectedBoardItemId={selectedBoardItemId}
@@ -934,7 +924,6 @@ export function App() {
               </Panel>
             </div>
           ) : null}
-        </div>
         </div>
       </div>
 

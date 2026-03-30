@@ -34,6 +34,7 @@ import {
   ChevronDown,
   ChevronRight,
   GripVertical,
+  Layers3,
   LayoutPanelTop,
   Minimize2,
   PanelLeftClose,
@@ -45,6 +46,8 @@ import {
 
 import { SceneCard } from '@/components/cards/scene-card'
 import { Badge } from '@/components/ui/badge'
+import { BoardManagerDialog } from '@/components/board-selector/board-manager-dialog'
+import { BoardSelectorDropdown } from '@/components/board-selector/board-selector-dropdown'
 import { Button } from '@/components/ui/button'
 import { ContextMenu, type ContextMenuItem } from '@/components/ui/context-menu'
 import { InlineEditActions, InlineEditScope, InlineNameEditor, InlineTextareaEditor } from '@/components/ui/inline-name-editor'
@@ -59,7 +62,7 @@ import { cn } from '@/lib/cn'
 import { boardBlockKinds, sceneColors } from '@/lib/constants'
 import { formatDuration } from '@/lib/durations'
 import { readSceneDragData } from '@/lib/scene-drag'
-import type { BlockTemplate, Board, BoardItem, BoardTextItemKind, BoardViewMode } from '@/types/board'
+import type { BlockTemplate, Board, BoardFolder, BoardItem, BoardTextItemKind, BoardViewMode } from '@/types/board'
 import { isSceneBoardItem } from '@/types/board'
 import type { Scene, SceneBeat, SceneBeatUpdateInput, SceneFolder } from '@/types/scene'
 import type { Tag } from '@/types/tag'
@@ -68,6 +71,7 @@ import type { SceneDensity } from '@/types/view'
 type Props = {
   board: Board
   allBoards: Board[]
+  boardFolders: BoardFolder[]
   scenes: Scene[]
   sceneFolders: SceneFolder[]
   blockTemplates: BlockTemplate[]
@@ -80,6 +84,17 @@ type Props = {
   defaultBankCollapsed?: boolean
   onToggleImmersive?(): void
   onChangeViewMode(mode: BoardViewMode): void
+  onSelectBoard(boardId: string): void
+  onOpenBoardInspector(boardId: string): void
+  onInlineUpdateBoard(boardId: string, input: { name: string }): void
+  onDuplicateBoard(boardId: string): void
+  onCreateBoard(folder?: string | null): void
+  onCreateBoardFolder(name: string, parentPath?: string | null): void
+  onUpdateBoardFolder(currentPath: string, input: { name?: string; color?: BoardFolder['color']; parentPath?: string | null }): void
+  onDeleteBoardFolder(currentPath: string): void
+  onDeleteBoard(boardId: string): void
+  onMoveBoard(boardId: string, folder: string, beforeBoardId?: string | null): void
+  onReorderBoards(boardIds: string[]): void
   selectedSceneId: string | null
   selectedSceneIds: string[]
   selectedBoardItemId: string | null
@@ -128,6 +143,7 @@ type BoardCanvasHandle = {
 export function OutlineWorkspace({
   board,
   allBoards,
+  boardFolders,
   scenes,
   sceneFolders,
   blockTemplates,
@@ -140,6 +156,17 @@ export function OutlineWorkspace({
   defaultBankCollapsed = false,
   onToggleImmersive,
   onChangeViewMode,
+  onSelectBoard,
+  onOpenBoardInspector,
+  onInlineUpdateBoard,
+  onDuplicateBoard,
+  onCreateBoard,
+  onCreateBoardFolder,
+  onUpdateBoardFolder,
+  onDeleteBoardFolder,
+  onDeleteBoard,
+  onMoveBoard,
+  onReorderBoards,
   selectedSceneId,
   selectedSceneIds,
   selectedBoardItemId,
@@ -179,6 +206,9 @@ export function OutlineWorkspace({
   const [menuState, setMenuState] = useState<{ itemId: string; x: number; y: number } | null>(null)
   const [copyMenuState, setCopyMenuState] = useState<{ itemId: string; x: number; y: number } | null>(null)
   const [bankCollapsed, setBankCollapsed] = useState(defaultBankCollapsed)
+  const [boardSelectorOpen, setBoardSelectorOpen] = useState(false)
+  const [boardManagerOpen, setBoardManagerOpen] = useState(false)
+  const boardSelectorButtonRef = useRef<HTMLButtonElement>(null)
   const [nativeSceneDropActive, setNativeSceneDropActive] = useState(false)
   const [nativeSceneInsertAfterId, setNativeSceneInsertAfterId] = useState<string | null>(null)
   const [nativeDraggedSceneCount, setNativeDraggedSceneCount] = useState(0)
@@ -376,6 +406,30 @@ export function OutlineWorkspace({
             )}
             headingAction={
               <div className="flex shrink-0 items-center gap-2 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <div className="relative">
+                  <Button
+                    ref={boardSelectorButtonRef}
+                    variant="ghost"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => setBoardSelectorOpen(!boardSelectorOpen)}
+                  >
+                    <Layers3 className="h-4 w-4" />
+                    <span className="max-w-[120px] truncate">{board.name}</span>
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  </Button>
+                  <BoardSelectorDropdown
+                    boards={allBoards}
+                    folders={boardFolders}
+                    activeBoardId={board.id}
+                    open={boardSelectorOpen}
+                    buttonRef={boardSelectorButtonRef}
+                    onClose={() => setBoardSelectorOpen(false)}
+                    onSelectBoard={onSelectBoard}
+                    onOpenManager={() => setBoardManagerOpen(true)}
+                    onCreateBoard={onCreateBoard}
+                  />
+                </div>
                 <AddBlockMenu
                   availableBlockKinds={availableBlockKinds}
                   templates={blockTemplates}
@@ -672,6 +726,24 @@ export function OutlineWorkspace({
             document.body,
           )
         : null}
+      <BoardManagerDialog
+        boards={allBoards}
+        folders={boardFolders}
+        activeBoardId={board.id}
+        open={boardManagerOpen}
+        onClose={() => setBoardManagerOpen(false)}
+        onSelectBoard={onSelectBoard}
+        onOpenBoardInspector={onOpenBoardInspector}
+        onInlineUpdateBoard={onInlineUpdateBoard}
+        onDuplicateBoard={onDuplicateBoard}
+        onCreateBoard={onCreateBoard}
+        onCreateFolder={onCreateBoardFolder}
+        onUpdateFolder={onUpdateBoardFolder}
+        onDeleteFolder={onDeleteBoardFolder}
+        onDeleteBoard={onDeleteBoard}
+        onMoveBoard={onMoveBoard}
+        onReorderBoards={onReorderBoards}
+      />
     </DndContext>
   )
 }
