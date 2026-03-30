@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { randomUUID } from 'node:crypto'
 
 import { app, dialog, shell } from 'electron'
 
@@ -19,12 +20,13 @@ import type {
 import type {
   BoardScriptExportFormat,
   NotebookDocument,
+  NotebookTab,
   ProjectMeta,
   ProjectSettings,
   ProjectSettingsUpdateInput,
   ProjectSnapshot,
   ProjectSnapshotV1,
-  ProjectSnapshotV6,
+  ProjectSnapshotV7,
   ShootLogImportResult,
 } from '@/types/project'
 import type { Scene, SceneBeat, SceneBeatUpdateInput, SceneFolder, SceneUpdateInput } from '@/types/scene'
@@ -36,6 +38,84 @@ import { BoardRepository } from './db/repositories/board-repository'
 import { SceneRepository } from './db/repositories/scene-repository'
 import { TagRepository } from './db/repositories/tag-repository'
 import { importShootLogWorkbook } from './shoot-log-import'
+
+const NOTEBOOK_META_KEY = 'project_notebooks_v1'
+
+function notebookTabId(): string {
+  return randomUUID()
+}
+
+function emptyNotebookDocument(): NotebookDocument {
+  const id = notebookTabId()
+  return {
+    tabs: [{ id, title: 'Notes', contentHtml: '', updatedAt: null }],
+    activeTabId: id,
+    updatedAt: null,
+  }
+}
+
+function plainTextToHtml(text: string): string {
+  if (!text.trim()) return ''
+  const escaped = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+  return escaped
+    .split(/\n/)
+    .map((line) => `<p>${line || '<br>'}</p>`)
+    .join('')
+}
+
+function aggregateNotebookTabTimes(tabs: NotebookTab[]): string | null {
+  const times = tabs.map((t) => t.updatedAt).filter(Boolean) as string[]
+  if (times.length === 0) return null
+  return [...times].sort().at(-1) ?? null
+}
+
+function migrateLegacyNotebookContent(content: string, updatedAt: string | null): NotebookDocument {
+  const id = notebookTabId()
+  return {
+    tabs: [{ id, title: 'Notes', contentHtml: plainTextToHtml(content), updatedAt }],
+    activeTabId: id,
+    updatedAt,
+  }
+}
+
+function sanitizeNotebookDocument(doc: NotebookDocument): NotebookDocument {
+  if (!doc.tabs || doc.tabs.length === 0) {
+    return emptyNotebookDocument()
+  }
+  const tabs = doc.tabs.map((t) => ({
+    id: typeof t.id === 'string' ? t.id : notebookTabId(),
+    title: typeof t.title === 'string' && t.title.trim() ? t.title.trim().slice(0, 200) : 'Untitled',
+    contentHtml: typeof t.contentHtml === 'string' ? t.contentHtml : '',
+    updatedAt: typeof t.updatedAt === 'string' ? t.updatedAt : null,
+  }))
+  let activeTabId = typeof doc.activeTabId === 'string' ? doc.activeTabId : null
+  if (!activeTabId || !tabs.some((t) => t.id === activeTabId)) {
+    activeTabId = tabs[0].id
+  }
+  const updatedAt = aggregateNotebookTabTimes(tabs)
+  return { tabs, activeTabId, updatedAt }
+}
+
+function normalizeNotebookFromSnapshot(notebook: unknown): NotebookDocument {
+  if (
+    notebook &&
+    typeof notebook === 'object' &&
+    Array.isArray((notebook as NotebookDocument).tabs) &&
+    (notebook as NotebookDocument).tabs!.length > 0
+  ) {
+    return sanitizeNotebookDocument(notebook as NotebookDocument)
+  }
+  if (notebook && typeof notebook === 'object' && typeof (notebook as { content?: unknown }).content === 'string') {
+    return migrateLegacyNotebookContent(
+      (notebook as { content: string }).content,
+      (notebook as { updatedAt?: string | null }).updatedAt ?? null,
+    )
+  }
+  return emptyNotebookDocument()
+}
 
 type Repositories = {
   archive: ArchiveRepository
@@ -795,9 +875,9 @@ export class ProjectService {
     return this.ensureRepositories().boards.updateItem(input)
   }
 
-  getSnapshot(): ProjectSnapshotV6 {
+  getSnapshot(): ProjectSnapshotV7 {
     return {
-      schemaVersion: 6,
+      schemaVersion: 7,
       exportedAt: new Date().toISOString(),
       project: this.getMeta(),
       projectSettings: this.getProjectSettings(),
@@ -952,7 +1032,7 @@ export class ProjectService {
         })
       })
 
-      this.setNotebook(snapshot.notebook.content, snapshot.notebook.updatedAt)
+      this.setNotebookDocument(normalizeNotebookFromSnapshot(snapshot.notebook))
       this.updateProjectSettings(snapshot.projectSettings)
     })
 
@@ -962,18 +1042,34 @@ export class ProjectService {
   getNotebook(): NotebookDocument {
     const db = this.ensureDatabase()
     const readMeta = db.prepare('SELECT value FROM app_meta WHERE key = ?')
+    const json = (readMeta.get(NOTEBOOK_META_KEY) as { value: string } | undefined)?.value
+    if (json) {
+      try {
+        const parsed = JSON.parse(json) as NotebookDocument
+        return sanitizeNotebookDocument(parsed)
+      } catch {
+        // fall through to legacy
+      }
+    }
+
     const content = (readMeta.get('project_notebook') as { value: string } | undefined)?.value ?? ''
     const updatedAt =
       (readMeta.get('project_notebook_updated_at') as { value: string } | undefined)?.value ?? null
 
-    return { content, updatedAt }
+    if (content || updatedAt) {
+      return migrateLegacyNotebookContent(content, updatedAt)
+    }
+
+    return emptyNotebookDocument()
   }
 
-  updateNotebook(content: string): NotebookDocument {
-    return this.setNotebook(content)
+  updateNotebook(document: NotebookDocument): NotebookDocument {
+    return this.setNotebookDocument(sanitizeNotebookDocument(document))
   }
 
-  private setNotebook(content: string, updatedAt: string | null = new Date().toISOString()): NotebookDocument {
+  private setNotebookDocument(document: NotebookDocument): NotebookDocument {
+    const normalized = sanitizeNotebookDocument(document)
+    normalized.updatedAt = aggregateNotebookTabTimes(normalized.tabs)
     const db = this.ensureDatabase()
     const upsertMeta = db.prepare(`
       INSERT INTO app_meta (key, value)
@@ -982,14 +1078,11 @@ export class ProjectService {
     `)
     const deleteMeta = db.prepare('DELETE FROM app_meta WHERE key = ?')
 
-    upsertMeta.run('project_notebook', content)
-    if (updatedAt) {
-      upsertMeta.run('project_notebook_updated_at', updatedAt)
-    } else {
-      deleteMeta.run('project_notebook_updated_at')
-    }
+    upsertMeta.run(NOTEBOOK_META_KEY, JSON.stringify(normalized))
+    deleteMeta.run('project_notebook')
+    deleteMeta.run('project_notebook_updated_at')
 
-    return { content, updatedAt }
+    return normalized
   }
 
   private ensureBoardFolder(path: string) {
@@ -1136,40 +1229,54 @@ function toProjectDisplayName(filePath: string) {
     .replace(/\.sqlite$/i, '')
 }
 
-function normalizeSnapshot(snapshot: ProjectSnapshot): ProjectSnapshotV6 {
-  if (snapshot.schemaVersion === 6) {
+function normalizeSnapshot(snapshot: ProjectSnapshot): ProjectSnapshotV7 {
+  if (snapshot.schemaVersion === 7) {
     return {
       ...snapshot,
       scenes: snapshot.scenes.map(normalizeSnapshotScene),
       projectSettings: normalizeProjectSettings(snapshot.projectSettings),
       boards: snapshot.boards.map(normalizeBoardSnapshot),
+      notebook: normalizeNotebookFromSnapshot(snapshot.notebook),
+    }
+  }
+
+  if (snapshot.schemaVersion === 6) {
+    return {
+      ...snapshot,
+      schemaVersion: 7,
+      scenes: snapshot.scenes.map(normalizeSnapshotScene),
+      projectSettings: normalizeProjectSettings(snapshot.projectSettings),
+      boards: snapshot.boards.map(normalizeBoardSnapshot),
+      notebook: normalizeNotebookFromSnapshot(snapshot.notebook),
     }
   }
 
   if (snapshot.schemaVersion === 5) {
     return {
       ...snapshot,
-      schemaVersion: 6,
+      schemaVersion: 7,
       scenes: snapshot.scenes.map(normalizeSnapshotScene),
       projectSettings: normalizeProjectSettings(snapshot.projectSettings),
       boards: snapshot.boards.map(normalizeBoardSnapshot),
+      notebook: normalizeNotebookFromSnapshot(snapshot.notebook),
     }
   }
 
   if (snapshot.schemaVersion === 4) {
     return {
       ...snapshot,
-      schemaVersion: 6,
+      schemaVersion: 7,
       scenes: snapshot.scenes.map(normalizeSnapshotScene),
       projectSettings: defaultProjectSettings(),
       boards: snapshot.boards.map(normalizeBoardSnapshot),
+      notebook: normalizeNotebookFromSnapshot(snapshot.notebook),
     }
   }
 
   if (snapshot.schemaVersion === 3) {
     return {
       ...snapshot,
-      schemaVersion: 6,
+      schemaVersion: 7,
       scenes: snapshot.scenes.map(normalizeSnapshotScene),
       projectSettings: defaultProjectSettings(),
       boards: snapshot.boards.map((board) => normalizeBoardSnapshot({
@@ -1179,13 +1286,14 @@ function normalizeSnapshot(snapshot: ProjectSnapshot): ProjectSnapshotV6 {
         folder: 'folder' in board ? board.folder : '',
         sortOrder: 'sortOrder' in board ? board.sortOrder : 0,
       })),
+      notebook: normalizeNotebookFromSnapshot(snapshot.notebook),
     }
   }
 
   if (snapshot.schemaVersion === 2) {
     return {
       ...snapshot,
-      schemaVersion: 6,
+      schemaVersion: 7,
       scenes: snapshot.scenes.map(normalizeSnapshotScene),
       projectSettings: defaultProjectSettings(),
       boards: snapshot.boards.map((board) => normalizeBoardSnapshot({
@@ -1195,12 +1303,12 @@ function normalizeSnapshot(snapshot: ProjectSnapshot): ProjectSnapshotV6 {
         folder: '',
         sortOrder: 0,
       })),
-      notebook: { content: '', updatedAt: null },
+      notebook: normalizeNotebookFromSnapshot({ content: '', updatedAt: null }),
     }
   }
 
   return {
-    schemaVersion: 6,
+    schemaVersion: 7,
     exportedAt: snapshot.exportedAt,
     project: snapshot.project,
     projectSettings: defaultProjectSettings(),
@@ -1214,7 +1322,7 @@ function normalizeSnapshot(snapshot: ProjectSnapshot): ProjectSnapshotV6 {
       sortOrder: 0,
       items: board.items.map(normalizeSnapshotBoardItem),
     })),
-    notebook: { content: '', updatedAt: null },
+    notebook: normalizeNotebookFromSnapshot({ content: '', updatedAt: null }),
   }
 }
 

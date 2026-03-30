@@ -25,7 +25,7 @@ const api: NarraLabApi = {
   },
   notebook: {
     get: () => ipcRenderer.invoke('notebook:get'),
-    update: (content) => ipcRenderer.invoke('notebook:update', content),
+    update: (document) => ipcRenderer.invoke('notebook:update', document),
   },
   archive: {
     folders: {

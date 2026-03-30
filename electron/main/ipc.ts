@@ -27,6 +27,7 @@ import {
   parseSceneUpdateInput,
   parseTagUpsertInput,
   parseGlobalUiStatePatch,
+  parseNotebookDocument,
   parseWindowContextUpdate,
   parseWindowDragSession,
   parseWindowWorkspace,
@@ -86,8 +87,8 @@ export function registerIpc(
   })
 
   ipcMain.handle('notebook:get', () => projectService.getNotebook())
-  ipcMain.handle('notebook:update', (_, content: string) => {
-    const result = projectService.updateNotebook(optionalString(content, 'Notebook content') ?? '')
+  ipcMain.handle('notebook:update', (_, payload: unknown) => {
+    const result = projectService.updateNotebook(parseNotebookDocument(payload))
     windowManager.notifyProjectChanged()
     return result
   })

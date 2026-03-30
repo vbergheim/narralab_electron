@@ -41,8 +41,18 @@ export type ProjectSettings = {
 
 export type ProjectSettingsUpdateInput = Partial<ProjectSettings>
 
+export type NotebookTab = {
+  id: string
+  title: string
+  /** Rich text as HTML (project-local, trusted content). */
+  contentHtml: string
+  updatedAt: string | null
+}
+
 export type NotebookDocument = {
-  content: string
+  tabs: NotebookTab[]
+  activeTabId: string | null
+  /** Latest save across tabs (for status / export). */
   updatedAt: string | null
 }
 
@@ -155,6 +165,17 @@ export type ProjectSnapshotV6 = {
   notebook: NotebookDocument
 }
 
+export type ProjectSnapshotV7 = {
+  schemaVersion: 7
+  exportedAt: string
+  project: ProjectMeta | null
+  projectSettings: ProjectSettings
+  scenes: Scene[]
+  tags: Tag[]
+  boards: Board[]
+  notebook: NotebookDocument
+}
+
 export type ProjectSnapshot =
   | ProjectSnapshotV1
   | ProjectSnapshotV2
@@ -162,6 +183,7 @@ export type ProjectSnapshot =
   | ProjectSnapshotV4
   | ProjectSnapshotV5
   | ProjectSnapshotV6
+  | ProjectSnapshotV7
 
 export interface NarraLabApi {
   project: {
@@ -178,7 +200,7 @@ export interface NarraLabApi {
   }
   notebook: {
     get(): Promise<NotebookDocument>
-    update(content: string): Promise<NotebookDocument>
+    update(document: NotebookDocument): Promise<NotebookDocument>
   }
   archive: {
     folders: {

@@ -1,7 +1,14 @@
 import type { ArchiveFolderUpdateInput, ArchiveItemUpdateInput } from '@/types/archive'
 import type { AppSettingsUpdateInput, ConsultantChatInput, SavedWindowLayout, WindowWorkspace } from '@/types/ai'
 import type { BoardItemKind, BoardItemUpdateInput, BoardTextItemKind, BoardUpdateInput, BoardViewMode } from '@/types/board'
-import type { GlobalUiState, ProjectSettingsUpdateInput, WindowContext, WindowDragSession } from '@/types/project'
+import type {
+  GlobalUiState,
+  NotebookDocument,
+  NotebookTab,
+  ProjectSettingsUpdateInput,
+  WindowContext,
+  WindowDragSession,
+} from '@/types/project'
 import type { SceneColor, SceneStatus, SceneBeatUpdateInput, SceneUpdateInput } from '@/types/scene'
 import type { TagType } from '@/types/tag'
 import type { SceneDensity } from '@/types/view'
@@ -348,6 +355,50 @@ export function parseBoardPosition(value: unknown) {
     x: requireFiniteNumber(input.x, 'Board position X'),
     y: requireFiniteNumber(input.y, 'Board position Y'),
   }
+}
+
+export function parseNotebookDocument(value: unknown): NotebookDocument {
+  const input = requireObject(value, 'Notebook document')
+  const tabsRaw = input.tabs
+  if (!Array.isArray(tabsRaw)) {
+    throw new Error('Notebook tabs must be an array')
+  }
+
+  const tabs: NotebookTab[] = tabsRaw.map((tab, index) => {
+    const t = requireObject(tab, `Notebook tab ${index}`)
+    const id = typeof t.id === 'string' && t.id.trim() ? t.id.trim() : `tab_${index}`
+    const titleRaw = typeof t.title === 'string' ? t.title.trim().slice(0, 200) : ''
+    const title = titleRaw || 'Untitled'
+    const contentHtml = typeof t.contentHtml === 'string' ? t.contentHtml : ''
+    const updatedAt =
+      t.updatedAt === null || t.updatedAt === undefined
+        ? null
+        : typeof t.updatedAt === 'string'
+          ? t.updatedAt
+          : null
+    return { id, title, contentHtml, updatedAt }
+  })
+
+  if (tabs.length === 0) {
+    throw new Error('Notebook must include at least one tab')
+  }
+
+  let activeTabId: string | null = null
+  if (typeof input.activeTabId === 'string' && input.activeTabId.trim()) {
+    activeTabId = input.activeTabId.trim()
+  }
+  if (!activeTabId || !tabs.some((x) => x.id === activeTabId)) {
+    activeTabId = tabs[0].id
+  }
+
+  const updatedAt =
+    input.updatedAt === null || input.updatedAt === undefined
+      ? null
+      : typeof input.updatedAt === 'string'
+        ? input.updatedAt
+        : null
+
+  return { tabs, activeTabId, updatedAt }
 }
 
 function requireObject(value: unknown, label: string): AnyRecord {

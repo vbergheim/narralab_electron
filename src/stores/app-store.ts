@@ -18,6 +18,7 @@ import type {
   ProjectSettingsUpdateInput,
   ShootLogImportResult,
 } from '@/types/project'
+import { emptyNotebookDocument } from '@/lib/notebook-document'
 import type { Scene, SceneBeat, SceneBeatUpdateInput, SceneFolder, SceneUpdateInput } from '@/types/scene'
 import type { Tag, TagType } from '@/types/tag'
 
@@ -115,8 +116,8 @@ type AppStore = {
   persistSceneDraft(input: SceneDraftInput): Promise<void>
   bulkUpdateScenes(input: SceneBulkUpdateInput): Promise<void>
   persistBoardItemDraft(input: BoardItemDraftInput): Promise<void>
-  updateNotebookDraft(content: string): void
-  persistNotebook(content: string): Promise<void>
+  updateNotebookDraft(notebook: NotebookDocument): void
+  persistNotebook(notebook: NotebookDocument): Promise<void>
   duplicateScene(sceneId: string, options?: { addToBoardAfterItemId?: string | null }): Promise<void>
   openBoardInspector(boardId: string): void
   selectScene(sceneId: string | null, boardItemId?: string | null): void
@@ -175,7 +176,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       savedLayouts: [],
     },
   },
-  notebook: { content: '', updatedAt: null },
+  notebook: emptyNotebookDocument(),
   archiveFolders: [],
   archiveItems: [],
   scenes: [],
@@ -217,7 +218,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       set({
         projectMeta: null,
         projectSettings: null,
-        notebook: { content: '', updatedAt: null },
+        notebook: emptyNotebookDocument(),
         archiveFolders: [],
         archiveItems: [],
         scenes: [],
@@ -827,19 +828,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
     })
   },
 
-  updateNotebookDraft(content) {
-    set((state) => ({
-      notebook: {
-        ...state.notebook,
-        content,
-      },
-    }))
+  updateNotebookDraft(notebook) {
+    set({ notebook })
   },
 
-  async persistNotebook(content) {
+  async persistNotebook(notebook) {
     try {
-      const notebook = await window.narralab.notebook.update(content)
-      set({ notebook })
+      const next = await window.narralab.notebook.update(notebook)
+      set({ notebook: next })
     } catch (error) {
       set({ error: toMessage(error) })
     }

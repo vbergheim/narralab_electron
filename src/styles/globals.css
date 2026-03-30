@@ -85,3 +85,23 @@ select {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
 }
+
+/* Rich notebook (contenteditable) */
+.notebook-editor-content h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 0.75em 0 0.35em;
+}
+.notebook-editor-content h3 {
+  font-size: 1.08rem;
+  font-weight: 600;
+  margin: 0.65em 0 0.3em;
+}
+.notebook-editor-content ul,
+.notebook-editor-content ol {
+  padding-left: 1.35rem;
+  margin: 0.4em 0;
+}
+.notebook-editor-content p {
+  margin: 0.35em 0;
+}
