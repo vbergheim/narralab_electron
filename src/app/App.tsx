@@ -65,6 +65,7 @@ export function App() {
   const [savedLayouts, setSavedLayouts] = useState<SavedWindowLayout[]>([])
   const [outlineImmersive, setOutlineImmersive] = useState(false)
   const inspectorResize = usePanelResize({ initial: 420, min: 320, max: 620 })
+  const lastAppliedProjectBoardViewKeyRef = useRef<string>('')
   const {
     ready,
     busy,
@@ -211,6 +212,25 @@ export function App() {
 
     return dispose
   }, [applyGlobalUiState, initialize, windowContext?.windowId])
+
+  useEffect(() => {
+    if (!ready || windowContext === null) return
+    if (windowContext.role !== 'main') return
+    setSceneDensity(appSettings.ui.defaultSceneDensity)
+  }, [ready, appSettings.ui.defaultSceneDensity, windowContext])
+
+  useEffect(() => {
+    if (!ready || windowContext === null) return
+    if (windowContext.role !== 'main') return
+    if (!projectMeta || !projectSettings) {
+      lastAppliedProjectBoardViewKeyRef.current = ''
+      return
+    }
+    const key = `${projectMeta.path}:${projectSettings.defaultBoardView}`
+    if (lastAppliedProjectBoardViewKeyRef.current === key) return
+    lastAppliedProjectBoardViewKeyRef.current = key
+    setBoardViewMode(normalizeBoardViewMode(projectSettings.defaultBoardView))
+  }, [ready, projectMeta, projectSettings, windowContext])
 
   useEffect(() => {
     const onFullscreenChange = () => {
@@ -574,6 +594,9 @@ export function App() {
               availableBlockKinds={boardBlockKindsForProject}
               immersive={outlineImmersive}
               defaultBankCollapsed
+              sceneBankWidthStorageKey={
+                projectMeta ? `narralab:outline-scene-bank-width:${encodeURIComponent(projectMeta.path)}` : null
+              }
               onToggleImmersive={() => void toggleOutlineImmersive()}
               onChangeViewMode={(mode) => setBoardViewMode(normalizeBoardViewMode(mode))}
               onSelectBoard={setActiveBoard}
@@ -839,6 +862,9 @@ export function App() {
                   density={sceneDensity}
                   viewMode={effectiveBoardViewMode}
                   availableBlockKinds={boardBlockKindsForProject}
+                  sceneBankWidthStorageKey={
+                    projectMeta ? `narralab:outline-scene-bank-width:${encodeURIComponent(projectMeta.path)}` : null
+                  }
                   onChangeViewMode={(mode) => setBoardViewMode(normalizeBoardViewMode(mode))}
                   onSelectBoard={setActiveBoard}
                   onOpenBoardInspector={openBoardDetails}

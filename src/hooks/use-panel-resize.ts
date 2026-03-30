@@ -5,6 +5,8 @@ type Options = {
   initial: number
   min: number
   max: number
+  /** When set, width is read/written to localStorage (per-project keys recommended). */
+  storageKey?: string | null
 }
 
 type DragState = {
@@ -13,8 +15,38 @@ type DragState = {
   direction: 1 | -1
 } | null
 
-export function usePanelResize({ initial, min, max }: Options) {
+function readStoredSize(key: string, min: number, max: number, fallback: number): number {
+  if (typeof window === 'undefined') return fallback
+  try {
+    const raw = window.localStorage.getItem(key)
+    if (!raw) return fallback
+    const parsed = Number(raw)
+    return Number.isFinite(parsed) ? clamp(parsed, min, max) : fallback
+  } catch {
+    return fallback
+  }
+}
+
+export function usePanelResize({ initial, min, max, storageKey }: Options) {
   const [size, setSize] = useState(initial)
+
+  useEffect(() => {
+    if (!storageKey) {
+      setSize(initial)
+      return
+    }
+    setSize(readStoredSize(storageKey, min, max, initial))
+  }, [storageKey, initial, min, max])
+
+  useEffect(() => {
+    if (!storageKey || typeof window === 'undefined') return
+    try {
+      window.localStorage.setItem(storageKey, String(size))
+    } catch {
+      // ignore quota / private mode
+    }
+  }, [storageKey, size])
+
   const [dragState, setDragState] = useState<DragState>(null)
 
   useEffect(() => {

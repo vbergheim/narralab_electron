@@ -82,6 +82,8 @@ type Props = {
   availableBlockKinds: BoardTextItemKind[]
   immersive?: boolean
   defaultBankCollapsed?: boolean
+  /** localStorage key for Scene Bank panel width (e.g. per project path). */
+  sceneBankWidthStorageKey?: string | null
   onToggleImmersive?(): void
   onChangeViewMode(mode: BoardViewMode): void
   onSelectBoard(boardId: string): void
@@ -154,6 +156,7 @@ export function OutlineWorkspace({
   availableBlockKinds,
   immersive = false,
   defaultBankCollapsed = false,
+  sceneBankWidthStorageKey = null,
   onToggleImmersive,
   onChangeViewMode,
   onSelectBoard,
@@ -216,7 +219,12 @@ export function OutlineWorkspace({
   const [sceneDragInsertAfterId, setSceneDragInsertAfterId] = useState<string | null>(null)
   const outlineScrollRef = useRef<HTMLDivElement | null>(null)
   const boardCanvasHandleRef = useRef<BoardCanvasHandle | null>(null)
-  const bankResize = usePanelResize({ initial: 320, min: 240, max: 520 })
+  const bankResize = usePanelResize({
+    initial: 320,
+    min: 240,
+    max: 520,
+    storageKey: sceneBankWidthStorageKey,
+  })
   const [expandedSceneIds, setExpandedSceneIds] = usePersistedStringArray('narralab:outline:expanded-scenes')
   const filteredSceneIdSet = useMemo(() => new Set(filteredSceneIds), [filteredSceneIds])
   const bankScenes = scenes.filter((scene) => filteredSceneIdSet.has(scene.id))
