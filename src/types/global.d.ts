@@ -2,7 +2,11 @@ import type { NarraLabApi } from './project'
 
 declare global {
   interface Window {
-    narralab: NarraLabApi
+    narralab: NarraLabApi & {
+      boards?: {
+        draggedBoardIds?: string[]
+      }
+    }
   }
 }
 

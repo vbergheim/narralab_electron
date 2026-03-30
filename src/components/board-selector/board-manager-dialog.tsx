@@ -70,6 +70,8 @@ export function BoardManagerDialog({
   const [editingBoardDraft, setEditingBoardDraft] = useState('')
   const [selectedFolderPaths, setSelectedFolderPaths] = useState<string[]>([])
   const folderSelectionAnchorRef = useRef<number | null>(null)
+  const [selectedBoardIds, setSelectedBoardIds] = useState<string[]>([])
+  const boardSelectionAnchorRef = useRef<Map<string, number>>(new Map())
 
   const boardGroups = useMemo(() => groupBoards(boards, folders), [boards, folders])
   const folderPathOrder = useMemo(
@@ -80,44 +82,63 @@ export function BoardManagerDialog({
     () => selectedFolderPaths.filter((path) => folderPathOrder.includes(path)),
     [folderPathOrder, selectedFolderPaths],
   )
+  const selectedBoardIdSet = useMemo(() => new Set(selectedBoardIds), [selectedBoardIds])
 
   const boardMenuItems = useMemo<ContextMenuItem[]>(() => {
     if (!menuState) return []
     const board = boards.find((entry) => entry.id === menuState.boardId)
     if (!board) return []
+    
+    const targetBoardIds = selectedBoardIdSet.has(menuState.boardId)
+      ? selectedBoardIds
+      : [menuState.boardId]
+    
     const moveUp = reorderBoardsWithinFolder(boards, board.id, -1)
     const moveDown = reorderBoardsWithinFolder(boards, board.id, 1)
 
     return [
+      ...(targetBoardIds.length === 1
+        ? [
+            {
+              label: 'Open Board Inspector',
+              onSelect: () => onOpenBoardInspector(board.id),
+            },
+            {
+              label: 'Duplicate Board',
+              onSelect: () => onDuplicateBoard(board.id),
+            },
+          ]
+        : []),
       {
-        label: 'Open Board Inspector',
-        onSelect: () => onOpenBoardInspector(board.id),
-      },
-      {
-        label: 'Duplicate Board',
-        onSelect: () => onDuplicateBoard(board.id),
-      },
-      {
-        label: 'Delete Board',
+        label: targetBoardIds.length === 1 ? 'Delete Board' : `Delete ${targetBoardIds.length} Boards`,
         danger: true,
         onSelect: () => {
-          if (window.confirm(`Delete board "${board.name}"?`)) {
-            onDeleteBoard(board.id)
+          const confirmMessage =
+            targetBoardIds.length === 1
+              ? `Delete board "${board.name}"?`
+              : `Delete ${targetBoardIds.length} boards?`
+          if (window.confirm(confirmMessage)) {
+            targetBoardIds.forEach((id) => onDeleteBoard(id))
+            setSelectedBoardIds([])
           }
         },
       },
-      {
-        label: 'Move Up',
-        onSelect: () => onReorderBoards(moveUp),
-        disabled: moveUp.length === 0,
-      },
-      {
-        label: 'Move Down',
-        onSelect: () => onReorderBoards(moveDown),
-        disabled: moveDown.length === 0,
-      },
+      ...(targetBoardIds.length === 1
+        ? [
+            {
+              label: 'Move Up',
+              onSelect: () => onReorderBoards(moveUp),
+              disabled: moveUp.length === 0,
+            },
+            {
+              label: 'Move Down',
+              onSelect: () => onReorderBoards(moveDown),
+              disabled: moveDown.length === 0,
+            },
+          ]
+        : []),
     ]
-  }, [boards, menuState, onDeleteBoard, onDuplicateBoard, onOpenBoardInspector, onReorderBoards])
+  }, [boards, menuState, selectedBoardIds, selectedBoardIdSet, onDeleteBoard, onDuplicateBoard, onOpenBoardInspector, onReorderBoards])
 
   const folderMenuItems = useMemo<ContextMenuItem[]>(() => {
     if (!folderMenuState) return []
@@ -185,6 +206,7 @@ export function BoardManagerDialog({
   }
 
   const handleFolderSelection = (event: MouseEvent<HTMLElement>, folderPath: string) => {
+    setSelectedBoardIds([])
     const { nextSelectedIds, nextAnchorIndex } = computeListSelection({
       id: folderPath,
       orderedIds: folderPathOrder,
@@ -196,6 +218,34 @@ export function BoardManagerDialog({
     })
     folderSelectionAnchorRef.current = nextAnchorIndex
     setSelectedFolderPaths(nextSelectedIds)
+  }
+
+  const handleBoardSelection = (event: MouseEvent<HTMLElement>, boardId: string, scope: string) => {
+    setSelectedFolderPaths([])
+    const orderedBoardsInScope = boardGroups.find((g) => g.folderPath === scope)?.boards.map((b) => b.id) ?? []
+    const anchorRef = {
+      get current() {
+        return boardSelectionAnchorRef.current.get(scope) ?? null
+      },
+      set current(value: number | null) {
+        if (value === null) {
+          boardSelectionAnchorRef.current.delete(scope)
+        } else {
+          boardSelectionAnchorRef.current.set(scope, value)
+        }
+      },
+    }
+    const { nextSelectedIds, nextAnchorIndex } = computeListSelection({
+      id: boardId,
+      orderedIds: orderedBoardsInScope,
+      selectedIds: selectedBoardIds,
+      anchorIndex: anchorRef.current,
+      shiftKey: event.shiftKey,
+      metaKey: event.metaKey,
+      ctrlKey: event.ctrlKey,
+    })
+    anchorRef.current = nextAnchorIndex
+    setSelectedBoardIds(nextSelectedIds)
   }
 
   if (!open) return null
@@ -214,7 +264,15 @@ export function BoardManagerDialog({
           </Button>
         </div>
 
-        <div className="max-h-[70vh] overflow-y-auto overscroll-contain p-4">
+        <div
+          className="max-h-[70vh] overflow-y-auto overscroll-contain p-4"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) {
+              setSelectedFolderPaths([])
+              setSelectedBoardIds([])
+            }
+          }}
+        >
           <div className="mb-3 flex items-center gap-2">
             <Button
               variant="ghost"
@@ -307,8 +365,15 @@ export function BoardManagerDialog({
                 onDrop={(event) => {
                   event.preventDefault()
                   if (draggedBoardId) {
-                    onMoveBoard(draggedBoardId, group.folderPath, null)
+                    const draggedBoardIds =
+                      (window.narralab.boards as { draggedBoardIds?: string[] } | undefined)?.draggedBoardIds ?? [
+                        draggedBoardId,
+                      ]
+                    draggedBoardIds.forEach((id) => {
+                      onMoveBoard(id, group.folderPath, null)
+                    })
                     setDraggedBoardId(null)
+                    setSelectedBoardIds([])
                   }
                   if (draggedFolderPath && draggedFolderPath !== group.folderPath) {
                     onUpdateFolder(draggedFolderPath, { parentPath: group.folderPath || null })
@@ -328,6 +393,7 @@ export function BoardManagerDialog({
                       if (event.metaKey || event.ctrlKey) {
                         handleFolderSelection(event, group.folderPath)
                       } else {
+                        setSelectedBoardIds([])
                         setCollapsedFolders((current) =>
                           current.includes(group.folderPath)
                             ? current.filter((entry) => entry !== group.folderPath)
@@ -430,50 +496,83 @@ export function BoardManagerDialog({
                     group.folderPath && collapsedFolders.includes(group.folderPath) && 'hidden',
                   )}
                 >
-                  {group.boards.map((board) => (
-                    <div
-                      key={board.id}
-                      draggable
-                      className={cn(
-                        'flex items-center gap-2 rounded-lg px-2 py-2 text-left transition',
-                        board.id === activeBoardId
-                          ? 'border border-accent/60 bg-white/[0.035] ring-1 ring-accent/20'
-                          : 'border border-transparent hover:border-border/50 hover:bg-white/[0.022]',
-                        draggedBoardId === board.id && 'opacity-50',
-                      )}
-                      onDragStart={() => setDraggedBoardId(board.id)}
-                      onDragEnd={() => setDraggedBoardId(null)}
-                      onContextMenu={(event) => {
-                        event.preventDefault()
-                        setMenuState({ boardId: board.id, x: event.clientX, y: event.clientY })
-                      }}
-                    >
+                  {group.boards.map((board, boardIndex) => {
+                    const isSelected = selectedBoardIdSet.has(board.id)
+                    return (
                       <div
-                        className="h-2.5 w-2.5 shrink-0 rounded-full"
-                        style={{ backgroundColor: colorHex(board.color) }}
-                      />
-                      <div className="min-w-0 flex-1">
-                        {editingBoardId === board.id ? (
-                          <InlineEditScope
-                            className="flex items-center gap-1.5"
-                            stopPropagation
-                            onSubmit={() => {
-                              const nextName = editingBoardDraft.trim()
-                              if (nextName) {
-                                onInlineUpdateBoard(board.id, { name: nextName })
-                              }
-                              setEditingBoardId(null)
-                              setEditingBoardDraft('')
-                            }}
-                            onCancel={() => {
-                              setEditingBoardId(null)
-                              setEditingBoardDraft('')
-                            }}
-                          >
-                            <InlineNameEditor
-                              autoFocus
-                              value={editingBoardDraft}
-                              onChange={setEditingBoardDraft}
+                        key={board.id}
+                        draggable
+                        className={cn(
+                          'relative flex items-center gap-2 rounded-lg px-2 py-2 text-left transition',
+                          board.id === activeBoardId
+                            ? 'border border-accent/60 bg-white/[0.035] ring-1 ring-accent/20'
+                            : 'border border-transparent hover:border-border/50 hover:bg-white/[0.022]',
+                          isSelected && 'bg-accent/8 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)]',
+                          draggedBoardId === board.id && 'opacity-50',
+                        )}
+                        onDragStart={() => {
+                          const draggedBoardIds = isSelected && selectedBoardIds.length > 1 ? selectedBoardIds : [board.id]
+                          setDraggedBoardId(board.id)
+                          window.narralab.boards = { draggedBoardIds }
+                        }}
+                        onDragEnd={() => {
+                          setDraggedBoardId(null)
+                          window.narralab.boards = undefined
+                        }}
+                        onDragOver={(event) => {
+                          if (draggedBoardId) {
+                            event.preventDefault()
+                            event.stopPropagation()
+                          }
+                        }}
+                        onDrop={(event) => {
+                          if (draggedBoardId && draggedBoardId !== board.id) {
+                            event.preventDefault()
+                            event.stopPropagation()
+                            const draggedBoardIds =
+                              (window.narralab.boards as { draggedBoardIds?: string[] } | undefined)?.draggedBoardIds ?? [
+                                draggedBoardId,
+                              ]
+                            const targetBoardInSameFolder = boards.find((b) => b.id === board.id && b.folder === boards.find((db) => db.id === draggedBoardId)?.folder)
+                            if (targetBoardInSameFolder && draggedBoardIds.length === 1) {
+                              const siblingBoards = boards.filter((b) => b.folder === targetBoardInSameFolder.folder)
+                              const reordered = [...siblingBoards.filter((b) => !draggedBoardIds.includes(b.id))]
+                              const targetIndex = reordered.findIndex((b) => b.id === board.id)
+                              reordered.splice(targetIndex, 0, ...draggedBoardIds.map((id) => boards.find((b) => b.id === id)!))
+                              onReorderBoards(reordered.map((b) => b.id))
+                            }
+                            setDraggedBoardId(null)
+                            setSelectedBoardIds([])
+                          }
+                        }}
+                        onClick={(event) => {
+                          if (editingBoardId === board.id) return
+                          event.stopPropagation()
+                          handleBoardSelection(event, board.id, group.folderPath)
+                        }}
+                        onContextMenu={(event) => {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          const nextSelection = ensureContextSelection(board.id, selectedBoardIds, group.boards.map((b) => b.id))
+                          setSelectedBoardIds(nextSelection)
+                          const index = group.boards.findIndex((b) => b.id === board.id)
+                          const anchorMap = boardSelectionAnchorRef.current
+                          anchorMap.set(group.folderPath, index)
+                          setMenuState({ boardId: board.id, x: event.clientX, y: event.clientY })
+                        }}
+                      >
+                        {isSelected ? (
+                          <div className="absolute inset-y-2 left-0 w-1 rounded-full bg-accent/70" />
+                        ) : null}
+                        <div
+                          className="h-2.5 w-2.5 shrink-0 rounded-full"
+                          style={{ backgroundColor: colorHex(board.color) }}
+                        />
+                        <div className="min-w-0 flex-1">
+                          {editingBoardId === board.id ? (
+                            <InlineEditScope
+                              className="flex items-center gap-1.5"
+                              stopPropagation
                               onSubmit={() => {
                                 const nextName = editingBoardDraft.trim()
                                 if (nextName) {
@@ -486,43 +585,66 @@ export function BoardManagerDialog({
                                 setEditingBoardId(null)
                                 setEditingBoardDraft('')
                               }}
-                              className="h-7 flex-1 text-sm"
-                            />
-                            <InlineEditActions
-                              onSave={() => {
-                                const nextName = editingBoardDraft.trim()
-                                if (nextName) {
-                                  onInlineUpdateBoard(board.id, { name: nextName })
+                            >
+                              <InlineNameEditor
+                                autoFocus
+                                value={editingBoardDraft}
+                                onChange={setEditingBoardDraft}
+                                onSubmit={() => {
+                                  const nextName = editingBoardDraft.trim()
+                                  if (nextName) {
+                                    onInlineUpdateBoard(board.id, { name: nextName })
+                                  }
+                                  setEditingBoardId(null)
+                                  setEditingBoardDraft('')
+                                }}
+                                onCancel={() => {
+                                  setEditingBoardId(null)
+                                  setEditingBoardDraft('')
+                                }}
+                                className="h-7 flex-1 text-sm"
+                              />
+                              <InlineEditActions
+                                onSave={() => {
+                                  const nextName = editingBoardDraft.trim()
+                                  if (nextName) {
+                                    onInlineUpdateBoard(board.id, { name: nextName })
+                                  }
+                                  setEditingBoardId(null)
+                                  setEditingBoardDraft('')
+                                }}
+                                onCancel={() => {
+                                  setEditingBoardId(null)
+                                  setEditingBoardDraft('')
+                                }}
+                              />
+                            </InlineEditScope>
+                          ) : (
+                            <button
+                              type="button"
+                              className="w-full truncate text-left text-sm font-medium text-foreground transition hover:text-accent"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                if (!event.shiftKey && !event.metaKey && !event.ctrlKey) {
+                                  onSelectBoard(board.id)
+                                  onClose()
                                 }
-                                setEditingBoardId(null)
-                                setEditingBoardDraft('')
                               }}
-                              onCancel={() => {
-                                setEditingBoardId(null)
-                                setEditingBoardDraft('')
+                              onDoubleClick={(event) => {
+                                event.preventDefault()
+                                event.stopPropagation()
+                                setEditingBoardId(board.id)
+                                setEditingBoardDraft(board.name)
                               }}
-                            />
-                          </InlineEditScope>
-                        ) : (
-                          <button
-                            type="button"
-                            className="w-full truncate text-left text-sm font-medium text-foreground transition hover:text-accent"
-                            onClick={() => {
-                              onSelectBoard(board.id)
-                            }}
-                            onDoubleClick={(event) => {
-                              event.preventDefault()
-                              setEditingBoardId(board.id)
-                              setEditingBoardDraft(board.name)
-                            }}
-                          >
-                            {board.name}
-                          </button>
-                        )}
-                        <div className="mt-0.5 text-xs text-muted">{board.items.length} rows</div>
+                            >
+                              {board.name}
+                            </button>
+                          )}
+                          <div className="mt-0.5 text-xs text-muted">{board.items.length} rows</div>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
             ))}
