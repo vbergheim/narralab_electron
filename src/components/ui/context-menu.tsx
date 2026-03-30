@@ -1,4 +1,5 @@
-import { useEffect } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 import { cn } from '@/lib/cn'
 
@@ -18,6 +19,9 @@ type Props = {
 }
 
 export function ContextMenu({ open, x, y, items, onClose }: Props) {
+  const menuRef = useRef<HTMLDivElement | null>(null)
+  const [position, setPosition] = useState({ left: x, top: y })
+
   useEffect(() => {
     if (!open) return
 
@@ -36,16 +40,28 @@ export function ContextMenu({ open, x, y, items, onClose }: Props) {
     }
   }, [onClose, open])
 
+  useLayoutEffect(() => {
+    if (!open || !menuRef.current) return
+
+    const rect = menuRef.current.getBoundingClientRect()
+    const margin = 12
+    setPosition({
+      left: Math.max(margin, Math.min(x, window.innerWidth - rect.width - margin)),
+      top: Math.max(margin, Math.min(y, window.innerHeight - rect.height - margin)),
+    })
+  }, [items.length, open, x, y])
+
   if (!open) {
     return null
   }
 
-  return (
+  return createPortal(
     <div
+      ref={menuRef}
       className="fixed z-50 min-w-[190px] rounded-2xl border border-border/90 bg-panel/95 p-1.5 shadow-panel backdrop-blur"
       style={{
-        left: Math.min(x, window.innerWidth - 212),
-        top: Math.min(y, window.innerHeight - (items.length * 38 + 24)),
+        left: position.left,
+        top: position.top,
       }}
       onPointerDown={(event) => event.stopPropagation()}
     >
@@ -71,6 +87,7 @@ export function ContextMenu({ open, x, y, items, onClose }: Props) {
           {item.label}
         </button>
       ))}
-    </div>
+    </div>,
+    document.body,
   )
 }

@@ -1,0 +1,3 @@
+scene_id,sort_order,title,synopsis,notes,color,status,key_rating,folder,category,estimated_duration,actual_duration,location,characters_pipe_separated,function,source_reference
+scene_arrival_station,0,Arrival at station,"Anna arrives, scans the platform, and hesitates before walking out.","Original heading: EXT. TRAIN STATION - DAY",blue,selected,0,Act 1,Arrival,90,0,Train station,Anna,Introduce protagonist and environment.,Script Slug / IMSDb / manual parse
+scene_kitchen_interview,1,Kitchen interview,"At the kitchen table, Anna explains why she came back.","Can be derived from transcript even if the source has no formal scene heading.",teal,selected,1,Act 1,Interview,150,0,Kitchen,Anna|Interviewer,Deliver backstory and emotional premise.,Transcript / interview log

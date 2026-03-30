@@ -1,0 +1,753 @@
+<!doctype html>
+<html lang="nb">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NarraLab</title>
+    <meta
+      name="description"
+      content="NarraLab er en desktop-app for dokumentararbeid med scenebank, outline, notater og arkiv i samme prosjektfil."
+    />
+    <style>
+      :root {
+        --bg: hsl(225 23% 8%);
+        --panel: hsla(225 18% 12% / 0.92);
+        --panel-muted: hsla(225 16% 16% / 0.88);
+        --border: hsla(221 13% 24% / 0.9);
+        --foreground: hsl(210 20% 96%);
+        --muted: hsl(218 11% 68%);
+        --accent: hsl(196 66% 56%);
+        --shadow-panel: 0 28px 80px rgba(0, 0, 0, 0.44);
+        --shadow-card: 0 10px 30px rgba(0, 0, 0, 0.22);
+        --radius-xl: 20px;
+        --radius-2xl: 28px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        color-scheme: dark;
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Avenir Next", "Segoe UI", "Helvetica Neue", system-ui, sans-serif;
+        color: var(--foreground);
+        background:
+          radial-gradient(circle at top left, hsla(196 66% 56% / 0.12), transparent 34%),
+          radial-gradient(circle at bottom right, hsla(210 20% 96% / 0.06), transparent 30%),
+          var(--bg);
+      }
+
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        opacity: 0.06;
+        background-image:
+          linear-gradient(hsla(0 0% 100% / 0.7) 1px, transparent 1px),
+          linear-gradient(90deg, hsla(0 0% 100% / 0.7) 1px, transparent 1px);
+        background-size: 32px 32px;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      .shell {
+        position: relative;
+        width: min(1240px, calc(100% - 40px));
+        margin: 0 auto;
+        padding: 20px 0 56px;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 14px 18px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-xl);
+        background: rgba(23, 27, 36, 0.78);
+        backdrop-filter: blur(18px);
+      }
+
+      .brand-kicker,
+      .eyebrow {
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      .brand-subtitle {
+        margin-top: 4px;
+        font-size: 14px;
+      }
+
+      .nav {
+        display: flex;
+        gap: 22px;
+        font-size: 14px;
+        color: var(--muted);
+      }
+
+      .nav a:hover,
+      .button-secondary:hover {
+        color: var(--foreground);
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1.05fr) 460px;
+        gap: 40px;
+        align-items: center;
+        padding: 72px 0 48px;
+      }
+
+      .hero-copy {
+        max-width: 700px;
+      }
+
+      .tag {
+        display: inline-flex;
+        align-items: center;
+        padding: 8px 14px;
+        border: 1px solid hsla(196 66% 56% / 0.22);
+        border-radius: 999px;
+        background: hsla(196 66% 56% / 0.1);
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      h1,
+      h2 {
+        font-family: "Avenir Next Condensed", "Avenir Next", "Segoe UI", sans-serif;
+      }
+
+      .hero h1 {
+        margin-top: 22px;
+        max-width: 10.5em;
+        font-size: clamp(3rem, 6vw, 5.75rem);
+        line-height: 0.94;
+        letter-spacing: -0.045em;
+      }
+
+      .hero p {
+        margin-top: 22px;
+        max-width: 33rem;
+        font-size: 18px;
+        line-height: 1.8;
+        color: var(--muted);
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 32px;
+      }
+
+      .button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        height: 42px;
+        padding: 0 18px;
+        border-radius: 14px;
+        border: 1px solid transparent;
+        font-size: 14px;
+        font-weight: 600;
+        transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease,
+          transform 140ms ease;
+      }
+
+      .button:hover {
+        transform: translateY(-1px);
+      }
+
+      .button-primary {
+        background: hsla(196 66% 56% / 0.92);
+        color: white;
+      }
+
+      .button-primary:hover {
+        background: var(--accent);
+      }
+
+      .button-secondary {
+        border-color: var(--border);
+        background: var(--panel);
+        color: var(--foreground);
+      }
+
+      .pill-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 34px;
+      }
+
+      .pill {
+        padding: 10px 14px;
+        border: 1px solid hsla(221 13% 24% / 0.85);
+        border-radius: 999px;
+        background: hsla(225 16% 16% / 0.4);
+        font-size: 14px;
+        color: var(--muted);
+      }
+
+      .preview-wrap {
+        position: relative;
+      }
+
+      .preview-wrap::after {
+        content: "";
+        position: absolute;
+        left: 12%;
+        right: 12%;
+        bottom: -22px;
+        height: 112px;
+        border-radius: 999px;
+        background: hsla(196 66% 56% / 0.18);
+        filter: blur(40px);
+      }
+
+      .preview {
+        position: relative;
+        overflow: hidden;
+        padding: 12px;
+        border: 1px solid hsla(221 13% 24% / 0.92);
+        border-radius: 30px;
+        background: rgba(13, 16, 23, 0.86);
+        box-shadow: var(--shadow-panel);
+      }
+
+      .preview-inner {
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: 24px;
+        background: rgba(22, 26, 34, 0.96);
+      }
+
+      .preview-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .preview-dots {
+        display: flex;
+        gap: 8px;
+      }
+
+      .preview-dots span {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: hsla(210 20% 96% / 0.22);
+      }
+
+      .preview-dots span:last-child {
+        background: hsla(196 66% 56% / 0.58);
+      }
+
+      .preview-grid {
+        display: grid;
+        grid-template-columns: 112px minmax(0, 1fr) 138px;
+        gap: 12px;
+        padding: 12px;
+      }
+
+      .panel-block {
+        border: 1px solid hsla(221 13% 24% / 0.8);
+        border-radius: 20px;
+        background: hsla(225 16% 16% / 0.28);
+      }
+
+      .panel-tight {
+        padding: 10px;
+      }
+
+      .panel-main {
+        padding: 14px;
+      }
+
+      .views-list,
+      .inspector-list,
+      .outline-list {
+        display: grid;
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      .view-item,
+      .inspector-item,
+      .outline-item {
+        border-radius: 14px;
+      }
+
+      .view-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .view-item.active {
+        border: 1px solid hsla(196 66% 56% / 0.22);
+        background: hsla(196 66% 56% / 0.1);
+        color: var(--foreground);
+      }
+
+      .outline-head {
+        display: flex;
+        align-items: start;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .scene-count {
+        padding: 6px 9px;
+        border: 1px solid hsla(221 13% 24% / 0.82);
+        border-radius: 999px;
+        background: hsla(225 16% 16% / 0.58);
+        font-size: 10px;
+        color: var(--muted);
+      }
+
+      .outline-item,
+      .inspector-item {
+        border: 1px solid hsla(221 13% 24% / 0.78);
+        background: hsla(225 16% 16% / 0.34);
+      }
+
+      .outline-item {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        padding: 12px;
+      }
+
+      .tone {
+        width: 6px;
+        height: 36px;
+        border-radius: 999px;
+        background: hsla(196 66% 56% / 0.8);
+      }
+
+      .tone-muted {
+        background: hsla(210 20% 96% / 0.38);
+      }
+
+      .tone-soft {
+        background: hsla(210 20% 96% / 0.24);
+      }
+
+      .tone-accent-soft {
+        background: hsla(196 66% 56% / 0.42);
+      }
+
+      .scene-title {
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .scene-detail,
+      .panel-copy {
+        margin-top: 4px;
+        font-size: 12px;
+        line-height: 1.5;
+        color: var(--muted);
+      }
+
+      .inspector-item {
+        padding: 11px;
+      }
+
+      .section {
+        padding: 28px 0;
+      }
+
+      .section-header {
+        max-width: 760px;
+      }
+
+      .section-header h2 {
+        margin-top: 12px;
+        font-size: clamp(2rem, 4vw, 3.2rem);
+        line-height: 1;
+        letter-spacing: -0.04em;
+      }
+
+      .cards {
+        display: grid;
+        gap: 16px;
+        margin-top: 30px;
+      }
+
+      .cards.three {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .cards.two {
+        grid-template-columns: 1.05fr 0.95fr;
+      }
+
+      .card {
+        padding: 22px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-xl);
+        background: var(--panel);
+        box-shadow: var(--shadow-card);
+      }
+
+      .icon-box {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 44px;
+        height: 44px;
+        border: 1px solid hsla(196 66% 56% / 0.2);
+        border-radius: 14px;
+        background: hsla(196 66% 56% / 0.1);
+        color: var(--accent);
+        font-size: 18px;
+      }
+
+      .card h3 {
+        margin-top: 18px;
+        font-size: 22px;
+        line-height: 1.1;
+        letter-spacing: -0.02em;
+      }
+
+      .card p {
+        margin-top: 12px;
+        font-size: 15px;
+        line-height: 1.8;
+        color: var(--muted);
+      }
+
+      .statement {
+        display: flex;
+        flex-direction: column;
+        justify-content: end;
+      }
+
+      .statement h3 {
+        margin-top: 14px;
+        max-width: 12em;
+        font-family: "Avenir Next Condensed", "Avenir Next", "Segoe UI", sans-serif;
+        font-size: clamp(2rem, 4vw, 3rem);
+        line-height: 1;
+        letter-spacing: -0.04em;
+      }
+
+      .statement-box {
+        margin-top: 30px;
+        padding: 20px;
+        border: 1px solid hsla(221 13% 24% / 0.82);
+        border-radius: 20px;
+        background: hsla(225 16% 16% / 0.34);
+      }
+
+      .statement-line {
+        margin-top: 10px;
+        max-width: 28rem;
+        font-size: 22px;
+        line-height: 1.45;
+        letter-spacing: -0.02em;
+      }
+
+      .footer {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 28px 0 10px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      @media (max-width: 1040px) {
+        .hero,
+        .cards.two {
+          grid-template-columns: 1fr;
+        }
+
+        .preview-wrap {
+          max-width: 540px;
+          width: 100%;
+          margin: 0 auto;
+        }
+
+        .statement h3 {
+          max-width: none;
+        }
+      }
+
+      @media (max-width: 860px) {
+        .cards.three,
+        .preview-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .nav {
+          display: none;
+        }
+      }
+
+      @media (max-width: 640px) {
+        .shell {
+          width: min(100% - 28px, 1240px);
+          padding-top: 14px;
+        }
+
+        .topbar,
+        .footer {
+          flex-direction: column;
+          align-items: start;
+        }
+
+        .hero {
+          gap: 26px;
+          padding-top: 42px;
+        }
+
+        .card,
+        .statement-box {
+          padding: 18px;
+        }
+
+        .statement-line {
+          font-size: 18px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <header class="topbar">
+        <div>
+          <div class="brand-kicker">NarraLab</div>
+          <div class="brand-subtitle">Desktop app for dokumentarstruktur</div>
+        </div>
+        <nav class="nav">
+          <a href="#arbeidsflyt">Arbeidsflyt</a>
+          <a href="#detaljer">Detaljer</a>
+        </nav>
+      </header>
+
+      <main>
+        <section class="hero">
+          <div class="hero-copy">
+            <div class="tag">For dokumentarprosjekter som fortsatt er i bevegelse</div>
+            <h1>Et rolig arbeidsrom for scener, struktur og kilder.</h1>
+            <p>
+              NarraLab samler scenebank, outline, notater og arkiv i samme prosjektfil. Når filmen
+              endrer form, gjør strukturen det også.
+            </p>
+            <div class="actions">
+              <a class="button button-primary" href="#arbeidsflyt">Se arbeidsflyten</a>
+              <a class="button button-secondary" href="#detaljer">Les mer</a>
+            </div>
+            <div class="pill-row">
+              <div class="pill">Lokale prosjektfiler</div>
+              <div class="pill">Flere vinduer ved behov</div>
+              <div class="pill">Bygget for dokumentararbeid</div>
+            </div>
+          </div>
+
+          <div class="preview-wrap">
+            <div class="preview">
+              <div class="preview-inner">
+                <div class="preview-header">
+                  <div>
+                    <div class="brand-kicker">NarraLab</div>
+                    <div class="brand-subtitle">Project surface</div>
+                  </div>
+                  <div class="preview-dots">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                  </div>
+                </div>
+
+                <div class="preview-grid">
+                  <div class="panel-block panel-tight">
+                    <div class="eyebrow">Views</div>
+                    <div class="views-list">
+                      <div class="view-item active">Outline</div>
+                      <div class="view-item">Scene Bank</div>
+                      <div class="view-item">Notebook</div>
+                      <div class="view-item">Archive</div>
+                    </div>
+                  </div>
+
+                  <div class="panel-block panel-main">
+                    <div class="outline-head">
+                      <div>
+                        <div class="eyebrow">Outline board</div>
+                        <div class="brand-subtitle">Rough cut structure</div>
+                      </div>
+                      <div class="scene-count">18 scenes</div>
+                    </div>
+                    <div class="outline-list">
+                      <div class="outline-item">
+                        <div class="tone"></div>
+                        <div>
+                          <div class="scene-title">Cold open</div>
+                          <div class="scene-detail">Harbour at 05:10</div>
+                        </div>
+                      </div>
+                      <div class="outline-item">
+                        <div class="tone tone-muted"></div>
+                        <div>
+                          <div class="scene-title">Kitchen table</div>
+                          <div class="scene-detail">Interview fragments</div>
+                        </div>
+                      </div>
+                      <div class="outline-item">
+                        <div class="tone tone-soft"></div>
+                        <div>
+                          <div class="scene-title">Train south</div>
+                          <div class="scene-detail">Voiceover and archive</div>
+                        </div>
+                      </div>
+                      <div class="outline-item">
+                        <div class="tone tone-accent-soft"></div>
+                        <div>
+                          <div class="scene-title">Winter return</div>
+                          <div class="scene-detail">Thread closes back at the coast</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="panel-block panel-main">
+                    <div class="eyebrow">Inspector</div>
+                    <div class="inspector-list">
+                      <div class="inspector-item">
+                        <div class="eyebrow">Focus</div>
+                        <div class="brand-subtitle">Character turn</div>
+                      </div>
+                      <div class="inspector-item">
+                        <div class="eyebrow">Function</div>
+                        <div class="brand-subtitle">Sets direction</div>
+                      </div>
+                      <div class="inspector-item">
+                        <div class="eyebrow">Runtime</div>
+                        <div class="brand-subtitle">03:40 rough</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="arbeidsflyt" class="section">
+          <div class="section-header">
+            <div class="eyebrow">Arbeidsflyt</div>
+            <h2>En liten flate for arbeid som vanligvis blir spredt.</h2>
+          </div>
+          <div class="cards three">
+            <article class="card">
+              <div class="icon-box">◫</div>
+              <h3>Scenebank</h3>
+              <p>Alle scener i én liste. Sorter, flytt og merk det som bærer filmen.</p>
+            </article>
+            <article class="card">
+              <div class="icon-box">≣</div>
+              <h3>Outline board</h3>
+              <p>Legg filmen utover før den er ferdig skrevet. Strukturen blir synlig med én gang.</p>
+            </article>
+            <article class="card">
+              <div class="icon-box">✦</div>
+              <h3>Notatbok og arkiv</h3>
+              <p>Research, PDF-er, løse tanker og referanser ligger i samme prosjekt.</p>
+            </article>
+          </div>
+        </section>
+
+        <section id="detaljer" class="section">
+          <div class="cards two">
+            <div class="cards">
+              <article class="card">
+                <div class="eyebrow">Arbeidsflate</div>
+                <h3>Fra råmateriale til struktur uten å bytte verktøy hele tiden.</h3>
+                <p>
+                  Scener, outline, notater og kildemateriale ligger side om side. Du slipper å
+                  bygge strukturen i ett system og lete etter innholdet i et annet.
+                </p>
+              </article>
+              <article class="card">
+                <div class="eyebrow">Prosjektformat</div>
+                <h3>Én lokal prosjektfil som kan flyttes, kopieres og åpnes igjen senere.</h3>
+                <p>
+                  NarraLab lagrer prosjektet lokalt. Det gjør arbeidsflyten enkel når materialet
+                  fortsatt er følsomt, uferdig eller under stadig revisjon.
+                </p>
+              </article>
+            </div>
+
+            <article class="card statement">
+              <div class="eyebrow">Hva siden er</div>
+              <h3>En presentasjon av appen, ikke et løfte om mer enn den er.</h3>
+              <p>
+                NarraLab er en desktop-app for den tidlige og midtre fasen av dokumentararbeid. Den
+                er laget for struktur, ikke for støy rundt strukturen.
+              </p>
+              <div class="statement-box">
+                <div class="eyebrow">Kort sagt</div>
+                <div class="statement-line">
+                  Samle materialet. Se helheten. Flytt filmen mens den fortsatt er myk.
+                </div>
+              </div>
+            </article>
+          </div>
+
+          <div class="cards" style="margin-top: 16px;">
+            <article class="card">
+              <div class="eyebrow">Rytme</div>
+              <h3>Laget for fasen der filmen fortsatt skifter form.</h3>
+              <p>
+                Ikke en publiseringsflate. Ikke et produksjonssystem. Bare et ryddig sted å arbeide
+                med struktur mens filmen fortsatt finner sin retning.
+              </p>
+            </article>
+          </div>
+        </section>
+      </main>
+
+      <footer class="footer">
+        <div>NarraLab</div>
+        <div>Åpne denne filen direkte i nettleseren.</div>
+      </footer>
+    </div>
+  </body>
+</html>

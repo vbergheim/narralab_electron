@@ -1,8 +1,8 @@
-import type { DocuDocApi } from './project'
+import type { NarraLabApi } from './project'
 
 declare global {
   interface Window {
-    docudoc: DocuDocApi
+    narralab: NarraLabApi
   }
 }
 

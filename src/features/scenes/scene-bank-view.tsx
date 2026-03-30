@@ -1,20 +1,40 @@
-import type { MouseEvent, MutableRefObject, ReactNode } from 'react'
+import type { DragEvent, MouseEvent, MutableRefObject, ReactNode } from 'react'
 import { useMemo, useRef, useState } from 'react'
-import { Plus, Star } from 'lucide-react'
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Filter,
+  Folder,
+  FolderPlus,
+  LayoutGrid,
+  PanelRightOpen,
+  Plus,
+  Trash2,
+  X,
+} from 'lucide-react'
 
 import { cn } from '@/lib/cn'
 import { Panel } from '@/components/ui/panel'
 import { SceneCard } from '@/components/cards/scene-card'
 import { Button } from '@/components/ui/button'
 import { ContextMenu, type ContextMenuItem } from '@/components/ui/context-menu'
+import { InlineEditActions, InlineEditScope, InlineNameEditor, InlineTextareaEditor } from '@/components/ui/inline-name-editor'
+import { KeyRatingButton } from '@/components/ui/key-rating-button'
+import { SceneBankFilters } from '@/features/scenes/scene-bank-filters'
+import { usePersistedStringArray } from '@/hooks/use-persisted-string-array'
+import { sceneColors } from '@/lib/constants'
+import { comparePathDepthDesc, computeListSelection, ensureContextSelection } from '@/lib/selection'
+import { readSceneDragData, writeSceneDragData } from '@/lib/scene-drag'
 import type { Board } from '@/types/board'
 import { isSceneBoardItem } from '@/types/board'
-import type { Scene } from '@/types/scene'
+import type { Scene, SceneFolder } from '@/types/scene'
 import type { Tag } from '@/types/tag'
 import type { SceneDensity } from '@/types/view'
 
 type Props = {
   scenes: Scene[]
+  folders: SceneFolder[]
   tags: Tag[]
   board: Board | null
   density: SceneDensity
@@ -25,14 +45,23 @@ type Props = {
   onSelectAllVisible(sceneIds: string[]): void
   onClearSelection(): void
   onOpenInspector(sceneId: string): void
+  onInlineUpdateScene(sceneId: string, input: { title: string; synopsis: string }): void
   onToggleKeyScene(scene: Scene): void
+  onCreateScene(): void
+  onCreateFolder(name: string, parentPath?: string | null): void
+  onUpdateFolder(currentPath: string, input: { name?: string; color?: SceneFolder['color']; parentPath?: string | null }): void
+  onDeleteFolder(currentPath: string): void
+  onMoveToFolder(sceneIds: string[], folder: string): void
   onDuplicate(sceneId: string): void
   onDelete(sceneId: string): void
+  onDeleteSelected(): void
   onAdd(sceneId: string, afterItemId?: string | null): void
+  embedded?: boolean
 }
 
 export function SceneBankView({
   scenes,
+  folders,
   tags,
   board,
   density,
@@ -43,22 +72,54 @@ export function SceneBankView({
   onSelectAllVisible,
   onClearSelection,
   onOpenInspector,
+  onInlineUpdateScene,
   onToggleKeyScene,
+  onCreateScene,
+  onCreateFolder,
+  onUpdateFolder,
+  onDeleteFolder,
+  onMoveToFolder,
   onDuplicate,
   onDelete,
+  onDeleteSelected,
   onAdd,
+  embedded = false,
 }: Props) {
   const boardSceneIds = useMemo(
     () => new Set(board?.items.filter(isSceneBoardItem).map((item) => item.sceneId) ?? []),
     [board],
   )
-  const selectionAnchorRef = useRef<number | null>(null)
+  const selectionAnchorByScopeRef = useRef<Map<string, number>>(new Map())
   const selectedSceneIdSet = useMemo(() => new Set(selectedSceneIds), [selectedSceneIds])
   const [menuState, setMenuState] = useState<{ sceneId: string; x: number; y: number } | null>(null)
+  const [folderMenuState, setFolderMenuState] = useState<{ folderPath: string; color: SceneFolder['color']; x: number; y: number } | null>(null)
+  const [collapsedFolders, setCollapsedFolders] = usePersistedStringArray('narralab:collapsed:scene-folders')
+  const [folderFormOpen, setFolderFormOpen] = useState(false)
+  const [folderDraft, setFolderDraft] = useState('')
+  const [editingFolderName, setEditingFolderName] = useState<string | null>(null)
+  const [editingFolderDraft, setEditingFolderDraft] = useState('')
+  const [editingFolderColor, setEditingFolderColor] = useState<SceneFolder['color']>('slate')
+  const [dragOverFolderPath, setDragOverFolderPath] = useState<string | null>(null)
+  const [draggedFolderPath, setDraggedFolderPath] = useState<string | null>(null)
+  const [selectedFolderPaths, setSelectedFolderPaths] = useState<string[]>([])
+  const folderSelectionAnchorRef = useRef<number | null>(null)
+  const [filtersExpanded, setFiltersExpanded] = useState(false)
+
+  const groupedScenes = useMemo(() => groupScenes(scenes, folders), [scenes, folders])
+  const folderPathOrder = useMemo(() => groupedScenes.groups.map((group) => group.folderPath), [groupedScenes.groups])
+  const visibleSelectedFolderPaths = useMemo(
+    () => selectedFolderPaths.filter((path) => folderPathOrder.includes(path)),
+    [folderPathOrder, selectedFolderPaths],
+  )
+
   const menuItems = useMemo<ContextMenuItem[]>(() => {
     if (!menuState) return []
     const scene = scenes.find((entry) => entry.id === menuState.sceneId)
     if (!scene) return []
+    const targetSceneIds = getMoveTargetSceneIds(scene.id, selectedSceneIds)
+    const targetScenes = scenes.filter((entry) => targetSceneIds.includes(entry.id))
+    const hasAnyFolderedTarget = targetScenes.some((entry) => entry.folder.trim().length > 0)
+    const multiSelectionActive = targetSceneIds.length > 1
 
     return [
       { label: 'Open Inspector', onSelect: () => onOpenInspector(scene.id) },
@@ -69,140 +130,506 @@ export function SceneBankView({
       },
       { label: 'Duplicate Scene', onSelect: () => onDuplicate(scene.id) },
       {
-        label: scene.isKeyScene ? 'Unmark Key Scene' : 'Mark Key Scene',
+        label: scene.keyRating >= 5 ? 'Reset Key Rating' : 'Increase Key Rating',
         onSelect: () => onToggleKeyScene(scene),
       },
       {
-        label: 'Delete Scene',
+        label:
+          targetSceneIds.length > 1
+            ? hasAnyFolderedTarget
+              ? 'Move Selection to Root'
+              : 'Selection Already in Root'
+            : scene.folder
+              ? 'Move to Root'
+              : 'Keep in Root',
+        onSelect: () => onMoveToFolder(targetSceneIds, ''),
+        disabled: !hasAnyFolderedTarget,
+      },
+      {
+        label: multiSelectionActive ? 'Delete Selection' : 'Delete Scene',
         danger: true,
         onSelect: () => {
+          if (multiSelectionActive) {
+            if (
+              window.confirm(
+                `Delete ${targetSceneIds.length} selected scenes? This removes them from every board.`,
+              )
+            ) {
+              onDeleteSelected()
+            }
+            return
+          }
+
           if (window.confirm(`Delete "${scene.title}"? This removes it from every board.`)) {
             onDelete(scene.id)
           }
         },
       },
     ]
-  }, [boardSceneIds, menuState, onAdd, onDelete, onDuplicate, onOpenInspector, onToggleKeyScene, scenes])
+  }, [boardSceneIds, menuState, onAdd, onDelete, onDeleteSelected, onDuplicate, onMoveToFolder, onOpenInspector, onToggleKeyScene, scenes, selectedSceneIds])
 
-  return (
-    <Panel className="h-full overflow-hidden">
-      <div className="border-b border-border/90 px-4 py-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <div className="font-display text-sm font-semibold uppercase tracking-[0.16em] text-foreground">
-              Scene Bank
+  const folderMenuItems = useMemo<ContextMenuItem[]>(() => {
+    if (!folderMenuState) return []
+    const targetFolderPaths = visibleSelectedFolderPaths.includes(folderMenuState.folderPath)
+      ? visibleSelectedFolderPaths
+      : [folderMenuState.folderPath]
+    const orderedFolderPaths = [...targetFolderPaths].sort(comparePathDepthDesc)
+
+    return [
+      ...(targetFolderPaths.length === 1
+        ? [{
+        label: 'Rename Folder',
+        onSelect: () => {
+          setEditingFolderName(folderMenuState.folderPath)
+          setEditingFolderDraft(folderMenuState.folderPath.split('/').at(-1) ?? folderMenuState.folderPath)
+          setEditingFolderColor(folderMenuState.color)
+        },
+      }]
+        : []),
+      {
+        label: 'Expand All',
+        onSelect: () => {
+          setCollapsedFolders((current) =>
+            current.filter(
+              (entry) =>
+                !targetFolderPaths.some(
+                  (folderPath) => entry === folderPath || entry.startsWith(`${folderPath}/`),
+                ),
+            ),
+          )
+        },
+      },
+      {
+        label: targetFolderPaths.length > 1 ? 'Delete Selection' : 'Delete Folder',
+        danger: true,
+        onSelect: () => {
+          const confirmText =
+            targetFolderPaths.length > 1
+              ? `Delete ${targetFolderPaths.length} selected folders? Scenes will be moved to root.`
+              : `Delete folder "${folderMenuState.folderPath}"? Scenes will be moved to root.`
+          if (window.confirm(confirmText)) {
+            orderedFolderPaths.forEach((folderPath) => onDeleteFolder(folderPath))
+            setSelectedFolderPaths([])
+          }
+        },
+      },
+    ]
+  }, [folderMenuState, onDeleteFolder, setCollapsedFolders, visibleSelectedFolderPaths])
+
+  const submitFolderEdit = () => {
+    if (!editingFolderName) return
+    const nextName = editingFolderDraft.trim()
+    if (!nextName) return
+    onUpdateFolder(editingFolderName, { name: nextName, color: editingFolderColor })
+    setEditingFolderName(null)
+    setEditingFolderDraft('')
+  }
+
+  const submitNewFolder = () => {
+    const name = folderDraft.trim()
+    if (!name) return
+    onCreateFolder(name, null)
+    setFolderDraft('')
+    setFolderFormOpen(false)
+  }
+
+  const handleDropToFolder = (event: DragEvent<HTMLDivElement>, folder: string) => {
+    event.preventDefault()
+    event.stopPropagation()
+    setDragOverFolderPath(null)
+    if (draggedFolderPath) {
+      if (draggedFolderPath !== folder) {
+        onUpdateFolder(draggedFolderPath, { parentPath: folder || null })
+      }
+      setDraggedFolderPath(null)
+      return
+    }
+    const sceneIds = readSceneDragData(event.dataTransfer)
+    if (sceneIds.length === 0) return
+    onMoveToFolder(sceneIds, folder)
+  }
+
+  const handleFolderSelection = (event: MouseEvent<HTMLElement>, folderPath: string) => {
+    onClearSelection()
+    const { nextSelectedIds, nextAnchorIndex } = computeListSelection({
+      id: folderPath,
+      orderedIds: folderPathOrder,
+      selectedIds: visibleSelectedFolderPaths,
+      anchorIndex: folderSelectionAnchorRef.current,
+      shiftKey: event.shiftKey,
+      metaKey: event.metaKey,
+      ctrlKey: event.ctrlKey,
+    })
+    folderSelectionAnchorRef.current = nextAnchorIndex
+    setSelectedFolderPaths(nextSelectedIds)
+  }
+
+  const toolbar = (
+    <div className={cn(embedded ? 'border-b border-border/80 pb-3' : 'border-b border-border/90 px-4 py-4')}>
+      {!embedded ? (
+        <div className="mb-3 flex min-w-0 items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 font-display text-sm font-semibold uppercase tracking-[0.16em] text-foreground">
+              <LayoutGrid className="h-4 w-4 text-accent" />
+              <span>Scene Bank</span>
             </div>
-            <div className="mt-1 text-sm text-muted">
+            <div className="mt-1 hidden truncate text-sm text-muted xl:block">
               Browse the full scene pool and add candidates to the active outline.
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={() => onSelectAllVisible(scenes.map((scene) => scene.id))}>
-              Select All
-            </Button>
-            {selectedSceneIds.length > 0 ? (
-              <Button variant="ghost" size="sm" onClick={onClearSelection}>
-                Clear
-              </Button>
-            ) : null}
-          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setFiltersExpanded(!filtersExpanded)}
+            className="shrink-0"
+          >
+            <Filter className="h-4 w-4" />
+            <span className="hidden lg:inline">Filters</span>
+            {filtersExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+          </Button>
         </div>
+      ) : null}
+      {!embedded && filtersExpanded ? (
+        <div className="mb-3">
+          <SceneBankFilters scenes={scenes} tags={tags} expanded={filtersExpanded} />
+        </div>
+      ) : !embedded ? (
+        <div className="mb-3">
+          <SceneBankFilters scenes={scenes} tags={tags} expanded={false} />
+        </div>
+      ) : null}
+      <div className="flex shrink-0 items-center gap-1 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <Button variant="ghost" size="sm" onClick={onCreateScene} title="New Scene" aria-label="New Scene">
+          <Plus className="h-4 w-4" />
+          <span className="hidden xl:inline">New Scene</span>
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setFolderFormOpen((current) => !current)}
+          title="New Folder"
+          aria-label="New Folder"
+        >
+          <FolderPlus className="h-4 w-4" />
+          <span className="hidden xl:inline">Folder</span>
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => onSelectAllVisible(scenes.map((scene) => scene.id))}
+          title="Select All"
+          aria-label="Select All"
+        >
+          <Check className="h-4 w-4" />
+          <span className="hidden xl:inline">Select All</span>
+        </Button>
         {selectedSceneIds.length > 0 ? (
-          <div className="mt-3 flex items-center justify-between rounded-2xl border border-accent/25 bg-accent/10 px-3 py-2 text-sm text-foreground">
-            <div>{selectedSceneIds.length} scenes selected</div>
-            <div className="text-xs uppercase tracking-[0.16em] text-muted">Click selects, Shift for range, Cmd/Ctrl for toggle</div>
+          <>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                if (window.confirm(`Delete ${selectedSceneIds.length} selected scenes? This removes them from every board.`)) {
+                  onDeleteSelected()
+                }
+              }}
+              title="Delete Selected"
+              aria-label="Delete Selected"
+            >
+              <Trash2 className="h-4 w-4" />
+              <span className="hidden xl:inline">Delete Selected</span>
+            </Button>
+            <Button variant="ghost" size="sm" onClick={onClearSelection} title="Clear Selection" aria-label="Clear Selection">
+              <X className="h-4 w-4" />
+              <span className="hidden xl:inline">Clear</span>
+            </Button>
+          </>
+        ) : null}
+      </div>
+      {folderFormOpen ? (
+        <div className="mt-3 px-1">
+          <InlineEditScope
+            onSubmit={submitNewFolder}
+            onCancel={() => {
+              setFolderDraft('')
+              setFolderFormOpen(false)
+            }}
+          >
+            <div className="flex items-center gap-2">
+              <InlineNameEditor
+                autoFocus
+                value={folderDraft}
+                placeholder="New scene folder"
+                onChange={setFolderDraft}
+                onSubmit={submitNewFolder}
+                onCancel={() => {
+                  setFolderDraft('')
+                  setFolderFormOpen(false)
+                }}
+                className="flex-1"
+              />
+              <InlineEditActions
+                onSave={submitNewFolder}
+                onCancel={() => {
+                  setFolderDraft('')
+                  setFolderFormOpen(false)
+                }}
+              />
+            </div>
+          </InlineEditScope>
+        </div>
+      ) : null}
+    </div>
+  )
+
+  const content = (
+      <div
+        className={cn(
+          embedded ? 'min-h-0 flex-1 overflow-y-auto overscroll-contain pt-3' : 'min-h-0 flex-1 overflow-y-auto overscroll-contain p-4',
+          density === 'detailed' ? '' : '',
+        )}
+        onClick={(event) => {
+          if (event.target === event.currentTarget) {
+            onClearSelection()
+            setSelectedFolderPaths([])
+          }
+        }}
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={(event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          setDragOverFolderPath(null)
+          if (draggedFolderPath) {
+            onUpdateFolder(draggedFolderPath, { parentPath: null })
+            setDraggedFolderPath(null)
+            return
+          }
+          const sceneIds = readSceneDragData(event.dataTransfer)
+          if (sceneIds.length > 0) {
+            onMoveToFolder(sceneIds, '')
+          }
+        }}
+      >
+        {groupedScenes.groups.length > 0 ? (
+          <div className="space-y-1.5">
+            {groupedScenes.groups.map((group) => (
+              <div
+                key={group.folderPath}
+                className={cn(
+                  'rounded-xl border border-border/50 bg-panelMuted/20 px-2 py-1.5 transition',
+                  dragOverFolderPath === group.folderPath && 'border-accent/60 bg-accent/10',
+                  visibleSelectedFolderPaths.includes(group.folderPath) && 'border-accent/60 bg-accent/10 ring-2 ring-accent/15',
+                  hasCollapsedAncestor(group.folderPath, collapsedFolders) && 'hidden',
+                )}
+                onDragEnter={() => setDragOverFolderPath(group.folderPath)}
+                onDragLeave={(event) => {
+                  const nextTarget = event.relatedTarget
+                  if (nextTarget && event.currentTarget.contains(nextTarget as Node)) return
+                  setDragOverFolderPath((current) => (current === group.folderPath ? null : current))
+                }}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => handleDropToFolder(event, group.folderPath)}
+              >
+                <div
+                  draggable
+                  className="flex min-h-8 items-center justify-between gap-2 px-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted"
+                  style={{ paddingLeft: `${group.depth * 14 + 4}px` }}
+                  onDragStart={() => setDraggedFolderPath(group.folderPath)}
+                  onDragEnd={() => setDraggedFolderPath(null)}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    if (event.metaKey || event.ctrlKey) {
+                      handleFolderSelection(event, group.folderPath)
+                    } else {
+                      setCollapsedFolders((current) =>
+                        current.includes(group.folderPath)
+                          ? current.filter((entry) => entry !== group.folderPath)
+                          : [...current, group.folderPath],
+                      )
+                    }
+                  }}
+                  onContextMenu={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    onClearSelection()
+                    const nextSelection = ensureContextSelection(group.folderPath, visibleSelectedFolderPaths, folderPathOrder)
+                    setSelectedFolderPaths(nextSelection)
+                    folderSelectionAnchorRef.current = folderPathOrder.indexOf(group.folderPath)
+                    setFolderMenuState({ folderPath: group.folderPath, color: group.color, x: event.clientX, y: event.clientY })
+                  }}
+                >
+                  <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                    <button
+                    type="button"
+                    className="flex shrink-0 items-center rounded-md px-1 py-0.5 transition hover:bg-panelMuted hover:text-foreground"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      setCollapsedFolders((current) =>
+                        current.includes(group.folderPath)
+                          ? current.filter((entry) => entry !== group.folderPath)
+                          : [...current, group.folderPath],
+                      )
+                    }}
+                  >
+                      {collapsedFolders.includes(group.folderPath) ? (
+                        <ChevronRight className="h-3.5 w-3.5" />
+                      ) : (
+                        <ChevronDown className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                    <Folder className="h-3.5 w-3.5 shrink-0" style={{ color: colorHex(group.color) }} />
+                    <button
+                    type="button"
+                    className="min-w-0 rounded-md px-1 py-0.5 text-left transition hover:bg-panelMuted hover:text-foreground"
+                    onDoubleClick={(event) => {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      setEditingFolderName(group.folderPath)
+                      setEditingFolderDraft(group.label)
+                      setEditingFolderColor(group.color)
+                    }}
+                  >
+                      <span className="truncate">{formatFolderLabel(group.label)}</span>
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="min-w-4 text-right text-[10px] text-muted/80">{group.scenes.length}</span>
+                  </div>
+                </div>
+
+                {editingFolderName === group.folderPath ? (
+                  <InlineEditScope
+                    className="space-y-2 px-6 pb-1 pt-1"
+                    onSubmit={submitFolderEdit}
+                    onCancel={() => {
+                      setEditingFolderName(null)
+                      setEditingFolderDraft('')
+                    }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <InlineNameEditor
+                        autoFocus
+                        value={editingFolderDraft}
+                        onChange={setEditingFolderDraft}
+                        onSubmit={submitFolderEdit}
+                        onCancel={() => {
+                          setEditingFolderName(null)
+                          setEditingFolderDraft('')
+                        }}
+                        className="h-7 min-w-[120px] flex-1 text-xs"
+                      />
+                      <InlineEditActions
+                        onSave={submitFolderEdit}
+                        onCancel={() => {
+                          setEditingFolderName(null)
+                          setEditingFolderDraft('')
+                        }}
+                      />
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {sceneColors.map((color) => (
+                        <button
+                          key={`${group.folderPath}-${color.value}`}
+                          type="button"
+                          className={cn(
+                            'h-4 w-4 rounded-full border transition',
+                            editingFolderColor === color.value ? 'border-white/90 ring-1 ring-white/40' : 'border-white/10',
+                          )}
+                          style={{ backgroundColor: color.hex }}
+                          onClick={() => setEditingFolderColor(color.value)}
+                          aria-label={color.label}
+                          title={color.label}
+                        />
+                      ))}
+                    </div>
+                  </InlineEditScope>
+                ) : null}
+
+                <div className={cn('mt-1.5 space-y-2 pl-5', collapsedFolders.includes(group.folderPath) && 'hidden')}>
+                  {group.scenes.map((scene, localIndex) => (
+                    <div key={scene.id} className="space-y-2">
+                      <SceneBankRow
+                        scene={scene}
+                        index={localIndex}
+                        orderedScenes={group.scenes}
+                        selectionScope={`folder:${group.folderPath}`}
+                        tags={tags}
+                        density={density}
+                        selectedSceneId={selectedSceneId}
+                        selectedSceneIds={selectedSceneIds}
+                        selectedSceneIdSet={selectedSceneIdSet}
+                        selectionAnchorByScopeRef={selectionAnchorByScopeRef}
+                        boardSceneIds={boardSceneIds}
+                        onSelect={onSelect}
+                        onToggleSelection={onToggleSelection}
+                        onSetSelection={onSelectAllVisible}
+                        onOpenInspector={onOpenInspector}
+                        onInlineUpdateScene={onInlineUpdateScene}
+                        onToggleKeyScene={onToggleKeyScene}
+                        onAdd={onAdd}
+                        onContextMenu={setMenuState}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {groupedScenes.rootScenes.length > 0 ? (
+          <div
+            className={cn(
+              groupedScenes.groups.length > 0 && 'mt-4',
+              'space-y-2 rounded-xl transition',
+              dragOverFolderPath === ROOT_SCENE_FOLDER_KEY && 'bg-accent/8 ring-1 ring-accent/35',
+            )}
+            onDragEnter={() => setDragOverFolderPath(ROOT_SCENE_FOLDER_KEY)}
+            onDragLeave={(event) => {
+              const nextTarget = event.relatedTarget
+              if (nextTarget && event.currentTarget.contains(nextTarget as Node)) return
+              setDragOverFolderPath((current) => (current === ROOT_SCENE_FOLDER_KEY ? null : current))
+            }}
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={(event) => handleDropToFolder(event, '')}
+          >
+            {groupedScenes.groups.length > 0 ? (
+              <div className="px-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">
+                Loose Scenes
+              </div>
+            ) : null}
+            {groupedScenes.rootScenes.map((scene, localIndex) => (
+              <div key={scene.id} className="space-y-2">
+                <SceneBankRow
+                  scene={scene}
+                  index={localIndex}
+                  orderedScenes={groupedScenes.rootScenes}
+                  selectionScope="root"
+                  tags={tags}
+                  density={density}
+                  selectedSceneId={selectedSceneId}
+                  selectedSceneIds={selectedSceneIds}
+                  selectedSceneIdSet={selectedSceneIdSet}
+                  selectionAnchorByScopeRef={selectionAnchorByScopeRef}
+                  boardSceneIds={boardSceneIds}
+                  onSelect={onSelect}
+                  onToggleSelection={onToggleSelection}
+                  onSetSelection={onSelectAllVisible}
+                  onOpenInspector={onOpenInspector}
+                  onInlineUpdateScene={onInlineUpdateScene}
+                  onToggleKeyScene={onToggleKeyScene}
+                  onAdd={onAdd}
+                  onContextMenu={setMenuState}
+                />
+              </div>
+            ))}
           </div>
         ) : null}
       </div>
-      <div
-        className={cn(
-          'h-[calc(100%-72px)] overflow-y-auto p-4',
-          density === 'detailed' ? 'grid gap-4 md:grid-cols-2 xl:grid-cols-3' : 'space-y-2',
-        )}
-      >
-        {scenes.map((scene, index) => (
-          <div
-            key={scene.id}
-            className={cn(
-              'relative rounded-2xl px-2 py-2 transition',
-              selectedSceneIdSet.has(scene.id) && 'bg-accent/8 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)]',
-            )}
-            role="button"
-            tabIndex={0}
-            onClick={(event) =>
-              handleSelectionGesture({
-                event,
-                index,
-                sceneId: scene.id,
-                scenes,
-                selectedSceneIds,
-                selectionAnchorRef,
-                onSelect,
-                onToggleSelection,
-                onSetSelection: onSelectAllVisible,
-              })
-            }
-            onDoubleClick={() => onOpenInspector(scene.id)}
-            onContextMenu={(event) => {
-              event.preventDefault()
-              handleSelectionGesture({
-                event,
-                index,
-                sceneId: scene.id,
-                scenes,
-                selectedSceneIds,
-                selectionAnchorRef,
-                onSelect,
-                onToggleSelection,
-                onSetSelection: onSelectAllVisible,
-              })
-              setMenuState({ sceneId: scene.id, x: event.clientX, y: event.clientY })
-            }}
-          >
-            {selectedSceneIdSet.has(scene.id) ? (
-              <div className="absolute inset-y-2 left-0 w-1 rounded-full bg-accent/70" />
-            ) : null}
-            <SceneCard
-              scene={scene}
-              tags={tags.filter((tag) => scene.tagIds.includes(tag.id))}
-              density={density}
-              selected={selectedSceneIdSet.has(scene.id) || selectedSceneId === scene.id}
-              actions={
-                density !== 'detailed' ? (
-                  <>
-                    <InlineActionButton
-                      label={scene.isKeyScene ? 'Unmark key scene' : 'Mark key scene'}
-                      onClick={() => onToggleKeyScene(scene)}
-                    >
-                      <Star className={cn('h-4 w-4', scene.isKeyScene && 'fill-amber-400 text-amber-400')} />
-                    </InlineActionButton>
-                    {!boardSceneIds.has(scene.id) ? (
-                      <InlineActionButton label="Add to outline" onClick={() => onAdd(scene.id)}>
-                        <Plus className="h-4 w-4" />
-                      </InlineActionButton>
-                    ) : null}
-                  </>
-                ) : undefined
-              }
-            />
-            {density === 'detailed' ? (
-              <div className="mt-2 flex justify-end">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    onAdd(scene.id)
-                  }}
-                  disabled={boardSceneIds.has(scene.id)}
-                >
-                  {boardSceneIds.has(scene.id) ? 'Already on board' : 'Add to board'}
-                </Button>
-              </div>
-            ) : null}
-          </div>
-        ))}
-      </div>
+  )
+
+  const menus = (
+    <>
       <ContextMenu
         open={Boolean(menuState)}
         x={menuState?.x ?? 0}
@@ -210,7 +637,253 @@ export function SceneBankView({
         items={menuItems}
         onClose={() => setMenuState(null)}
       />
+      <ContextMenu
+        open={Boolean(folderMenuState)}
+        x={folderMenuState?.x ?? 0}
+        y={folderMenuState?.y ?? 0}
+        items={folderMenuItems}
+        onClose={() => setFolderMenuState(null)}
+      />
+    </>
+  )
+
+  const wrappedContent = content
+
+  if (embedded) {
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        {toolbar}
+        {wrappedContent}
+        {menus}
+      </div>
+    )
+  }
+
+  return (
+    <Panel className="flex h-full flex-col overflow-hidden">
+      {toolbar}
+      {wrappedContent}
+      {menus}
     </Panel>
+  )
+}
+
+function SceneBankRow({
+  scene,
+  index,
+  orderedScenes,
+  selectionScope,
+  tags,
+  density,
+  selectedSceneId,
+  selectedSceneIds,
+  selectedSceneIdSet,
+  selectionAnchorByScopeRef,
+  boardSceneIds,
+  onSelect,
+  onToggleSelection,
+  onSetSelection,
+  onOpenInspector,
+  onInlineUpdateScene,
+  onToggleKeyScene,
+  onAdd,
+  onContextMenu,
+}: {
+  scene: Scene
+  index: number
+  orderedScenes: Scene[]
+  selectionScope: string
+  tags: Tag[]
+  density: SceneDensity
+  selectedSceneId: string | null
+  selectedSceneIds: string[]
+  selectedSceneIdSet: Set<string>
+  selectionAnchorByScopeRef: MutableRefObject<Map<string, number>>
+  boardSceneIds: Set<string>
+  onSelect(sceneId: string): void
+  onToggleSelection(sceneId: string): void
+  onSetSelection(sceneIds: string[]): void
+  onOpenInspector(sceneId: string): void
+  onInlineUpdateScene(sceneId: string, input: { title: string; synopsis: string }): void
+  onToggleKeyScene(scene: Scene): void
+  onAdd(sceneId: string, afterItemId?: string | null): void
+  onContextMenu(state: { sceneId: string; x: number; y: number } | null): void
+}) {
+  const isOnBoard = boardSceneIds.has(scene.id)
+  const [editing, setEditing] = useState(false)
+  const [draftTitle, setDraftTitle] = useState(scene.title)
+  const [draftSynopsis, setDraftSynopsis] = useState(scene.synopsis)
+
+  const startEditing = () => {
+    setDraftTitle(scene.title)
+    setDraftSynopsis(scene.synopsis)
+    setEditing(true)
+  }
+
+  const save = () => {
+    onInlineUpdateScene(scene.id, {
+      title: draftTitle.trim() || scene.title,
+      synopsis: draftSynopsis.trim(),
+    })
+    setEditing(false)
+  }
+
+  return (
+    <div
+      draggable={!editing}
+      onDragStart={(event) => {
+        if (editing) {
+          event.preventDefault()
+          return
+        }
+
+        const draggedSceneIds =
+          selectedSceneIdSet.has(scene.id) && selectedSceneIds.length > 1 ? selectedSceneIds : [scene.id]
+        writeSceneDragData(event.dataTransfer, draggedSceneIds)
+        event.dataTransfer.effectAllowed = 'copyMove'
+        void window.narralab.windows.setDragSession({ kind: 'scene', sceneIds: draggedSceneIds })
+      }}
+      onDragEnd={() => {
+        window.setTimeout(() => {
+          void window.narralab.windows.setDragSession(null)
+        }, 2000)
+      }}
+      onDragOver={(event) => {
+        // Keep allowing native cross-window drag over the row (so Drop works),
+        // but Scene Bank itself does not show reorder indicators.
+        const draggedSceneIds = readSceneDragData(event.dataTransfer)
+        if (draggedSceneIds.length === 0) return
+        event.preventDefault()
+        event.stopPropagation()
+      }}
+      className={cn(
+        'relative rounded-2xl px-2 py-2 transition',
+        selectedSceneIdSet.has(scene.id) && 'bg-accent/8 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)]',
+      )}
+      role="button"
+      tabIndex={0}
+      onClick={(event) => {
+        event.stopPropagation()
+        const anchorRef = {
+          get current() {
+            return selectionAnchorByScopeRef.current.get(selectionScope) ?? null
+          },
+          set current(value: number | null) {
+            if (value === null) {
+              selectionAnchorByScopeRef.current.delete(selectionScope)
+            } else {
+              selectionAnchorByScopeRef.current.set(selectionScope, value)
+            }
+          },
+        }
+        handleSelectionGesture({
+          event,
+          index,
+          sceneId: scene.id,
+          orderedScenes,
+          selectedSceneIds,
+          selectionAnchorRef: anchorRef,
+          onSelect,
+          onToggleSelection,
+          onSetSelection,
+        })
+      }}
+      onDoubleClick={() => startEditing()}
+      onContextMenu={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        const anchorRef = {
+          get current() {
+            return selectionAnchorByScopeRef.current.get(selectionScope) ?? null
+          },
+          set current(value: number | null) {
+            if (value === null) {
+              selectionAnchorByScopeRef.current.delete(selectionScope)
+            } else {
+              selectionAnchorByScopeRef.current.set(selectionScope, value)
+            }
+          },
+        }
+        handleSelectionGesture({
+          event,
+          index,
+          sceneId: scene.id,
+          orderedScenes,
+          selectedSceneIds,
+          selectionAnchorRef: anchorRef,
+          onSelect,
+          onToggleSelection,
+          onSetSelection,
+        })
+        onContextMenu({ sceneId: scene.id, x: event.clientX, y: event.clientY })
+      }}
+    >
+      {selectedSceneIdSet.has(scene.id) ? (
+        <div className="absolute inset-y-2 left-0 w-1 rounded-full bg-accent/70" />
+      ) : null}
+      {editing ? (
+        <SceneBankInlineEditor
+          scene={scene}
+          density={density}
+          selected={selectedSceneIdSet.has(scene.id) || selectedSceneId === scene.id}
+          draftTitle={draftTitle}
+          draftSynopsis={draftSynopsis}
+          onChangeTitle={setDraftTitle}
+          onChangeSynopsis={setDraftSynopsis}
+          onSave={save}
+          onCancel={() => {
+            setDraftTitle(scene.title)
+            setDraftSynopsis(scene.synopsis)
+            setEditing(false)
+          }}
+          onOpenInspector={() => onOpenInspector(scene.id)}
+          actions={
+            <>
+              <KeyRatingButton value={scene.keyRating} onChange={() => onToggleKeyScene(scene)} />
+              {density !== 'detailed' && !isOnBoard ? (
+                <InlineActionButton label="Add to outline" onClick={() => onAdd(scene.id)}>
+                  <Plus className="h-4 w-4" />
+                </InlineActionButton>
+              ) : null}
+            </>
+          }
+        />
+      ) : (
+        <SceneCard
+          scene={scene}
+          tags={tags.filter((tag) => scene.tagIds.includes(tag.id))}
+          density={density}
+          selected={selectedSceneIdSet.has(scene.id) || selectedSceneId === scene.id}
+          draggable
+          onDoubleClick={() => startEditing()}
+          actions={
+            <>
+              <KeyRatingButton value={scene.keyRating} onChange={() => onToggleKeyScene(scene)} />
+              {density !== 'detailed' && !isOnBoard ? (
+                <InlineActionButton label="Add to outline" onClick={() => onAdd(scene.id)}>
+                  <Plus className="h-4 w-4" />
+                </InlineActionButton>
+              ) : null}
+            </>
+          }
+        />
+      )}
+      {density === 'detailed' ? (
+        <div className="mt-2 flex items-center justify-end gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={(event) => {
+              event.stopPropagation()
+              onAdd(scene.id)
+            }}
+            disabled={isOnBoard}
+          >
+            {isOnBoard ? 'Already on board' : 'Add to board'}
+          </Button>
+        </div>
+      ) : null}
+    </div>
   )
 }
 
@@ -241,11 +914,130 @@ function InlineActionButton({
   )
 }
 
+function SceneBankInlineEditor({
+  scene,
+  density,
+  selected,
+  draftTitle,
+  draftSynopsis,
+  onChangeTitle,
+  onChangeSynopsis,
+  onSave,
+  onCancel,
+  onOpenInspector,
+  actions,
+}: {
+  scene: Scene
+  density: SceneDensity
+  selected?: boolean
+  draftTitle: string
+  draftSynopsis: string
+  onChangeTitle(value: string): void
+  onChangeSynopsis(value: string): void
+  onSave(): void
+  onCancel(): void
+  onOpenInspector(): void
+  actions?: ReactNode
+}) {
+  const synopsisInputRef = useRef<HTMLInputElement | null>(null)
+  const accent = sceneColors.find((entry) => entry.value === scene.color)?.hex ?? '#7f8895'
+  const cardStyle = {
+    borderLeftColor: accent,
+    borderLeftWidth: 4,
+    backgroundImage: `linear-gradient(90deg, ${hexToRgba(accent, 0.24)} 0%, ${hexToRgba(accent, 0.08)} 18%, ${hexToRgba(accent, 0.03)} 42%, transparent 78%)`,
+  }
+
+  if (density === 'table') {
+    return (
+      <div
+        className={cn(
+          'group w-full rounded-lg border px-3 py-1.5 text-left transition',
+          selected ? 'border-accent/60 bg-white/[0.035] ring-2 ring-accent/20' : 'border-transparent hover:bg-white/[0.022]',
+        )}
+        style={cardStyle}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-center gap-3 text-[13px] leading-5">
+          <InlineEditScope className="flex min-w-0 flex-1 items-center gap-2" onSubmit={onSave} onCancel={onCancel}>
+            <InlineNameEditor
+              value={draftTitle}
+              onChange={onChangeTitle}
+              onSubmit={onSave}
+              onCancel={onCancel}
+              onEnterKey={() => synopsisInputRef.current?.focus()}
+              className="h-8 min-w-[10rem]"
+              autoFocus={true}
+            />
+            <InlineNameEditor
+              inputRef={synopsisInputRef}
+              value={draftSynopsis}
+              onChange={onChangeSynopsis}
+              onSubmit={onSave}
+              onCancel={onCancel}
+              className="h-8 min-w-[14rem] flex-1"
+            />
+            <InlineEditActions onSave={onSave} onCancel={onCancel} />
+          </InlineEditScope>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <InlineActionButton label="Open inspector" onClick={onOpenInspector}>
+              <PanelRightOpen className="h-4 w-4" />
+            </InlineActionButton>
+            {actions}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className={cn(
+        density === 'compact' ? 'rounded-2xl px-4 py-3' : 'rounded-2xl px-4 py-4',
+        'group w-full border text-left transition',
+        selected
+          ? 'border-accent/60 bg-white/[0.035] ring-2 ring-accent/20'
+          : 'border-transparent hover:bg-white/[0.028]',
+      )}
+      style={cardStyle}
+      onClick={(event) => event.stopPropagation()}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <InlineEditScope className="min-w-0 flex-1 space-y-2" onSubmit={onSave} onCancel={onCancel}>
+          <div className="flex items-center gap-2">
+            <InlineNameEditor
+              value={draftTitle}
+              onChange={onChangeTitle}
+              onSubmit={onSave}
+              onCancel={onCancel}
+              className="h-9 flex-1"
+              autoFocus={true}
+            />
+            <InlineEditActions onSave={onSave} onCancel={onCancel} />
+          </div>
+          <InlineTextareaEditor
+            value={draftSynopsis}
+            onChange={onChangeSynopsis}
+            onSubmit={onSave}
+            onCancel={onCancel}
+            className={cn(density === 'compact' ? 'min-h-[72px]' : 'min-h-[88px]')}
+          />
+        </InlineEditScope>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <InlineActionButton label="Open inspector" onClick={onOpenInspector}>
+            <PanelRightOpen className="h-4 w-4" />
+          </InlineActionButton>
+          {actions}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function handleSelectionGesture({
   event,
   index,
   sceneId,
-  scenes,
+  orderedScenes,
   selectedSceneIds,
   selectionAnchorRef,
   onSelect,
@@ -255,7 +1047,7 @@ function handleSelectionGesture({
   event?: MouseEvent<HTMLElement>
   index: number
   sceneId: string
-  scenes: Scene[]
+  orderedScenes: Scene[]
   selectedSceneIds: string[]
   selectionAnchorRef: MutableRefObject<number | null>
   onSelect(sceneId: string): void
@@ -268,7 +1060,7 @@ function handleSelectionGesture({
   if (isRangeSelection) {
     const start = Math.min(selectionAnchorRef.current ?? index, index)
     const end = Math.max(selectionAnchorRef.current ?? index, index)
-    onSetSelection(scenes.slice(start, end + 1).map((scene) => scene.id))
+    onSetSelection(orderedScenes.slice(start, end + 1).map((scene) => scene.id))
     return
   }
 
@@ -286,3 +1078,125 @@ function handleSelectionGesture({
 
   onToggleSelection(sceneId)
 }
+
+function groupScenes(scenes: Scene[], folders: SceneFolder[]) {
+  type SceneGroup = {
+    folderPath: string
+    label: string
+    color: SceneFolder['color']
+    scenes: Scene[]
+    depth: number
+    parentPath: string | null
+    sortOrder: number
+  }
+
+  const groups = new Map<string, SceneGroup>()
+  const rootScenes: Scene[] = []
+
+  folders.forEach((folder) => {
+    groups.set(folder.path, {
+      folderPath: folder.path,
+      label: folder.name,
+      color: folder.color,
+      scenes: [],
+      depth: folder.path.split('/').length - 1,
+      parentPath: folder.parentPath,
+      sortOrder: folder.sortOrder,
+    })
+  })
+
+  scenes.forEach((scene) => {
+    const folderPath = scene.folder.trim()
+    if (!folderPath) {
+      rootScenes.push(scene)
+      return
+    }
+
+    if (!groups.has(folderPath)) {
+      groups.set(folderPath, {
+        folderPath,
+        label: folderPath.split('/').at(-1) ?? folderPath,
+        color: 'slate',
+        scenes: [],
+        depth: folderPath.split('/').length - 1,
+        parentPath: getParentFolderPath(folderPath),
+        sortOrder: Number.MAX_SAFE_INTEGER,
+      })
+    }
+
+    groups.get(folderPath)?.scenes.push(scene)
+  })
+
+  const knownPaths = new Set(groups.keys())
+  const childrenByParent = new Map<string | null, SceneGroup[]>()
+
+  Array.from(groups.values()).forEach((group) => {
+    const parentPath = group.parentPath && knownPaths.has(group.parentPath) ? group.parentPath : null
+    const siblings = childrenByParent.get(parentPath) ?? []
+    siblings.push(group)
+    childrenByParent.set(parentPath, siblings)
+  })
+
+  childrenByParent.forEach((siblings) => {
+    siblings.sort((left, right) => left.sortOrder - right.sortOrder || left.label.localeCompare(right.label))
+  })
+
+  const orderedGroups: SceneGroup[] = []
+  const visit = (parentPath: string | null) => {
+    const children = childrenByParent.get(parentPath) ?? []
+    children.forEach((child) => {
+      orderedGroups.push(child)
+      visit(child.folderPath)
+    })
+  }
+
+  visit(null)
+
+  return {
+    rootScenes,
+    groups: orderedGroups,
+  }
+}
+
+function hasCollapsedAncestor(path: string, collapsedFolders: string[]) {
+  return collapsedFolders.some((collapsedPath) => path !== collapsedPath && path.startsWith(`${collapsedPath}/`))
+}
+
+function colorHex(color: SceneFolder['color']) {
+  return sceneColors.find((entry) => entry.value === color)?.hex ?? '#607086'
+}
+
+function hexToRgba(hex: string, alpha: number) {
+  const normalized = hex.replace('#', '')
+  const value = normalized.length === 3
+    ? normalized
+        .split('')
+        .map((char) => `${char}${char}`)
+        .join('')
+    : normalized
+
+  const red = Number.parseInt(value.slice(0, 2), 16)
+  const green = Number.parseInt(value.slice(2, 4), 16)
+  const blue = Number.parseInt(value.slice(4, 6), 16)
+
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`
+}
+
+function formatFolderLabel(label: string) {
+  return label.toLocaleUpperCase('nb-NO')
+}
+
+function getParentFolderPath(path: string) {
+  const segments = path.split('/').filter(Boolean)
+  if (segments.length <= 1) {
+    return null
+  }
+
+  return segments.slice(0, -1).join('/')
+}
+
+function getMoveTargetSceneIds(sceneId: string, selectedSceneIds: string[]) {
+  return selectedSceneIds.includes(sceneId) && selectedSceneIds.length > 1 ? selectedSceneIds : [sceneId]
+}
+
+const ROOT_SCENE_FOLDER_KEY = '__root__'

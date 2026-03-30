@@ -7,10 +7,12 @@ import type {
   BoardItem,
   BoardItemKind,
   BoardItemUpdateInput,
+  BoardUpdateInput,
   BoardSceneItem,
   BoardTextItem,
   BoardTextItemKind,
 } from '@/types/board'
+import type { SceneColor } from '@/types/scene'
 
 import { createId, nowIso } from './helpers'
 
@@ -23,6 +25,10 @@ type BoardItemRow = {
   body: string
   color: string
   position: number
+  boardX: number
+  boardY: number
+  boardW: number
+  boardH: number
   createdAt: string
   updatedAt: string
 }
@@ -38,8 +44,9 @@ export class BoardRepository {
     const boards = this.db
       .prepare(`
         SELECT id, name, created_at AS createdAt, updated_at AS updatedAt
+             , description, color, folder, sort_order AS sortOrder
         FROM boards
-        ORDER BY created_at ASC
+        ORDER BY sort_order ASC, created_at ASC
       `)
       .all() as Array<Omit<Board, 'items'>>
 
@@ -54,6 +61,10 @@ export class BoardRepository {
           body,
           color,
           position,
+          board_x AS boardX,
+          board_y AS boardY,
+          board_w AS boardW,
+          board_h AS boardH,
           created_at AS createdAt,
           updated_at AS updatedAt
         FROM board_items
@@ -72,13 +83,17 @@ export class BoardRepository {
     return existing.length > 0 ? existing[0] : this.create('Main Outline')
   }
 
-  create(name: string): Board {
+  create(name: string, options?: { description?: string; color?: SceneColor; folder?: string }): Board {
     const id = createId('board')
     const timestamp = nowIso()
+    const sortOrder =
+      ((this.db
+        .prepare('SELECT COALESCE(MAX(sort_order), -1) AS maxSortOrder FROM boards')
+        .get() as { maxSortOrder: number }).maxSortOrder ?? -1) + 1
 
     this.db
-      .prepare('INSERT INTO boards (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)')
-      .run(id, name, timestamp, timestamp)
+      .prepare('INSERT INTO boards (id, name, description, color, folder, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(id, name, options?.description ?? '', options?.color ?? 'charcoal', options?.folder ?? '', sortOrder, timestamp, timestamp)
 
     return this.list().find((board) => board.id === id) as Board
   }
@@ -87,11 +102,12 @@ export class BoardRepository {
     const source = this.list().find((board) => board.id === boardId)
     if (!source) throw new Error('Board not found')
 
-    const nextBoard = this.create(name)
+    const nextBoard = this.create(name, { description: source.description, color: source.color, folder: source.folder })
     const insert = this.db.prepare(`
       INSERT INTO board_items (
         id, board_id, scene_id, kind, title, body, color, position, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        , board_x, board_y, board_w, board_h
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
     source.items.forEach((item, index) => {
@@ -105,6 +121,10 @@ export class BoardRepository {
         item.kind === 'scene' ? '' : item.body,
         item.kind === 'scene' ? 'charcoal' : item.color,
         index,
+        item.boardX,
+        item.boardY,
+        item.boardW,
+        item.boardH,
         timestamp,
         timestamp,
       )
@@ -114,17 +134,43 @@ export class BoardRepository {
     return this.list().find((board) => board.id === nextBoard.id) as Board
   }
 
-  updateBoard(boardId: string, name: string): Board {
-    const nextName = name.trim()
+  delete(boardId: string): Board[] {
+    const boards = this.list()
+    if (boards.length <= 1) {
+      throw new Error('At least one board must remain')
+    }
+
+    const existing = boards.find((board) => board.id === boardId)
+    if (!existing) {
+      return boards
+    }
+
+    this.db.prepare('DELETE FROM boards WHERE id = ?').run(boardId)
+    const nextBoards = this.list()
+    this.reorderBoards(nextBoards.map((board) => board.id))
+    return this.list()
+  }
+
+  updateBoard(input: BoardUpdateInput): Board {
+    const current = this.list().find((board) => board.id === input.id)
+    if (!current) {
+      throw new Error('Board not found')
+    }
+
+    const nextName = input.name?.trim() ?? current.name
+    const nextDescription = input.description ?? current.description
+    const nextColor = input.color ?? current.color
+    const nextFolder = input.folder?.trim() ?? current.folder
+
     if (!nextName) {
       throw new Error('Board name cannot be empty')
     }
 
     this.db
-      .prepare('UPDATE boards SET name = ?, updated_at = ? WHERE id = ?')
-      .run(nextName, nowIso(), boardId)
+      .prepare('UPDATE boards SET name = ?, description = ?, color = ?, folder = ?, updated_at = ? WHERE id = ?')
+      .run(nextName, nextDescription, nextColor, nextFolder, nowIso(), input.id)
 
-    const updated = this.list().find((board) => board.id === boardId)
+    const updated = this.list().find((board) => board.id === input.id)
     if (!updated) {
       throw new Error('Board not found')
     }
@@ -132,7 +178,27 @@ export class BoardRepository {
     return updated
   }
 
-  addScene(boardId: string, sceneId: string, afterItemId?: string | null): AddSceneToBoardResult {
+  reorderBoards(boardIds: string[]): Board[] {
+    const currentBoards = this.list()
+    const currentIds = currentBoards.map((board) => board.id)
+
+    if (boardIds.length !== currentIds.length || boardIds.some((id) => !currentIds.includes(id))) {
+      throw new Error('Board order is invalid')
+    }
+
+    const update = this.db.prepare('UPDATE boards SET sort_order = ?, updated_at = ? WHERE id = ?')
+    const timestamp = nowIso()
+    const reorder = this.db.transaction((ids: string[]) => {
+      ids.forEach((id, index) => {
+        update.run(index, timestamp, id)
+      })
+    })
+
+    reorder(boardIds)
+    return this.list()
+  }
+
+  addScene(boardId: string, sceneId: string, afterItemId?: string | null, boardPosition?: { x: number; y: number } | null): AddSceneToBoardResult {
     const existing = this.db
       .prepare('SELECT id FROM board_items WHERE board_id = ? AND kind = ? AND scene_id = ?')
       .get(boardId, 'scene', sceneId) as { id: string } | undefined
@@ -153,6 +219,10 @@ export class BoardRepository {
       kind: 'scene',
       sceneId,
       position,
+      boardX: boardPosition?.x ?? position * 320,
+      boardY: boardPosition?.y ?? 0,
+      boardW: 300,
+      boardH: 132,
       createdAt: nowIso(),
       updatedAt: nowIso(),
     }
@@ -162,9 +232,9 @@ export class BoardRepository {
     this.db
       .prepare(`
         INSERT INTO board_items (
-          id, board_id, scene_id, kind, title, body, color, position, created_at, updated_at
+          id, board_id, scene_id, kind, title, body, color, position, board_x, board_y, board_w, board_h, created_at, updated_at
         ) VALUES (
-          @id, @boardId, @sceneId, @kind, '', '', 'charcoal', @position, @createdAt, @updatedAt
+          @id, @boardId, @sceneId, @kind, '', '', 'charcoal', @position, @boardX, @boardY, @boardW, @boardH, @createdAt, @updatedAt
         )
       `)
       .run(item)
@@ -185,6 +255,10 @@ export class BoardRepository {
       body: defaults.defaultBody,
       color: defaults.defaultColor,
       position,
+      boardX: position * 320,
+      boardY: 0,
+      boardW: 260,
+      boardH: 108,
       createdAt: nowIso(),
       updatedAt: nowIso(),
     }
@@ -194,9 +268,9 @@ export class BoardRepository {
     this.db
       .prepare(`
         INSERT INTO board_items (
-          id, board_id, scene_id, kind, title, body, color, position, created_at, updated_at
+          id, board_id, scene_id, kind, title, body, color, position, board_x, board_y, board_w, board_h, created_at, updated_at
         ) VALUES (
-          @id, @boardId, NULL, @kind, @title, @body, @color, @position, @createdAt, @updatedAt
+          @id, @boardId, NULL, @kind, @title, @body, @color, @position, @boardX, @boardY, @boardW, @boardH, @createdAt, @updatedAt
         )
       `)
       .run(item)
@@ -231,9 +305,9 @@ export class BoardRepository {
     this.db
       .prepare(`
         INSERT INTO board_items (
-          id, board_id, scene_id, kind, title, body, color, position, created_at, updated_at
+          id, board_id, scene_id, kind, title, body, color, position, board_x, board_y, board_w, board_h, created_at, updated_at
         ) VALUES (
-          @id, @boardId, NULL, @kind, @title, @body, @color, @position, @createdAt, @updatedAt
+          @id, @boardId, NULL, @kind, @title, @body, @color, @position, @boardX, @boardY, @boardW, @boardH, @createdAt, @updatedAt
         )
       `)
       .run(item)
@@ -282,7 +356,25 @@ export class BoardRepository {
     }
 
     if (current.kind === 'scene') {
-      return current
+      const next: BoardSceneItem = {
+        ...current,
+        boardX: input.boardX ?? current.boardX,
+        boardY: input.boardY ?? current.boardY,
+        boardW: input.boardW ?? current.boardW,
+        boardH: input.boardH ?? current.boardH,
+        updatedAt: nowIso(),
+      }
+
+      this.db
+        .prepare(`
+          UPDATE board_items
+          SET board_x = ?, board_y = ?, board_w = ?, board_h = ?, updated_at = ?
+          WHERE id = ?
+        `)
+        .run(next.boardX, next.boardY, next.boardW, next.boardH, next.updatedAt, next.id)
+
+      this.touchBoard(next.boardId)
+      return next
     }
 
     const next: BoardTextItem = {
@@ -291,16 +383,31 @@ export class BoardRepository {
       title: input.title ?? current.title,
       body: input.body ?? current.body,
       color: getBlockDefaults(input.kind ?? current.kind).defaultColor,
+      boardX: input.boardX ?? current.boardX,
+      boardY: input.boardY ?? current.boardY,
+      boardW: input.boardW ?? current.boardW,
+      boardH: input.boardH ?? current.boardH,
       updatedAt: nowIso(),
     }
 
     this.db
       .prepare(`
         UPDATE board_items
-        SET kind = ?, title = ?, body = ?, color = ?, updated_at = ?
+        SET kind = ?, title = ?, body = ?, color = ?, board_x = ?, board_y = ?, board_w = ?, board_h = ?, updated_at = ?
         WHERE id = ?
       `)
-      .run(next.kind, next.title, next.body, next.color, next.updatedAt, next.id)
+      .run(
+        next.kind,
+        next.title,
+        next.body,
+        next.color,
+        next.boardX,
+        next.boardY,
+        next.boardW,
+        next.boardH,
+        next.updatedAt,
+        next.id,
+      )
 
     this.touchBoard(next.boardId)
     return next
@@ -358,6 +465,10 @@ function mapBoardItemRow(row: BoardItemRow): BoardItem {
       kind: 'scene',
       sceneId: row.sceneId,
       position: row.position,
+      boardX: row.boardX,
+      boardY: row.boardY,
+      boardW: row.boardW,
+      boardH: row.boardH,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     }
@@ -371,6 +482,10 @@ function mapBoardItemRow(row: BoardItemRow): BoardItem {
     body: row.body,
     color: row.color as BoardTextItem['color'],
     position: row.position,
+    boardX: row.boardX,
+    boardY: row.boardY,
+    boardW: row.boardW,
+    boardH: row.boardH,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   }
@@ -379,3 +494,24 @@ function mapBoardItemRow(row: BoardItemRow): BoardItem {
 function getBlockDefaults(kind: BoardTextItemKind) {
   return boardBlockKinds.find((item) => item.value === kind) ?? boardBlockKinds[0]
 }
+
+export function isBoardColor(value: string): value is SceneColor {
+  return sceneColors.has(value as SceneColor)
+}
+
+const sceneColors = new Set<SceneColor>([
+  'charcoal',
+  'slate',
+  'amber',
+  'ochre',
+  'crimson',
+  'rose',
+  'olive',
+  'moss',
+  'teal',
+  'cyan',
+  'blue',
+  'indigo',
+  'violet',
+  'plum',
+])

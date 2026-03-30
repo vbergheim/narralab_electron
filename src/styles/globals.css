@@ -24,6 +24,54 @@ body {
   background: hsl(var(--bg));
 }
 
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+*:hover,
+*:focus-within {
+  scrollbar-color: hsla(210, 20%, 78%, 0.28) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  background-clip: padding-box;
+}
+
+*:hover::-webkit-scrollbar-thumb,
+*:focus-within::-webkit-scrollbar-thumb {
+  background: hsla(210, 20%, 78%, 0.28);
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover,
+*::-webkit-scrollbar-thumb:active {
+  background: hsla(210, 24%, 88%, 0.42);
+  background-clip: padding-box;
+}
+
+.app-drag {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.app-no-drag {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
 button,
 input,
 textarea,

@@ -1,73 +1,122 @@
-# React + TypeScript + Vite
+# NarraLab
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+NarraLab er en lokal Electron-app for å strukturere dokumentarfilm scene for scene. Appen kjører med React i renderer, Electron i desktop-skallet og SQLite som prosjektformat.
 
-Currently, two official plugins are available:
+## Status
+- Lokal macOS-først desktop-app
+- Prosjektdata lagres i `.narralab`-filer, med støtte for eldre `.docudoc`-prosjekter
+- Kan importere `.xlsx`-basert opptakslogg direkte som nye scener og beats
+- Støtter scenes, boards, archive, notebook, settings og en innebygd AI-konsulent
+- Har detached vinduer og lagrede layouts, men cross-window-interaksjon er fortsatt et aktivt robusthetsområde
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Arkitektur
+Dataflyten går slik:
 
-## React Compiler
+1. `src/*`
+   - UI og workspaces
+   - Zustand-store i [src/stores/app-store.ts](/Users/vegard/Desktop/DocuDoc/src/stores/app-store.ts)
+2. `electron/preload/index.ts`
+   - typed bridge mellom renderer og main
+3. `electron/main/ipc.ts`
+   - IPC-registrering og runtime-validering av payloads
+4. `electron/main/project-service.ts`
+   - domeneoperasjoner for prosjekt, scenes, boards, archive og notebook
+5. `electron/main/db/repositories/*`
+   - SQLite-repositories
+6. `electron/main/db/migrations.ts`
+   - schema- og kompatibilitetsmigreringer
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Autoritative data:
+- SQLite er sannhet for scenes, beats, boards, board items, archive og project settings
+- app settings er sannhet for AI, layouts og enkelte globale UI-defaults
+- renderer-state er avledet og må ikke bli vedvarende sannhet
 
-## Expanding the ESLint configuration
+Mer detaljert gjennomgang ligger i [docs/HEALTHCHECK.md](/Users/vegard/Desktop/DocuDoc/docs/HEALTHCHECK.md).
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## Kjøring lokalt
+Installer avhengigheter:
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Start dev-app:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm run dev
 ```
+
+Bygg pakket app:
+
+```bash
+npm run build
+```
+
+Bygg pakkestruktur uten full release:
+
+```bash
+npm run build:dir
+```
+
+## Kvalitetsgjerder
+Lint:
+
+```bash
+npm run lint
+```
+
+Typecheck:
+
+```bash
+npx tsc -b
+```
+
+Tester:
+
+```bash
+npm run test
+```
+
+Alt samlet:
+
+```bash
+npm run check
+```
+
+## Teststrategi
+Repoet har nå et minimum av automatiske gjerder:
+
+- unit-tester for rene hjelpefunksjoner i `src/lib`
+- integration-tester for SQLite-repositories og migreringer
+- CI-workflow i `.github/workflows/ci.yml` som kjører lint, typecheck og test
+
+Det finnes fortsatt ikke full Electron E2E eller UI-smoke for alle arbeidsflyter. Det er neste nivå, ikke ferdig arbeid.
+
+## Prosjektformat
+Prosjektet lagres som en lokal SQLite-database med `.narralab` som standardendelse, og åpner fortsatt eldre `.docudoc`-prosjekter.
+
+Dette betyr:
+- `Save As` kopierer den underliggende databasen
+- migreringer skjer ved åpning
+- import/export JSON er et eget snapshot-spor, ikke primær lagringsmotor
+- opptaksloggimport er et eget Excel-spor for append-only sceneinnlesing
+
+## Viktige invariants
+- `board_items.position` skal være sekvensiell per board
+- `scene_beats.sort_order` skal være sekvensiell per scene
+- scene-data er globale på tvers av boards
+- structure blocks er board-lokale
+- sletting av scene må rydde scene-referanser i boards
+- detached vinduer må bruke eksplisitt `boardId`, ikke bare global `activeBoardId`
+
+## Arbeidsregler for videreutvikling
+- Ikke legg store nye features rett i `App.tsx` eller `ProjectService` hvis logikken kan trekkes ut.
+- Renderer skal ikke gjette intern main-process state når en eksplisitt kontrakt kan brukes.
+- Nye IPC-kall bør valideres ved inngangen i `electron/main/ipc.ts`.
+- Nye databaseendringer skal dekkes av migreringstest eller repository-test.
+
+## Åpne tekniske temaer
+- robust cross-window drag/drop
+- videre splitting av `ProjectService`
+- videre splitting av `App.tsx`
+- ekte Electron smoke/E2E for kritiske arbeidsflyter

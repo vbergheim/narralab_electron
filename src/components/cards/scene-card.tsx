@@ -1,10 +1,9 @@
 import type { KeyboardEvent, MouseEvent, ReactNode } from 'react'
-import { Clock3, Film, MapPin, Star, Users } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
+import { KeyRatingMark } from '@/components/ui/key-rating-button'
 import { cn } from '@/lib/cn'
 import { sceneColors } from '@/lib/constants'
-import { formatDuration } from '@/lib/durations'
 import type { Scene } from '@/types/scene'
 import type { Tag } from '@/types/tag'
 import type { SceneDensity } from '@/types/view'
@@ -58,14 +57,9 @@ export function SceneCard({
         style={cardStyle}
       >
         <div className="flex items-center gap-3 text-[13px] leading-5">
-          <div className="min-w-0 flex-[0.95] truncate font-medium text-foreground">
-            {scene.title}
-          </div>
-          <div className="min-w-0 flex-[1.85] truncate text-muted">
-            {scene.synopsis || 'No synopsis yet'}
-          </div>
+          <div className="min-w-0 flex-[0.95] truncate font-medium text-foreground">{scene.title}</div>
+          <div className="min-w-0 flex-[1.85] truncate text-muted">{scene.synopsis || 'No synopsis yet'}</div>
           <div className="flex shrink-0 items-center gap-1">
-            {scene.isKeyScene ? <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" /> : null}
             {actions}
           </div>
         </div>
@@ -82,30 +76,25 @@ export function SceneCard({
         onDoubleClick={onDoubleClick}
         onKeyDown={(event) => handleKeyDown(event, onClick)}
         className={cn(
-          'group w-full rounded-xl border bg-white/[0.02] px-3 py-2.5 text-left transition duration-150',
+          'group w-full rounded-2xl border px-4 py-3 text-left transition',
           overlay ? 'rotate-1 shadow-panel' : 'shadow-none',
           selected
             ? 'border-accent/60 bg-white/[0.035] ring-2 ring-accent/20'
-            : 'border-transparent hover:bg-white/[0.03]',
+            : 'border-transparent hover:bg-white/[0.028]',
           draggable && 'cursor-grab active:cursor-grabbing',
         )}
         style={cardStyle}
       >
-        <div className="flex items-center gap-3 text-sm">
-          <div className="min-w-0 flex-[1.15]">
-            <div className="flex items-center gap-2">
-              <span className="truncate font-medium text-foreground">{scene.title}</span>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 font-display text-[15px] font-semibold text-foreground">
+              {scene.title}
+            </div>
+            <div className="mt-1 line-clamp-2 text-sm leading-6 text-muted">
+              {scene.synopsis || 'No synopsis yet'}
             </div>
           </div>
-          <div className="min-w-0 flex-[1.85] truncate text-muted">
-            {scene.synopsis || 'No synopsis yet'}
-          </div>
           <div className="flex shrink-0 items-center gap-1.5">
-            {tags.slice(0, 1).map((tag) => (
-              <Badge key={tag.id} className="hidden md:inline-flex">
-                {tag.name}
-              </Badge>
-            ))}
             {actions}
           </div>
         </div>
@@ -121,54 +110,36 @@ export function SceneCard({
       onDoubleClick={onDoubleClick}
       onKeyDown={(event) => handleKeyDown(event, onClick)}
       className={cn(
-        'group w-full rounded-2xl border bg-white/[0.02] px-4 py-4 text-left transition duration-150',
-        overlay ? 'rotate-1 shadow-panel' : 'shadow-card',
+        'group w-full rounded-2xl border px-4 py-4 text-left transition',
+        overlay ? 'rotate-1 shadow-panel' : 'shadow-none',
         selected
-          ? 'border-accent/60 bg-white/[0.04] ring-2 ring-accent/20'
-          : 'border-transparent hover:bg-white/[0.03]',
+          ? 'border-accent/60 bg-white/[0.035] ring-2 ring-accent/20'
+          : 'border-transparent hover:bg-white/[0.028]',
         draggable && 'cursor-grab active:cursor-grabbing',
       )}
       style={cardStyle}
     >
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <div className="flex items-center gap-2 font-display text-[15px] font-semibold text-foreground">
             {scene.title}
-            {scene.isKeyScene ? <Star className="h-4 w-4 fill-amber-400 text-amber-400" /> : null}
           </div>
-          <div className="mt-1 line-clamp-2 text-sm text-muted">
+          <div className="mt-1 line-clamp-2 text-sm leading-6 text-muted">
             {scene.synopsis || 'No synopsis yet'}
           </div>
         </div>
-        <div className="flex shrink-0 gap-2">
-          {scene.isKeyScene ? (
-            <Badge className="border-amber-400/30 bg-amber-400/10 text-amber-200">Key</Badge>
-          ) : null}
-          <Badge className="capitalize">{scene.status}</Badge>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {actions ?? (scene.keyRating > 0 ? <KeyRatingMark value={scene.keyRating} /> : null)}
         </div>
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-2">
-        {tags.slice(0, 3).map((tag) => (
-          <Badge key={tag.id}>{tag.name}</Badge>
-        ))}
-      </div>
-
-      <div className="mt-4 grid grid-cols-2 gap-2 text-xs text-muted">
-        <Meta icon={<Clock3 className="h-3.5 w-3.5" />} label={formatDuration(scene.estimatedDuration)} />
-        <Meta icon={<MapPin className="h-3.5 w-3.5" />} label={scene.location || 'Location'} />
-        <Meta icon={<Users className="h-3.5 w-3.5" />} label={scene.characters[0] || 'Contributors'} />
-        <Meta icon={<Film className="h-3.5 w-3.5" />} label={scene.category || 'Category'} />
-      </div>
-    </div>
-  )
-}
-
-function Meta({ icon, label }: { icon: ReactNode; label: string }) {
-  return (
-    <div className="flex items-center gap-2 truncate">
-      <span className="text-muted/80">{icon}</span>
-      <span className="truncate">{label}</span>
+      {tags.length > 0 ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {tags.slice(0, 3).map((tag) => (
+            <Badge key={tag.id}>{tag.name}</Badge>
+          ))}
+        </div>
+      ) : null}
     </div>
   )
 }

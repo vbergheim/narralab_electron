@@ -3,26 +3,59 @@ import path from 'node:path'
 
 import { app, BrowserWindow, nativeImage } from 'electron'
 
+import { AIConsultantService } from './ai-consultant-service'
+import { AppSettingsService } from './app-settings-service'
 import { registerIpc } from './ipc'
 import { ProjectService } from './project-service'
+import { WindowManager } from './window-manager'
 
 const projectService = new ProjectService()
+const settingsService = new AppSettingsService()
+const consultantService = new AIConsultantService(projectService, settingsService)
 let mainWindow: BrowserWindow | null = null
 let pendingProjectToOpen: string | null = null
+const windowManager = new WindowManager(settingsService, projectService, createBrowserWindow)
 
-function createWindow() {
+function createMainWindow() {
+  if (mainWindow) {
+    return mainWindow
+  }
+
+  mainWindow = createBrowserWindow({ title: 'NarraLab', workspace: 'main' })
+  windowManager.registerMainWindow(mainWindow)
+
+  mainWindow.on('closed', () => {
+    mainWindow = null
+  })
+
+  return mainWindow
+}
+
+function createBrowserWindow(input: {
+  title: string
+  workspace: 'main' | 'outline' | 'bank' | 'inspector' | 'notebook' | 'archive'
+  bounds?: { x: number; y: number; width: number; height: number }
+}) {
   const iconPath = resolveRuntimeIconPath()
-  mainWindow = new BrowserWindow({
-    width: 1600,
-    height: 980,
-    minWidth: 1280,
-    minHeight: 820,
+  const runtimeRoot = app.isPackaged ? app.getAppPath() : process.cwd()
+  const preloadPath = path.join(runtimeRoot, 'dist-electron', 'index.js')
+  const isMainWindow = input.workspace === 'main'
+  const minWidth = isMainWindow ? 980 : 220
+  const minHeight = isMainWindow ? 720 : 180
+  const browserWindow = new BrowserWindow({
+    width: input.bounds?.width ?? 1600,
+    height: input.bounds?.height ?? 980,
+    x: input.bounds?.x,
+    y: input.bounds?.y,
+    minWidth,
+    minHeight,
     backgroundColor: '#0f1117',
     icon: iconPath,
+    title: input.title,
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 18, y: 18 },
     webPreferences: {
-      preload: path.join(__dirname, 'index.js'),
+      preload: preloadPath,
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
@@ -30,15 +63,13 @@ function createWindow() {
   })
 
   if (process.env.VITE_DEV_SERVER_URL) {
-    void mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
+    void browserWindow.loadURL(process.env.VITE_DEV_SERVER_URL)
   } else {
     const appPath = app.isPackaged ? app.getAppPath() : process.cwd()
-    void mainWindow.loadFile(path.join(appPath, 'dist', 'index.html'))
+    void browserWindow.loadFile(path.join(appPath, 'dist', 'index.html'))
   }
 
-  mainWindow.on('closed', () => {
-    mainWindow = null
-  })
+  return browserWindow
 }
 
 app.on('open-file', (event, filePath) => {
@@ -51,17 +82,27 @@ app.on('open-file', (event, filePath) => {
 })
 
 app.whenReady().then(() => {
-  registerIpc(projectService)
+  app.setAboutPanelOptions({
+    applicationName: 'NarraLab',
+    applicationVersion: app.getVersion(),
+    version: app.getVersion(),
+    copyright: 'Copyright © 2026 Vegard Lund Bergheim',
+    authors: ['Vegard Lund Bergheim'],
+    credits: 'Created by Vegard Lund Bergheim',
+  })
+  registerIpc(projectService, settingsService, consultantService, windowManager)
   applyDockIcon()
-  createWindow()
+  createMainWindow()
   if (pendingProjectToOpen) {
     void openProjectFile(pendingProjectToOpen)
     pendingProjectToOpen = null
+  } else {
+    void windowManager.restoreLastProjectAndLayout(openProjectFile)
   }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow()
+      createMainWindow()
     }
   })
 })
@@ -101,9 +142,10 @@ function applyDockIcon() {
 
 async function openProjectFile(filePath: string) {
   await projectService.openProject(filePath)
+  windowManager.notifyProjectChanged()
 
   if (!mainWindow) {
-    createWindow()
+    createMainWindow()
   }
 
   mainWindow?.show()

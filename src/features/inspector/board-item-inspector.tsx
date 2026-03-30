@@ -1,12 +1,13 @@
 import type { Dispatch, ReactNode, SetStateAction } from 'react'
 import { useEffect, useMemo, useState } from 'react'
-import { FileStack, Trash2 } from 'lucide-react'
+import { FileStack, PanelRightClose, Trash2 } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Panel } from '@/components/ui/panel'
 import { Textarea } from '@/components/ui/textarea'
+import { InspectorEmptyState } from '@/features/inspector/inspector-empty-state'
 import { boardBlockKinds } from '@/lib/constants'
 import { formatDateTime } from '@/lib/dates'
 import type { BoardTextItem, BoardTextItemKind } from '@/types/board'
@@ -15,11 +16,13 @@ type Draft = Pick<BoardTextItem, 'id' | 'kind' | 'title' | 'body'>
 
 type Props = {
   item: BoardTextItem | null
+  onCollapse?(): void
   onSave(input: Draft): void
+  onSaveTemplate(input: { kind: BoardTextItemKind; name: string; title: string; body: string }): void
   onDelete(itemId: string): void
 }
 
-export function BoardItemInspector({ item, onSave, onDelete }: Props) {
+export function BoardItemInspector({ item, onCollapse, onSave, onSaveTemplate, onDelete }: Props) {
   const [draft, setDraft] = useState<Draft | null>(() => (item ? toDraft(item) : null))
 
   const payload = useMemo(() => (draft ? toPayload(draft) : null), [draft])
@@ -40,21 +43,19 @@ export function BoardItemInspector({ item, onSave, onDelete }: Props) {
 
   if (!item || !draft) {
     return (
-      <Panel className="flex h-full items-center justify-center p-8 text-center">
-        <div>
-          <div className="font-display text-lg font-semibold text-foreground">Inspector</div>
-          <div className="mt-2 text-sm text-muted">
-            Select a structure block in the outline to edit chapter, VO, narration, or note text.
-          </div>
-        </div>
-      </Panel>
+      <InspectorEmptyState
+        title="Structure Block"
+        description="Autosaves locally while you work."
+        body="Select a structure block in the outline to edit chapter, VO, narration, or note text."
+        onCollapse={onCollapse}
+      />
     )
   }
 
   const kindMeta = boardBlockKinds.find((entry) => entry.value === draft.kind)
 
   return (
-    <Panel className="h-full overflow-hidden">
+    <Panel className="flex h-full flex-col overflow-hidden">
       <div className="flex items-center justify-between border-b border-border/90 px-4 py-4">
         <div>
           <div className="font-display text-sm font-semibold uppercase tracking-[0.16em] text-foreground">
@@ -62,21 +63,14 @@ export function BoardItemInspector({ item, onSave, onDelete }: Props) {
           </div>
           <div className="mt-1 text-sm text-muted">Autosaves locally while you work.</div>
         </div>
-        <Button
-          variant="danger"
-          size="sm"
-          onClick={() => {
-            if (window.confirm(`Delete this ${kindMeta?.shortLabel.toLowerCase() ?? 'block'} from the outline?`)) {
-              onDelete(item.id)
-            }
-          }}
-        >
-          <Trash2 className="h-4 w-4" />
-          Delete
-        </Button>
+        {onCollapse ? (
+          <Button variant="ghost" size="sm" onClick={onCollapse} title="Collapse inspector" aria-label="Collapse inspector">
+            <PanelRightClose className="h-4 w-4" />
+          </Button>
+        ) : null}
       </div>
 
-      <div className="h-[calc(100%-78px)] overflow-y-auto p-4">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">
         <InspectorField label="Type">
           <select
             className="h-10 w-full rounded-xl border border-border bg-panel px-3 text-sm text-foreground outline-none"
@@ -110,6 +104,37 @@ export function BoardItemInspector({ item, onSave, onDelete }: Props) {
           </Badge>
           <Badge>Created {formatDateTime(item.createdAt)}</Badge>
           <Badge>Updated {formatDateTime(item.updatedAt)}</Badge>
+        </div>
+
+        <div className="mt-6 flex flex-wrap gap-2 border-t border-border/90 pt-4">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              const fallbackName = kindMeta?.label ?? 'Block'
+              onSaveTemplate({
+                kind: draft.kind,
+                name: draft.title.trim() || `${fallbackName} template`,
+                title: draft.title.trim(),
+                body: draft.body,
+              })
+            }}
+          >
+            <FileStack className="h-4 w-4" />
+            Save Template
+          </Button>
+          <Button
+            variant="danger"
+            size="sm"
+            onClick={() => {
+              if (window.confirm(`Delete this ${kindMeta?.shortLabel.toLowerCase() ?? 'block'} from the outline?`)) {
+                onDelete(item.id)
+              }
+            }}
+          >
+            <Trash2 className="h-4 w-4" />
+            Delete
+          </Button>
         </div>
       </div>
     </Panel>

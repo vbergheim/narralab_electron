@@ -1,13 +1,36 @@
 import type { SceneColor } from './scene'
 
+export type BoardFolder = {
+  path: string
+  name: string
+  parentPath: string | null
+  color: SceneColor
+  sortOrder: number
+}
+
+export type BlockTemplate = {
+  id: string
+  name: string
+  kind: BoardTextItemKind
+  title: string
+  body: string
+  createdAt: string
+  updatedAt: string
+}
+
 export type BoardItemKind = 'scene' | 'chapter' | 'voiceover' | 'narration' | 'text-card' | 'note'
 export type BoardTextItemKind = Exclude<BoardItemKind, 'scene'>
+export type BoardViewMode = 'outline' | 'timeline' | 'canvas'
 
 type BoardItemBase = {
   id: string
   boardId: string
   kind: BoardItemKind
   position: number
+  boardX: number
+  boardY: number
+  boardW: number
+  boardH: number
   createdAt: string
   updatedAt: string
 }
@@ -33,14 +56,31 @@ export type BoardItem = BoardSceneItem | BoardTextItem
 export type Board = {
   id: string
   name: string
+  description: string
+  color: SceneColor
+  folder: string
+  sortOrder: number
   createdAt: string
   updatedAt: string
   items: BoardItem[]
 }
 
+export type BoardUpdateInput = {
+  id: string
+  name?: string
+  description?: string
+  color?: SceneColor
+  folder?: string
+}
+
 export type AddSceneToBoardResult = {
   item: BoardSceneItem
   existed: boolean
+}
+
+export type BoardDropPosition = {
+  x: number
+  y: number
 }
 
 export type BoardItemUpdateInput = {
@@ -49,6 +89,10 @@ export type BoardItemUpdateInput = {
   title?: string
   body?: string
   color?: SceneColor
+  boardX?: number
+  boardY?: number
+  boardW?: number
+  boardH?: number
 }
 
 export function isSceneBoardItem(item: BoardItem): item is BoardSceneItem {

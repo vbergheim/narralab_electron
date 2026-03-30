@@ -1,0 +1,188 @@
+{
+  "schemaVersion": 6,
+  "exportedAt": "2026-03-29T12:00:00Z",
+  "project": {
+    "path": "",
+    "name": "Film Breakdown Template"
+  },
+  "projectSettings": {
+    "title": "Film Breakdown Template",
+    "genre": "Documentary",
+    "format": "Feature documentary",
+    "targetRuntimeMinutes": 90,
+    "logline": "Import template for screenplay or transcript-derived scenes and structure blocks.",
+    "defaultBoardView": "outline",
+    "enabledBlockKinds": ["chapter", "voiceover", "narration", "text-card", "note"],
+    "blockKindOrder": ["chapter", "voiceover", "narration", "text-card", "note"]
+  },
+  "scenes": [
+    {
+      "id": "scene_arrival_station",
+      "sortOrder": 0,
+      "title": "Arrival at station",
+      "synopsis": "Anna arrives, scans the platform, and hesitates before walking out.",
+      "notes": "Original heading: EXT. TRAIN STATION - DAY\nImported from screenplay/transcript source and reduced to a short working scene.",
+      "color": "blue",
+      "status": "selected",
+      "keyRating": 0,
+      "folder": "Act 1",
+      "category": "Arrival",
+      "estimatedDuration": 90,
+      "actualDuration": 0,
+      "location": "Train station",
+      "characters": ["Anna"],
+      "function": "Introduce protagonist and environment.",
+      "sourceReference": "Script Slug / IMSDb / manual parse",
+      "createdAt": "2026-03-29T12:00:00Z",
+      "updatedAt": "2026-03-29T12:00:00Z",
+      "tagIds": [],
+      "beats": [
+        {
+          "id": "beat_arrival_1",
+          "sceneId": "scene_arrival_station",
+          "sortOrder": 0,
+          "text": "Train doors open and Anna steps onto the platform.",
+          "createdAt": "2026-03-29T12:00:00Z",
+          "updatedAt": "2026-03-29T12:00:00Z"
+        },
+        {
+          "id": "beat_arrival_2",
+          "sceneId": "scene_arrival_station",
+          "sortOrder": 1,
+          "text": "She searches the crowd, unsure whether anyone will meet her.",
+          "createdAt": "2026-03-29T12:00:00Z",
+          "updatedAt": "2026-03-29T12:00:00Z"
+        }
+      ]
+    },
+    {
+      "id": "scene_kitchen_interview",
+      "sortOrder": 1,
+      "title": "Kitchen interview",
+      "synopsis": "At the kitchen table, Anna explains why she came back.",
+      "notes": "Can be derived from transcript even if the source has no formal scene heading.",
+      "color": "teal",
+      "status": "selected",
+      "keyRating": 1,
+      "folder": "Act 1",
+      "category": "Interview",
+      "estimatedDuration": 150,
+      "actualDuration": 0,
+      "location": "Kitchen",
+      "characters": ["Anna", "Interviewer"],
+      "function": "Deliver backstory and emotional premise.",
+      "sourceReference": "Transcript / interview log",
+      "createdAt": "2026-03-29T12:00:00Z",
+      "updatedAt": "2026-03-29T12:00:00Z",
+      "tagIds": [],
+      "beats": [
+        {
+          "id": "beat_kitchen_1",
+          "sceneId": "scene_kitchen_interview",
+          "sortOrder": 0,
+          "text": "Anna avoids eye contact before answering the first question.",
+          "createdAt": "2026-03-29T12:00:00Z",
+          "updatedAt": "2026-03-29T12:00:00Z"
+        },
+        {
+          "id": "beat_kitchen_2",
+          "sceneId": "scene_kitchen_interview",
+          "sortOrder": 1,
+          "text": "She admits that returning home feels like failure and relief at the same time.",
+          "createdAt": "2026-03-29T12:00:00Z",
+          "updatedAt": "2026-03-29T12:00:00Z"
+        }
+      ]
+    }
+  ],
+  "tags": [],
+  "boards": [
+    {
+      "id": "board_feature_outline",
+      "name": "Feature Outline",
+      "description": "Example board showing how screenplay-derived scenes combine with chapter, VO, and text card blocks.",
+      "color": "slate",
+      "folder": "",
+      "sortOrder": 0,
+      "createdAt": "2026-03-29T12:00:00Z",
+      "updatedAt": "2026-03-29T12:00:00Z",
+      "items": [
+        {
+          "id": "item_chapter_1",
+          "boardId": "board_feature_outline",
+          "kind": "chapter",
+          "title": "Chapter 1: Return",
+          "body": "Set up the protagonist, place, and emotional premise.",
+          "color": "plum",
+          "position": 0,
+          "boardX": 0,
+          "boardY": 0,
+          "boardW": 260,
+          "boardH": 108,
+          "createdAt": "2026-03-29T12:00:00Z",
+          "updatedAt": "2026-03-29T12:00:00Z"
+        },
+        {
+          "id": "item_scene_arrival",
+          "boardId": "board_feature_outline",
+          "kind": "scene",
+          "sceneId": "scene_arrival_station",
+          "position": 1,
+          "boardX": 320,
+          "boardY": 0,
+          "boardW": 300,
+          "boardH": 132,
+          "createdAt": "2026-03-29T12:00:00Z",
+          "updatedAt": "2026-03-29T12:00:00Z"
+        },
+        {
+          "id": "item_vo_1",
+          "boardId": "board_feature_outline",
+          "kind": "voiceover",
+          "title": "VO candidate",
+          "body": "I thought coming back would make things clearer.",
+          "color": "blue",
+          "position": 2,
+          "boardX": 640,
+          "boardY": 0,
+          "boardW": 260,
+          "boardH": 108,
+          "createdAt": "2026-03-29T12:00:00Z",
+          "updatedAt": "2026-03-29T12:00:00Z"
+        },
+        {
+          "id": "item_scene_kitchen",
+          "boardId": "board_feature_outline",
+          "kind": "scene",
+          "sceneId": "scene_kitchen_interview",
+          "position": 3,
+          "boardX": 960,
+          "boardY": 0,
+          "boardW": 300,
+          "boardH": 132,
+          "createdAt": "2026-03-29T12:00:00Z",
+          "updatedAt": "2026-03-29T12:00:00Z"
+        },
+        {
+          "id": "item_text_1",
+          "boardId": "board_feature_outline",
+          "kind": "text-card",
+          "title": "Text card",
+          "body": "Oslo, 2014",
+          "color": "amber",
+          "position": 4,
+          "boardX": 1280,
+          "boardY": 0,
+          "boardW": 260,
+          "boardH": 108,
+          "createdAt": "2026-03-29T12:00:00Z",
+          "updatedAt": "2026-03-29T12:00:00Z"
+        }
+      ]
+    }
+  ],
+  "notebook": {
+    "content": "",
+    "updatedAt": null
+  }
+}

@@ -1,0 +1,6 @@
+item_id,board_id,kind,position,scene_id,title,body,color,board_x,board_y,board_w,board_h
+item_chapter_1,board_feature_outline,chapter,0,,Chapter 1: Return,"Set up the protagonist, place, and emotional premise.",plum,0,0,260,108
+item_scene_arrival,board_feature_outline,scene,1,scene_arrival_station,,,charcoal,320,0,300,132
+item_vo_1,board_feature_outline,voiceover,2,,VO candidate,"I thought coming back would make things clearer.",blue,640,0,260,108
+item_scene_kitchen,board_feature_outline,scene,3,scene_kitchen_interview,,,charcoal,960,0,300,132
+item_text_1,board_feature_outline,text-card,4,,Text card,"Oslo, 2014",amber,1280,0,260,108
