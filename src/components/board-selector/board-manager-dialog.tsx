@@ -548,18 +548,16 @@ export function BoardManagerDialog({
                         onClick={(event) => {
                           if (editingBoardId === board.id) return
                           event.stopPropagation()
-                          
-                          // If it's a plain click (no modifiers), select board and close dialog
-                          if (!event.shiftKey && !event.metaKey && !event.ctrlKey) {
-                            onSelectBoard(board.id)
-                            setSelectedBoardIds([])
-                            setSelectedFolderPaths([])
-                            onClose()
-                            return
-                          }
-                          
-                          // Otherwise, handle multi-selection
                           handleBoardSelection(event, board.id, group.folderPath)
+                        }}
+                        onDoubleClick={(event) => {
+                          if (editingBoardId === board.id) return
+                          event.preventDefault()
+                          event.stopPropagation()
+                          onSelectBoard(board.id)
+                          setSelectedBoardIds([])
+                          setSelectedFolderPaths([])
+                          onClose()
                         }}
                         onContextMenu={(event) => {
                           event.preventDefault()
@@ -631,15 +629,7 @@ export function BoardManagerDialog({
                               />
                             </InlineEditScope>
                           ) : (
-                            <div
-                              className="w-full truncate text-left text-sm font-medium text-foreground"
-                              onDoubleClick={(event) => {
-                                event.preventDefault()
-                                event.stopPropagation()
-                                setEditingBoardId(board.id)
-                                setEditingBoardDraft(board.name)
-                              }}
-                            >
+                            <div className="w-full truncate text-left text-sm font-medium text-foreground">
                               {board.name}
                             </div>
                           )}
