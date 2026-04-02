@@ -40,7 +40,7 @@ export type WorkspaceMode =
   | 'board-manager'
   | 'transcribe'
 
-type ArchiveFolderUpdate = { name?: string; color?: ArchiveFolder['color'] }
+type ArchiveFolderUpdate = { name?: string; color?: ArchiveFolder['color']; parentId?: string | null }
 type SceneFolderUpdate = { name?: string; color?: SceneFolder['color']; parentPath?: string | null }
 type BoardFolderUpdate = { name?: string; color?: BoardFolder['color']; parentPath?: string | null }
 
@@ -76,7 +76,7 @@ export type SharedWorkspaceProps = {
   onUpdateNotebookDraft(notebook: NotebookDocument): void
   onPersistNotebook(notebook: NotebookDocument): Promise<void> | void
   onSetSelectedArchiveFolder(folderId: string | null): void
-  onCreateArchiveFolder(name: string, parentId?: string | null): Promise<void> | void
+  onCreateArchiveFolder(name: string, parentId?: string | null, color?: ArchiveFolder['color']): Promise<void> | void
   onUpdateArchiveFolder(folderId: string, input: ArchiveFolderUpdate): Promise<void> | void
   onDeleteArchiveFolder(folderId: string): Promise<void> | void
   onAddArchiveFiles(filePaths?: string[] | null, folderId?: string | null): Promise<void> | void
@@ -138,6 +138,7 @@ export type DetachedWorkspacePanelProps = SharedWorkspaceProps & {
   outlineImmersive: boolean
   onToggleOutlineImmersive(): Promise<void> | void
   onChangeBoardViewMode(mode: BoardViewMode): void
+  detachedViewControl?: ReactNode
 }
 
 export type MainWorkspacePanelProps = SharedWorkspaceProps & {
@@ -218,6 +219,7 @@ export type OutlineWorkspacePanelProps = Pick<
   defaultBankCollapsed?: boolean
   onToggleOutlineImmersive?(): Promise<void> | void
   onChangeBoardViewMode(mode: BoardViewMode): void
+  detachedViewControl?: ReactNode
 }
 
 export type SceneBankWorkspacePanelProps = Pick<
@@ -247,7 +249,9 @@ export type SceneBankWorkspacePanelProps = Pick<
   | 'onDeleteSelectedScenes'
   | 'onAddSceneToCurrentBoard'
   | 'onSendScenesToOpenOutline'
->
+> & {
+  detachedViewControl?: ReactNode
+}
 
 export type NotebookWorkspacePanelProps = Pick<
   SharedWorkspaceProps,

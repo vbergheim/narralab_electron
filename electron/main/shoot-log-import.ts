@@ -104,8 +104,6 @@ type ParsedShootLog = {
   beats: ParsedBeatRow[]
   skippedRowCount: number
   errors: ShootLogImportError[]
-  /** Prepended to the first imported scene's notes (OPPTAKSLOGG metadata / credits). */
-  notesPreamble?: string
 }
 
 export async function importShootLogWorkbook(db: ProjectDatabase, filePath: string): Promise<ShootLogImportResult> {
@@ -173,7 +171,7 @@ export function buildShootLogTemplateWorkbook() {
     ['Scenes', 'One row per scene captured during the shoot day. Required fields: scene_ref, shoot_date, title, synopsis.'],
     ['Beats', 'Optional beat rows for moments inside a scene. Required fields: scene_ref, beat_text.'],
     ['scene_ref', 'Internal key used to connect Scenes and Beats during import. Keep it unique inside the file.'],
-    ['shoot_date', 'Use YYYY-MM-DD. This becomes the scene folder in the app.'],
+    ['shoot_date', 'Use YYYY-MM-DD. Stored as the scene shoot date and also used to suggest folder grouping in the app.'],
     ['shoot_block', 'Optional subfolder, for example Morning, Interview block, Pickup.'],
     ['editorial_status', 'Allowed values: candidate, selected, maybe, omitted, locked.'],
     ['capture_status', 'Allowed values: complete, partial, pickup.'],
@@ -488,7 +486,6 @@ function parseOpptaksloggShootLogWorkbook(
     beats: beatResult.beats,
     skippedRowCount: beatResult.skippedRowCount,
     errors,
-    notesPreamble: meta.preamble || undefined,
   }
 }
 
@@ -605,7 +602,7 @@ function scanOpptaksloggLabelPairs(sheet: Worksheet) {
 function parseOpptaksloggMetadata(
   scenesSheet: Worksheet,
   errors: ShootLogImportError[],
-): { shootDate: string; shootBlock: string; preamble: string } | null {
+): { shootDate: string; shootBlock: string } | null {
   const fields = scanOpptaksloggLabelPairs(scenesSheet)
   const dateRaw = fields.get('dato') ?? ''
   const shootDate = parseFlexibleDate(dateRaw)
@@ -618,34 +615,9 @@ function parseOpptaksloggMetadata(
     return null
   }
 
-  const sted = fields.get('sted') ?? ''
-
-  const lines: string[] = []
-  const creditOrder = [
-    ['regi', 'Regi'],
-    ['fotograf', 'Foto'],
-    ['produksjon', 'Produksjon'],
-    ['cast', 'Cast'],
-  ] as const
-  for (const [key, label] of creditOrder) {
-    const value = fields.get(key)
-    if (value) {
-      lines.push(`${label}: ${value}`)
-    }
-  }
-  if (sted.trim()) {
-    lines.push(`Opptakssted: ${sted.trim()}`)
-  }
-  const beskrivelse = fields.get('__beskrivelse__')
-  if (beskrivelse) {
-    lines.push(`Opptaksdag: ${beskrivelse}`)
-  }
-
   return {
     shootDate,
-    // OPPTAKSLOGG: mappe i appen = kun dato. STED ligger i preamble (notater på første scene).
     shootBlock: '',
-    preamble: lines.join('\n'),
   }
 }
 
@@ -855,11 +827,11 @@ function appendParsedShootLog(db: ProjectDatabase, parsed: ParsedShootLog) {
 
   const insertScene = db.prepare(`
     INSERT INTO scenes (
-      id, sort_order, title, synopsis, notes, color, status, is_key_scene, folder, category,
+      id, sort_order, title, synopsis, shoot_date, shoot_block, notes, camera_notes, audio_notes, color, status, is_key_scene, folder, category,
       estimated_duration, actual_duration, location, characters,
       function, source_reference, quote_moment, quality, source_paths, created_at, updated_at
     ) VALUES (
-      @id, @sortOrder, @title, @synopsis, @notes, @color, @status, @keyRating, @folder, @category,
+      @id, @sortOrder, @title, @synopsis, @shootDate, @shootBlock, @notes, @cameraNotes, @audioNotes, @color, @status, @keyRating, @folder, @category,
       @estimatedDuration, @actualDuration, @location, @characters,
       @function, @sourceReference, @quoteMoment, @quality, @sourcePaths, @createdAt, @updatedAt
     )
@@ -887,18 +859,17 @@ function appendParsedShootLog(db: ProjectDatabase, parsed: ParsedShootLog) {
       const timestamp = nowIso()
 
       sceneIdByRef.set(scene.sceneRef, sceneId)
-      const baseNotes = buildSceneNotes(scene)
-      const notes =
-        index === 0 && parsed.notesPreamble?.trim()
-          ? `${parsed.notesPreamble.trim()}\n\n${baseNotes}`
-          : baseNotes
 
       insertScene.run({
         id: sceneId,
         sortOrder: existingSortOrder + index + 1,
         title: scene.title,
         synopsis: scene.synopsis,
-        notes,
+        shootDate: scene.shootDate,
+        shootBlock: scene.shootBlock,
+        notes: scene.notes,
+        cameraNotes: scene.cameraNotes,
+        audioNotes: scene.audioNotes,
         color: scene.color,
         status: scene.editorialStatus,
         keyRating: scene.keyRating,
@@ -1128,18 +1099,6 @@ function normalizeStringList(values: string[]) {
 
 function buildSceneFolder(shootDate: string, shootBlock: string) {
   return shootBlock ? normalizeFolderPath(`${shootDate}/${shootBlock}`) : normalizeFolderPath(shootDate)
-}
-
-function buildSceneNotes(scene: ParsedSceneRow) {
-  const metadataLines = [
-    `Shoot date: ${scene.shootDate}`,
-    scene.shootBlock ? `Shoot block: ${scene.shootBlock}` : '',
-    scene.captureStatus ? `Capture status: ${scene.captureStatus}` : '',
-    scene.cameraNotes ? `Camera notes: ${scene.cameraNotes}` : '',
-    scene.audioNotes ? `Audio notes: ${scene.audioNotes}` : '',
-  ].filter(Boolean)
-
-  return scene.notes ? `${metadataLines.join('\n')}\n\n${scene.notes}` : metadataLines.join('\n')
 }
 
 function compareNullableNumber(left: number | null, right: number | null) {

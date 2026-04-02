@@ -4,6 +4,14 @@ import type {
   TranscriptionTimestampInterval,
 } from '@/types/transcription'
 
+export type TranscribeWorkspaceView = 'transcribe' | 'library'
+export type TranscribeWorkspaceViewTrigger =
+  | 'initial'
+  | 'new-transcription'
+  | 'library-selection'
+  | 'external-selection'
+  | 'autosave-complete'
+
 export const presetTimestampIntervals: ReadonlyArray<TranscriptionTimestampInterval> = ['none', 'segment', 30, 60, 120, 300, 600, 1800]
 
 export const languageOptions: Array<{ value: TranscriptionLanguage; label: string }> = [
@@ -32,4 +40,18 @@ export function formatJobElapsed(seconds: number): string {
 
 export function isTranscriptionJobActive(status: TranscriptionStatus) {
   return status.phase === 'preparing' || status.phase === 'transcribing'
+}
+
+export function resolveTranscribeWorkspaceView(
+  trigger: TranscribeWorkspaceViewTrigger,
+): TranscribeWorkspaceView {
+  if (trigger === 'initial') {
+    return 'library'
+  }
+
+  if (trigger === 'new-transcription') {
+    return 'transcribe'
+  }
+
+  return 'library'
 }

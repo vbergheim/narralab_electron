@@ -33,6 +33,7 @@ import {
   parseWindowContextUpdate,
   parseWindowDragSession,
   parseWindowWorkspace,
+  requireSceneColor,
   requireString,
   requireStringArray,
   requireTranscriptionItemUpdateInput,
@@ -78,6 +79,9 @@ export function registerIpc(
     notifyChange('all')
     return result
   })
+  ipcMain.handle('project:revealPath', (_, filePath: string) =>
+    projectService.revealPath(requireString(filePath, 'Path')),
+  )
   ipcMain.handle('project:importShootLog', async (_, requestedPath?: string | null) => {
     const result = await projectService.importShootLog(requestedPath)
     if (result && result.errors.length === 0 && (result.addedSceneCount > 0 || result.addedBeatCount > 0)) {
@@ -101,10 +105,11 @@ export function registerIpc(
   })
 
   ipcMain.handle('archive:folders:list', () => projectService.listArchiveFolders())
-  ipcMain.handle('archive:folders:create', (_, name: string, parentId?: string | null) => {
+  ipcMain.handle('archive:folders:create', (_, name: string, parentId?: string | null, color?: SceneColor) => {
     const result = projectService.createArchiveFolder(
       requireString(name, 'Archive folder name'),
       nullableString(parentId, 'Archive parent folder id'),
+      color === undefined ? undefined : requireSceneColor(color, 'Archive folder color'),
     )
     notifyChange('archive')
     return result

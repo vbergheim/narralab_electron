@@ -1,3 +1,4 @@
+import type { DragEvent, MouseEvent } from 'react'
 import { useMemo, useRef, useState } from 'react'
 import {
   ChevronDown,
@@ -158,9 +159,12 @@ export function TranscriptionLibrarySidebar({
   const [folderFormOpen, setFolderFormOpen] = useState(false)
   const [folderDraft, setFolderDraft] = useState('')
   const [dragOverFolderPath, setDragOverFolderPath] = useState<string | null>(null)
-  const [draggedFolderPath, setDraggedFolderPath] = useState<string | null>(null)
+
+  const [draggedItemIds, setDraggedItemIds] = useState<string[]>([])
   const [selectedFolderPaths, setSelectedFolderPaths] = useState<string[]>([])
   const folderSelectionAnchorRef = useRef<number | null>(null)
+  const draggedFolderPathRef = useRef<string | null>(null)
+  const draggedItemIdsRef = useRef<string[]>([])
 
   const filteredItems = useMemo(() => {
     if (!search) return items
@@ -174,7 +178,6 @@ export function TranscriptionLibrarySidebar({
     () => selectedFolderPaths.filter((path) => folderPathOrder.includes(path)),
     [selectedFolderPaths, folderPathOrder],
   )
-
   const submitNewFolder = () => {
     const name = folderDraft.trim()
     if (!name) return
@@ -183,31 +186,32 @@ export function TranscriptionLibrarySidebar({
     setFolderFormOpen(false)
   }
 
-  const handleDropToFolder = (event: React.DragEvent, folderPath: string) => {
+  const handleDropToFolder = (event: DragEvent, folderPath: string) => {
     event.preventDefault()
     event.stopPropagation()
     setDragOverFolderPath(null)
-    if (draggedFolderPath) {
-      if (draggedFolderPath !== folderPath) {
-        onUpdateFolder(draggedFolderPath, { parentPath: folderPath || null })
+    const activeDraggedFolderPath = draggedFolderPathRef.current
+    if (activeDraggedFolderPath) {
+      if (activeDraggedFolderPath !== folderPath) {
+        onUpdateFolder(activeDraggedFolderPath, { parentPath: folderPath || null })
       }
-      setDraggedFolderPath(null)
+      draggedFolderPathRef.current = null
       return
     }
-    const ids = getDraggedTranscriptionItemIds(event.dataTransfer)
+    const ids =
+      draggedItemIdsRef.current.length > 0
+        ? draggedItemIdsRef.current
+        : getDraggedTranscriptionItemIds(event.dataTransfer)
     if (ids.length === 0) return
     onMoveItemsToFolder(ids, folderPath)
+    draggedItemIdsRef.current = []
+    setDraggedItemIds([])
     void window.narralab.windows.setDragSession(null)
   }
 
-  const allowDropWhileDragging = (event: React.DragEvent) => {
-    if (getDraggedTranscriptionItemIds(event.dataTransfer).length > 0 || draggedFolderPath) {
-      event.preventDefault()
-      event.stopPropagation()
-    }
-  }
 
-  const handleFolderSelection = (event: React.MouseEvent<HTMLElement>, folderPath: string) => {
+
+  const handleFolderSelection = (event: MouseEvent<HTMLElement>, folderPath: string) => {
     const { nextSelectedIds, nextAnchorIndex } = computeListSelection({
       id: folderPath,
       orderedIds: folderPathOrder,
@@ -310,7 +314,7 @@ export function TranscriptionLibrarySidebar({
   }, [menuState, items, onDeleteItem])
 
   return (
-    <Panel className="flex min-h-0 flex-col overflow-hidden bg-panel/50">
+    <Panel className="flex h-full min-h-0 flex-col overflow-hidden bg-panel/50">
       <div className="flex shrink-0 flex-col gap-3 border-b border-border/60 p-4">
         <div className="flex items-center justify-between">
           <h3 className="font-display text-[11px] font-bold uppercase tracking-widest text-muted">Library</h3>
@@ -384,14 +388,20 @@ export function TranscriptionLibrarySidebar({
           e.preventDefault()
           e.stopPropagation()
           setDragOverFolderPath(null)
-          if (draggedFolderPath) {
-            onUpdateFolder(draggedFolderPath, { parentPath: null })
-            setDraggedFolderPath(null)
+          const activeDraggedFolderPath = draggedFolderPathRef.current
+          if (activeDraggedFolderPath) {
+            onUpdateFolder(activeDraggedFolderPath, { parentPath: null })
+            draggedFolderPathRef.current = null
             return
           }
-          const ids = getDraggedTranscriptionItemIds(e.dataTransfer)
+          const ids =
+            draggedItemIdsRef.current.length > 0
+              ? draggedItemIdsRef.current
+              : getDraggedTranscriptionItemIds(e.dataTransfer)
           if (ids.length > 0) {
             onMoveItemsToFolder(ids, '')
+            draggedItemIdsRef.current = []
+            setDraggedItemIds([])
             void window.narralab.windows.setDragSession(null)
           }
         }}
@@ -413,21 +423,20 @@ export function TranscriptionLibrarySidebar({
                   if (nextTarget && event.currentTarget.contains(nextTarget as Node)) return
                   setDragOverFolderPath((current) => (current === group.folderPath ? null : current))
                 }}
-                onDragOver={(event) => {
-                  if (getDraggedTranscriptionItemIds(event.dataTransfer).length > 0 || draggedFolderPath) {
-                    event.preventDefault()
-                  }
-                }}
+                onDragOver={(event) => event.preventDefault()}
                 onDrop={(event) => handleDropToFolder(event, group.folderPath)}
               >
-                <div
-                  draggable
-                  className="flex min-h-8 items-center justify-between gap-2 px-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted"
-                  style={{ paddingLeft: `${group.depth * 14 + 4}px` }}
-                  onDragStart={() => setDraggedFolderPath(group.folderPath)}
-                  onDragEnd={() => setDraggedFolderPath(null)}
-                  onDragOver={allowDropWhileDragging}
-                  onClick={(event) => {
+                <TranscriptionFolderRow
+                  folderPath={group.folderPath}
+                  label={group.label}
+                  color={group.color}
+                  depth={group.depth}
+                  count={group.items.length}
+                  collapsed={collapsedFolders.includes(group.folderPath)}
+                  selected={visibleSelectedFolderPaths.includes(group.folderPath)}
+                  dropActive={dragOverFolderPath === group.folderPath}
+                  draggable={draggedItemIds.length === 0}
+                  onRowClick={(event) => {
                     event.stopPropagation()
                     if (event.metaKey || event.ctrlKey) {
                       handleFolderSelection(event, group.folderPath)
@@ -439,6 +448,19 @@ export function TranscriptionLibrarySidebar({
                       )
                     }
                   }}
+                  onToggleCollapse={(event) => {
+                    event.stopPropagation()
+                    setCollapsedFolders((current) =>
+                      current.includes(group.folderPath)
+                        ? current.filter((entry) => entry !== group.folderPath)
+                        : [...current, group.folderPath],
+                    )
+                  }}
+                  onRequestRename={() => {
+                    setEditingFolderName(group.folderPath)
+                    setEditingFolderDraft(group.label)
+                    setEditingFolderColor(group.color)
+                  }}
                   onContextMenu={(event) => {
                     event.preventDefault()
                     event.stopPropagation()
@@ -447,43 +469,13 @@ export function TranscriptionLibrarySidebar({
                     folderSelectionAnchorRef.current = folderPathOrder.indexOf(group.folderPath)
                     setFolderMenuState({ folderPath: group.folderPath, color: group.color, x: event.clientX, y: event.clientY })
                   }}
-                >
-                  <div className="flex min-w-0 flex-1 items-center gap-1.5">
-                    <button
-                      type="button"
-                      className="flex shrink-0 items-center rounded-md px-1 py-0.5 transition hover:bg-panelMuted hover:text-foreground"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        setCollapsedFolders((current) =>
-                          current.includes(group.folderPath)
-                            ? current.filter((entry) => entry !== group.folderPath)
-                            : [...current, group.folderPath],
-                        )
-                      }}
-                    >
-                      {collapsedFolders.includes(group.folderPath) ? (
-                        <ChevronRight className="h-3.5 w-3.5" />
-                      ) : (
-                        <ChevronDown className="h-3.5 w-3.5" />
-                      )}
-                    </button>
-                    <Folder className="h-3.5 w-3.5 shrink-0" style={{ color: colorHex(group.color) }} />
-                    <button
-                      type="button"
-                      className="min-w-0 rounded-md px-1 py-0.5 text-left transition hover:bg-panelMuted hover:text-foreground"
-                      onDoubleClick={(event) => {
-                        event.preventDefault()
-                        event.stopPropagation()
-                        setEditingFolderName(group.folderPath)
-                        setEditingFolderDraft(group.label)
-                        setEditingFolderColor(group.color)
-                      }}
-                    >
-                      <span className="truncate">{formatFolderLabel(group.label)}</span>
-                    </button>
-                  </div>
-                  <span className="min-w-4 text-right text-[10px] text-muted/80">{group.items.length}</span>
-                </div>
+                  onDragStart={() => {
+                    draggedFolderPathRef.current = group.folderPath
+                  }}
+                  onDragEnd={() => {
+                    draggedFolderPathRef.current = null
+                  }}
+                />
 
                 {editingFolderName === group.folderPath ? (
                   <InlineEditScope
@@ -535,7 +527,6 @@ export function TranscriptionLibrarySidebar({
 
                 <div
                   className={cn('mt-1.5 space-y-1 pl-5', collapsedFolders.includes(group.folderPath) && 'hidden')}
-                  onDragOver={allowDropWhileDragging}
                 >
                   {group.items.map((item) => {
                     const isActive = selectedItemId === item.id
@@ -549,15 +540,20 @@ export function TranscriptionLibrarySidebar({
                             ev.preventDefault()
                             return
                           }
-                          writeTranscriptionDragData(ev.dataTransfer, [item.id])
-                          void window.narralab.windows.setDragSession({ kind: 'transcription', itemIds: [item.id] })
+                          const nextDraggedIds = [item.id]
+                          draggedItemIdsRef.current = nextDraggedIds
+                          setDraggedItemIds(nextDraggedIds)
+                          writeTranscriptionDragData(ev.dataTransfer, nextDraggedIds)
+                          void window.narralab.windows.setDragSession({ kind: 'transcription', itemIds: nextDraggedIds })
                         }}
                         onDragEnd={() => {
+                          draggedItemIdsRef.current = []
+                          setDraggedItemIds([])
                           window.setTimeout(() => {
                             void window.narralab.windows.setDragSession(null)
                           }, 2000)
                         }}
-                        onDragOver={allowDropWhileDragging}
+                        onDragEnter={() => setDragOverFolderPath(group.folderPath)}
                         className={cn(
                           'group flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition',
                           isActive ? 'bg-accent/10 text-accent' : 'hover:bg-panelMuted/30 text-foreground/70',
@@ -636,15 +632,20 @@ export function TranscriptionLibrarySidebar({
                       ev.preventDefault()
                       return
                     }
-                    writeTranscriptionDragData(ev.dataTransfer, [item.id])
-                    void window.narralab.windows.setDragSession({ kind: 'transcription', itemIds: [item.id] })
+                    const nextDraggedIds = [item.id]
+                    draggedItemIdsRef.current = nextDraggedIds
+                    setDraggedItemIds(nextDraggedIds)
+                    writeTranscriptionDragData(ev.dataTransfer, nextDraggedIds)
+                    void window.narralab.windows.setDragSession({ kind: 'transcription', itemIds: nextDraggedIds })
                   }}
                   onDragEnd={() => {
+                    draggedItemIdsRef.current = []
+                    setDraggedItemIds([])
                     window.setTimeout(() => {
                       void window.narralab.windows.setDragSession(null)
                     }, 2000)
                   }}
-                  onDragOver={allowDropWhileDragging}
+                  onDragEnter={() => setDragOverFolderPath(ROOT_TX_FOLDER_KEY)}
                   className={cn(
                     'group flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition',
                     isActive ? 'bg-accent/10 text-accent' : 'hover:bg-panelMuted/30 text-foreground/70',
@@ -711,5 +712,80 @@ export function TranscriptionLibrarySidebar({
         />
       ) : null}
     </Panel>
+  )
+}
+
+function TranscriptionFolderRow({
+  folderPath,
+  label,
+  color,
+  depth,
+  count,
+  collapsed,
+  selected,
+  dropActive,
+  draggable,
+  onRowClick,
+  onToggleCollapse,
+  onRequestRename,
+  onContextMenu,
+  onDragStart,
+  onDragEnd,
+}: {
+  folderPath: string
+  label: string
+  color: TranscriptionFolder['color']
+  depth: number
+  count: number
+  collapsed: boolean
+  selected: boolean
+  dropActive: boolean
+  draggable: boolean
+  onRowClick(event: MouseEvent<HTMLDivElement>): void
+  onToggleCollapse(event: MouseEvent<HTMLButtonElement>): void
+  onRequestRename(): void
+  onContextMenu(event: MouseEvent<HTMLDivElement>): void
+  onDragStart(): void
+  onDragEnd(): void
+}) {
+  return (
+    <div
+      draggable={draggable}
+      className={cn(
+        'flex min-h-8 items-center gap-2 rounded-lg px-1 py-0.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted transition',
+        dropActive
+          ? 'bg-accent/12 ring-1 ring-accent/45'
+          : selected
+            ? 'bg-accent/10 text-foreground ring-1 ring-accent/35'
+            : 'hover:bg-panelMuted/50 hover:text-foreground',
+      )}
+      style={{ paddingLeft: `${depth * 14 + 4}px` }}
+      onClick={onRowClick}
+      onContextMenu={onContextMenu}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+    >
+      <button
+        type="button"
+        className="flex shrink-0 items-center rounded-md px-1 py-0.5 transition hover:bg-panelMuted hover:text-foreground"
+        onClick={onToggleCollapse}
+      >
+        {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+      </button>
+      <Folder className="h-3.5 w-3.5 shrink-0" style={{ color: colorHex(color) }} />
+      <button
+        type="button"
+        className="min-w-0 flex-1 rounded-md px-1 py-0.5 text-left transition hover:bg-panelMuted hover:text-foreground"
+        onDoubleClick={(event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          onRequestRename()
+        }}
+      >
+        <span className="block truncate">{formatFolderLabel(label)}</span>
+      </button>
+      <span className="min-w-4 text-right text-[10px] text-muted/80">{count}</span>
+      <span className="sr-only">{folderPath}</span>
+    </div>
   )
 }

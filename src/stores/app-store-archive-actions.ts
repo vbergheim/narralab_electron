@@ -17,9 +17,9 @@ export function createArchiveActions(
   | 'setSelectedArchiveFolder'
 > {
   return {
-    async createArchiveFolder(name, parentId = null) {
+    async createArchiveFolder(name, parentId = null, color) {
       await runProjectAction(set, async () => {
-        const archiveFolders = await window.narralab.archive.folders.create(name, parentId)
+        const archiveFolders = await window.narralab.archive.folders.create(name, parentId, color)
         set({ archiveFolders })
       })
     },
@@ -64,9 +64,10 @@ export function createArchiveActions(
 
     async moveArchiveItem(itemId, folderId) {
       await runProjectAction(set, async () => {
-        await window.narralab.archive.items.update({ id: itemId, folderId })
-        const archiveItems = await window.narralab.archive.items.list()
-        set({ archiveItems })
+        const updated = await window.narralab.archive.items.update({ id: itemId, folderId })
+        set((state) => ({
+          archiveItems: state.archiveItems.map((item) => (item.id === updated.id ? updated : item)),
+        }))
       })
     },
 

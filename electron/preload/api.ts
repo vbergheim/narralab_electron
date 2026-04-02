@@ -35,6 +35,7 @@ export function createNarraLabApi(
       getMeta: () => ipcRenderer.invoke('project:getMeta'),
       getSettings: () => ipcRenderer.invoke('project:getSettings'),
       updateSettings: (input) => ipcRenderer.invoke('project:updateSettings', input),
+      revealPath: (filePath) => ipcRenderer.invoke('project:revealPath', filePath),
     },
     notebook: {
       get: () => ipcRenderer.invoke('notebook:get'),
@@ -43,7 +44,7 @@ export function createNarraLabApi(
     archive: {
       folders: {
         list: () => ipcRenderer.invoke('archive:folders:list'),
-        create: (name, parentId) => ipcRenderer.invoke('archive:folders:create', name, parentId),
+        create: (name, parentId, color) => ipcRenderer.invoke('archive:folders:create', name, parentId, color),
         rename: (folderId, name) => ipcRenderer.invoke('archive:folders:rename', folderId, name),
         update: (input) => ipcRenderer.invoke('archive:folders:update', input),
         delete: (folderId) => ipcRenderer.invoke('archive:folders:delete', folderId),

@@ -139,7 +139,11 @@ export function parseSceneUpdateInput(value: unknown): SceneUpdateInput {
   if (input.sortOrder !== undefined) next.sortOrder = requireFiniteNumber(input.sortOrder, 'Scene sort order')
   if (input.title !== undefined) next.title = optionalString(input.title, 'Scene title') ?? ''
   if (input.synopsis !== undefined) next.synopsis = optionalString(input.synopsis, 'Scene synopsis') ?? ''
+  if (input.shootDate !== undefined) next.shootDate = optionalString(input.shootDate, 'Scene shoot date') ?? ''
+  if (input.shootBlock !== undefined) next.shootBlock = optionalString(input.shootBlock, 'Scene shoot block') ?? ''
   if (input.notes !== undefined) next.notes = optionalString(input.notes, 'Scene notes') ?? ''
+  if (input.cameraNotes !== undefined) next.cameraNotes = optionalString(input.cameraNotes, 'Scene camera notes') ?? ''
+  if (input.audioNotes !== undefined) next.audioNotes = optionalString(input.audioNotes, 'Scene audio notes') ?? ''
   if (input.color !== undefined) next.color = requireSceneColor(input.color, 'Scene color')
   if (input.status !== undefined) next.status = requireSceneStatus(input.status, 'Scene status')
   if (input.keyRating !== undefined) next.keyRating = requireSceneKeyRating(input.keyRating)
@@ -546,7 +550,7 @@ function requireBoolean(value: unknown, label: string) {
   return value
 }
 
-function requireSceneColor(value: unknown, label: string) {
+export function requireSceneColor(value: unknown, label: string) {
   return requireEnum(value, sceneColors, label)
 }
 

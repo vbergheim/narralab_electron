@@ -247,6 +247,7 @@ export interface NarraLabApi {
     getMeta(): Promise<ProjectMeta | null>
     getSettings(): Promise<ProjectSettings>
     updateSettings(input: ProjectSettingsUpdateInput): Promise<ProjectSettings>
+    revealPath(filePath: string): Promise<void>
   }
   notebook: {
     get(): Promise<NotebookDocument>
@@ -255,7 +256,7 @@ export interface NarraLabApi {
   archive: {
     folders: {
       list(): Promise<ArchiveFolder[]>
-      create(name: string, parentId?: string | null): Promise<ArchiveFolder[]>
+      create(name: string, parentId?: string | null, color?: ArchiveFolder['color']): Promise<ArchiveFolder[]>
       rename(folderId: string, name: string): Promise<ArchiveFolder[]>
       update(input: ArchiveFolderUpdateInput): Promise<ArchiveFolder[]>
       delete(folderId: string): Promise<ArchiveFolder[]>

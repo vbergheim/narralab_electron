@@ -22,6 +22,16 @@ export function detachedLabel(workspace: WindowWorkspace) {
   return 'Outline Window'
 }
 
+export function detachedTitle(workspace: WindowWorkspace) {
+  if (workspace === 'bank') return 'Scene Bank'
+  if (workspace === 'board-manager') return 'Board Manager'
+  if (workspace === 'inspector') return 'Inspector'
+  if (workspace === 'notebook') return 'Notebook'
+  if (workspace === 'archive') return 'Archive'
+  if (workspace === 'transcribe') return 'Transcribe'
+  return 'Outline'
+}
+
 export const densityOptions: Array<{
   value: SceneDensity
   label: string

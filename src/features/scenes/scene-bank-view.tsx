@@ -1,4 +1,4 @@
-import type { DragEvent, MouseEvent } from 'react'
+import type { DragEvent, MouseEvent, ReactNode } from 'react'
 import { useMemo, useRef, useState } from 'react'
 import {
   Check,
@@ -64,6 +64,7 @@ type Props = {
   onAdd(sceneId: string, afterItemId?: string | null): void
   onSendToOpenOutline?(sceneIds: string[]): void
   embedded?: boolean
+  headerAction?: ReactNode
 }
 
 export function SceneBankView({
@@ -92,6 +93,7 @@ export function SceneBankView({
   onAdd,
   onSendToOpenOutline,
   embedded = false,
+  headerAction,
 }: Props) {
   const boardSceneIds = useMemo(
     () => new Set(board?.items.filter(isSceneBoardItem).map((item) => item.sceneId) ?? []),
@@ -300,6 +302,7 @@ export function SceneBankView({
             <span className="hidden lg:inline">Filters</span>
             {filtersExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
           </Button>
+          {headerAction}
         </div>
       ) : null}
       {!embedded && filtersExpanded ? (

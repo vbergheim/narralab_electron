@@ -32,4 +32,34 @@ describe('ArchiveRepository', () => {
       harness.cleanup()
     }
   })
+
+  it('creates folders with the requested color', () => {
+    const harness = createTestDatabase()
+
+    try {
+      const folders = harness.archive.createFolder('Rushes', null, 'teal')
+      expect(folders.find((folder) => folder.name === 'Rushes')?.color).toBe('teal')
+    } finally {
+      harness.cleanup()
+    }
+  })
+
+  it('moves archive items into folders via partial updates', () => {
+    const harness = createTestDatabase()
+
+    try {
+      const [folder] = harness.archive.createFolder('Selects')
+      const filePath = path.join(harness.tempDir, 'clip.txt')
+      fs.writeFileSync(filePath, 'clip', 'utf8')
+      const [item] = harness.archive.addFiles([filePath], null)
+
+      const updated = harness.archive.updateItem({ id: item.id, folderId: folder.id })
+
+      expect(updated.folderId).toBe(folder.id)
+      expect(updated.name).toBe(item.name)
+      expect(updated.filePath).toBe(item.filePath)
+    } finally {
+      harness.cleanup()
+    }
+  })
 })

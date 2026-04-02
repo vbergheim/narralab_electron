@@ -70,7 +70,7 @@ export class ArchiveRepository {
     }))
   }
 
-  createFolder(name: string, parentId?: string | null): ArchiveFolder[] {
+  createFolder(name: string, parentId?: string | null, color?: ArchiveFolder['color']): ArchiveFolder[] {
     const nextName = name.trim()
     if (!nextName) {
       throw new Error('Folder name cannot be empty')
@@ -95,7 +95,7 @@ export class ArchiveRepository {
         INSERT INTO archive_folders (id, name, parent_id, color, sort_order, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?)
       `)
-      .run(createId('archive_folder'), nextName, parentId ?? null, 'slate', sortOrder, timestamp, timestamp)
+      .run(createId('archive_folder'), nextName, parentId ?? null, color ?? 'slate', sortOrder, timestamp, timestamp)
 
     return this.listFolders()
   }

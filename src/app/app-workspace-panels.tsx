@@ -100,6 +100,7 @@ export function DetachedWorkspacePanel({
   onReorderSceneBeats,
   onSendScenesToOpenOutline,
   onOpenTranscribeSettings,
+  detachedViewControl,
 }: DetachedWorkspacePanelProps) {
   if (!projectMeta) {
     return <WelcomePanel onCreate={onCreateProject} onOpen={onOpenProject} />
@@ -125,6 +126,7 @@ export function DetachedWorkspacePanel({
         selectedBoardItemId={selectedBoardItemId}
         immersive={outlineImmersive}
         defaultBankCollapsed
+        detachedViewControl={detachedViewControl}
         onToggleOutlineImmersive={onToggleOutlineImmersive}
         onChangeBoardViewMode={onChangeBoardViewMode}
         onSelectBoardForWindow={onSelectBoardForWindow}
@@ -200,6 +202,7 @@ export function DetachedWorkspacePanel({
         onDeleteSelectedScenes={onDeleteSelectedScenes}
         onAddSceneToCurrentBoard={onAddSceneToCurrentBoard}
         onSendScenesToOpenOutline={onSendScenesToOpenOutline}
+        detachedViewControl={detachedViewControl}
       />
     )
   }

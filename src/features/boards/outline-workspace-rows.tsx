@@ -102,6 +102,7 @@ export function BoardSortableItem({
   onInlineUpdateBlock,
   onRemove,
   onContextMenu,
+  afterContent,
 }: {
   item: BoardItem
   index: number
@@ -122,6 +123,7 @@ export function BoardSortableItem({
   onInlineUpdateBlock(itemId: string, input: { title: string; body: string }): void
   onRemove(): void
   onContextMenu(event: ReactMouseEvent<HTMLDivElement>): void
+  afterContent?: ReactNode
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: `item:${item.id}`,
@@ -133,94 +135,99 @@ export function BoardSortableItem({
       ref={setNodeRef}
       data-board-item-id={item.id}
       style={{ transform: CSS.Translate.toString(transform), transition }}
-      onContextMenu={onContextMenu}
-      className={cn(
-        isSceneBoardItem(item)
-          ? 'p-0'
-          : density === 'detailed'
-            ? 'rounded-2xl p-2'
-            : density === 'compact'
-              ? 'rounded-xl p-1.5'
-              : 'rounded-lg p-1',
-        muted && 'opacity-40',
-        isDragging && 'opacity-40',
-      )}
-      {...(density !== 'detailed' ? attributes : {})}
-      {...(density !== 'detailed' ? listeners : {})}
+      className="space-y-3"
     >
-      {isSceneBoardItem(item) ? (
-        <OutlineSceneRow
-          index={index}
-          scene={scene}
-          tags={tags}
-          density={density}
-          selected={selected}
-          onClick={onClick}
-          onOpenInspector={onDoubleClick}
-          beatsExpanded={beatsExpanded}
-          beatCount={scene?.beats.length ?? 0}
-          onToggleBeats={onToggleBeats}
-          beatsSection={
-            scene && beatsExpanded ? (
-              <OutlineBeatsSection
-                scene={scene}
-                onCreateBeat={onCreateBeat}
-                onUpdateBeat={onUpdateBeat}
-                onDeleteBeat={onDeleteBeat}
-              />
-            ) : null
-          }
-          onSave={(input) => scene && onInlineUpdateScene(scene.id, input)}
-          actions={
-            <>
-              {density === 'detailed' ? (
-                <InlineActionButton label="Reorder outline row" onClick={() => undefined}>
-                  <GripVertical {...attributes} {...listeners} className="h-4 w-4" />
-                </InlineActionButton>
-              ) : null}
-              {scene ? (
-                <KeyRatingButton value={scene.keyRating} onChange={onToggleKeyScene} />
-              ) : null}
-              {density === 'detailed' ? (
-                <Button variant="ghost" size="sm" onClick={onRemove}>
-                  Remove
-                </Button>
-              ) : (
-                <InlineActionButton label="Remove from outline" onClick={onRemove}>
-                  <X className="h-4 w-4" />
-                </InlineActionButton>
-              )}
-            </>
-          }
-        />
-      ) : (
-        <OutlineTextRow
-          item={item}
-          density={density}
-          selected={selected}
-          onClick={onClick}
-          onOpenInspector={onDoubleClick}
-          onSave={(input) => onInlineUpdateBlock(item.id, input)}
-          actions={
-            <>
-              {density === 'detailed' ? (
-                <InlineActionButton label="Reorder outline row" onClick={() => undefined}>
-                  <GripVertical {...attributes} {...listeners} className="h-4 w-4" />
-                </InlineActionButton>
-              ) : null}
-              {density === 'detailed' ? (
-                <Button variant="ghost" size="sm" onClick={onRemove}>
-                  Remove
-                </Button>
-              ) : (
-                <InlineActionButton label="Remove block" onClick={onRemove}>
-                  <X className="h-4 w-4" />
-                </InlineActionButton>
-              )}
-            </>
-          }
-        />
-      )}
+      <div
+        onContextMenu={onContextMenu}
+        className={cn(
+          isSceneBoardItem(item)
+            ? 'p-0'
+            : density === 'detailed'
+              ? 'rounded-2xl p-2'
+              : density === 'compact'
+                ? 'rounded-xl p-1.5'
+                : 'rounded-lg p-1',
+          muted && 'opacity-40',
+          isDragging && 'opacity-40',
+        )}
+        {...(density !== 'detailed' ? attributes : {})}
+        {...(density !== 'detailed' ? listeners : {})}
+      >
+        {isSceneBoardItem(item) ? (
+          <OutlineSceneRow
+            index={index}
+            scene={scene}
+            tags={tags}
+            density={density}
+            selected={selected}
+            onClick={onClick}
+            onOpenInspector={onDoubleClick}
+            beatsExpanded={beatsExpanded}
+            beatCount={scene?.beats.length ?? 0}
+            onToggleBeats={onToggleBeats}
+            beatsSection={
+              scene && beatsExpanded ? (
+                <OutlineBeatsSection
+                  scene={scene}
+                  onCreateBeat={onCreateBeat}
+                  onUpdateBeat={onUpdateBeat}
+                  onDeleteBeat={onDeleteBeat}
+                />
+              ) : null
+            }
+            onSave={(input) => scene && onInlineUpdateScene(scene.id, input)}
+            actions={
+              <>
+                {density === 'detailed' ? (
+                  <InlineActionButton label="Reorder outline row" onClick={() => undefined}>
+                    <GripVertical {...attributes} {...listeners} className="h-4 w-4" />
+                  </InlineActionButton>
+                ) : null}
+                {scene ? (
+                  <KeyRatingButton value={scene.keyRating} onChange={onToggleKeyScene} />
+                ) : null}
+                {density === 'detailed' ? (
+                  <Button variant="ghost" size="sm" onClick={onRemove}>
+                    Remove
+                  </Button>
+                ) : (
+                  <InlineActionButton label="Remove from outline" onClick={onRemove}>
+                    <X className="h-4 w-4" />
+                  </InlineActionButton>
+                )}
+              </>
+            }
+          />
+        ) : (
+          <OutlineTextRow
+            item={item}
+            density={density}
+            selected={selected}
+            onClick={onClick}
+            onOpenInspector={onDoubleClick}
+            onSave={(input) => onInlineUpdateBlock(item.id, input)}
+            actions={
+              <>
+                {density === 'detailed' ? (
+                  <InlineActionButton label="Reorder outline row" onClick={() => undefined}>
+                    <GripVertical {...attributes} {...listeners} className="h-4 w-4" />
+                  </InlineActionButton>
+                ) : null}
+                {density === 'detailed' ? (
+                  <Button variant="ghost" size="sm" onClick={onRemove}>
+                    Remove
+                  </Button>
+                ) : (
+                  <InlineActionButton label="Remove block" onClick={onRemove}>
+                    <X className="h-4 w-4" />
+                  </InlineActionButton>
+                )}
+              </>
+            }
+          />
+        )}
+      </div>
+      {afterContent}
     </div>
   )
 }

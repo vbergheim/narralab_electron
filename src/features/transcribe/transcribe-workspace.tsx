@@ -1,5 +1,8 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useCallback, useEffect, useState, type CSSProperties } from 'react'
 
+import { CollapsedRail } from '@/app/app-shell-controls'
+import { ResizeHandle } from '@/features/boards/outline-workspace-shared'
+import { usePanelResize } from '@/hooks/use-panel-resize'
 import type { AppSettings, AppSettingsUpdateInput } from '@/types/ai'
 import type { NotebookDocument, ProjectMeta } from '@/types/project'
 import type { Scene } from '@/types/scene'
@@ -15,13 +18,19 @@ import {
 } from '@/types/transcription'
 import type { TranscriptionSetup } from '@/types/project'
 import {
+  LibraryEmptyState,
   NewTranscriptionPanel,
   SavedTranscriptionMetadataPanel,
   TranscriptPanel,
   TranscribeWorkspaceHeader,
 } from './transcribe-workspace-sections'
 import { TranscriptionLibrarySidebar } from './components/transcription-library-sidebar'
-import { isTranscriptionJobActive, presetTimestampIntervals } from './transcribe-workspace-utils'
+import {
+  isTranscriptionJobActive,
+  presetTimestampIntervals,
+  resolveTranscribeWorkspaceView,
+  type TranscribeWorkspaceView,
+} from './transcribe-workspace-utils'
 
 type Props = {
   projectMeta: ProjectMeta | null
@@ -39,27 +48,55 @@ export function TranscribeWorkspace({
   onNotebookSynced,
   onOpenTranscribeSettings,
 }: Props) {
+  const sortLibraryItems = useCallback((items: TranscriptionItem[]) => {
+    return [...items].sort(
+      (left, right) =>
+        right.updatedAt.localeCompare(left.updatedAt) || right.createdAt.localeCompare(left.createdAt),
+    )
+  }, [])
+
   const [setup, setSetup] = useState<TranscriptionSetup | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [filePath, setFilePath] = useState<string | null>(null)
+  const [activeView, setActiveView] = useState<TranscribeWorkspaceView>(() =>
+    resolveTranscribeWorkspaceView('initial'),
+  )
+  const [draftFilePath, setDraftFilePath] = useState<string | null>(null)
   const [modelId, setModelId] = useState<TranscriptionModelId>(settings.transcription.modelId)
   const [language, setLanguage] = useState<TranscriptionLanguage>(settings.transcription.language)
   const [timestampInterval, setTimestampInterval] = useState<TranscriptionTimestampInterval>(
     settings.transcription.timestampInterval,
   )
   const [status, setStatus] = useState<TranscriptionStatus>({ phase: 'idle', message: '' })
-  const [resultText, setResultText] = useState('')
+  const [draftResultText, setDraftResultText] = useState('')
+  const [libraryResultText, setLibraryResultText] = useState('')
   const [elapsedSec, setElapsedSec] = useState(0)
 
   // Library state
   const [libraryFolders, setLibraryFolders] = useState<TranscriptionFolder[]>([])
   const [libraryItems, setLibraryItems] = useState<TranscriptionItem[]>([])
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
-  const [isNewTranscription, setIsNewTranscription] = useState(true)
+  const [selectedLinkedSceneId, setSelectedLinkedSceneId] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
+  const [libraryMetadataCollapsed, setLibraryMetadataCollapsed] = useState(true)
 
   // Project data for linking
   const [scenes, setScenes] = useState<Scene[]>([])
+  const libraryResize = usePanelResize({
+    initial: 280,
+    min: 220,
+    max: 460,
+    storageKey: projectMeta
+      ? `narralab:transcribe-library-width:${encodeURIComponent(projectMeta.path)}`
+      : 'narralab:transcribe-library-width',
+  })
+  const libraryMetadataResize = usePanelResize({
+    initial: 320,
+    min: 260,
+    max: 420,
+    storageKey: projectMeta
+      ? `narralab:transcribe-metadata-width:${encodeURIComponent(projectMeta.path)}`
+      : 'narralab:transcribe-metadata-width',
+  })
 
   const jobActive = isTranscriptionJobActive(status)
   const usesCustomTimestampInterval = !presetTimestampIntervals.some((entry) => entry === timestampInterval)
@@ -90,11 +127,11 @@ export function TranscribeWorkspace({
         window.narralab.transcription.library.items.list()
       ])
       setLibraryFolders(folders)
-      setLibraryItems(items)
+      setLibraryItems(sortLibraryItems(items))
     } catch (e) {
       console.error('Failed to load library:', e)
     }
-  }, [])
+  }, [sortLibraryItems])
 
   const refreshScenes = useCallback(async () => {
     try {
@@ -123,43 +160,48 @@ export function TranscribeWorkspace({
         setStatus(event.payload)
         if (event.payload.phase === 'complete' && event.payload.resultText) {
           const text = event.payload.resultText
-          setResultText(text)
+          setDraftResultText(text)
 
           // Auto-save to library
-          if (filePath) {
-            const name = filePath.split(/[/\\]/).pop() || 'Untitled'
+          if (draftFilePath) {
+            const name = draftFilePath.split(/[/\\]/).pop() || 'Untitled'
             try {
               const newItem = await window.narralab.transcription.library.items.create({
                 name,
                 content: text,
-                sourceFilePath: filePath
+                sourceFilePath: draftFilePath
               })
               await refreshLibrary()
               setSelectedItemId(newItem.id)
-              setIsNewTranscription(false)
+              setLibraryResultText(text)
+              setLibraryMetadataCollapsed(false)
+              setDraftResultText('')
+              setDraftFilePath(null)
+              setStatus({ phase: 'idle', message: '' })
+              setActiveView(resolveTranscribeWorkspaceView('autosave-complete'))
             } catch (e) {
               console.error('Failed to auto-save:', e)
             }
           }
         }
         if (event.payload.phase === 'error') {
-          setResultText('')
+          setDraftResultText('')
         }
       }
     })
     return dispose
-  }, [filePath, refreshLibrary])
+  }, [draftFilePath, refreshLibrary])
 
   const handleSelectItem = useCallback((itemId: string) => {
     const item = libraryItems.find(i => i.id === itemId)
+    setSelectedItemId(itemId)
+    setActiveView(resolveTranscribeWorkspaceView('library-selection'))
+    setLibraryMetadataCollapsed(false)
     if (item) {
-      setSelectedItemId(itemId)
-      setResultText(item.content)
-      setIsNewTranscription(false)
-      setFilePath(item.sourceFilePath)
-      // If we are looking at a saved item, reset live status
-      setStatus({ phase: 'idle', message: '' })
+      setLibraryResultText(item.content)
     }
+    // If we are looking at a saved item, reset live status
+    setStatus({ phase: 'idle', message: '' })
   }, [libraryItems])
 
   // Sync from global selection
@@ -177,6 +219,7 @@ export function TranscribeWorkspace({
 
       if (event.type === 'global-ui-state' && event.payload.selectedTranscriptionItemId) {
         handleSelectItem(event.payload.selectedTranscriptionItemId)
+        setActiveView(resolveTranscribeWorkspaceView('external-selection'))
         // Clear it so it doesn't re-trigger on next sync if we select something else
         void window.narralab.windows.updateGlobalUiState({ selectedTranscriptionItemId: null })
       }
@@ -184,10 +227,27 @@ export function TranscribeWorkspace({
     return dispose
   }, [handleSelectItem, refreshLibrary, refreshScenes])
 
+  useEffect(() => {
+    if (!selectedItemId) return
+    const item = libraryItems.find((entry) => entry.id === selectedItemId)
+    if (!item) return
+    setLibraryResultText((current) => (current === '' ? item.content : current))
+  }, [libraryItems, selectedItemId])
+
+  useEffect(() => {
+    if (!selectedItemId) {
+      setSelectedLinkedSceneId(null)
+      return
+    }
+    const item = libraryItems.find((entry) => entry.id === selectedItemId)
+    setSelectedLinkedSceneId(item?.sceneId ?? null)
+  }, [libraryItems, selectedItemId])
+
   const pickFile = async () => {
     const path = await window.narralab.transcription.pickFile()
     if (path) {
-      setFilePath(path)
+      setDraftFilePath(path)
+      setActiveView(resolveTranscribeWorkspaceView('new-transcription'))
     }
   }
 
@@ -196,18 +256,18 @@ export function TranscribeWorkspace({
     const files = Array.from(event.dataTransfer.files)
     const paths = window.narralab.archive.items.resolveDroppedPaths(files)
     if (paths[0]) {
-      setFilePath(paths[0])
+      setDraftFilePath(paths[0])
+      setActiveView(resolveTranscribeWorkspaceView('new-transcription'))
     }
   }
 
-  const start = async () => {
-    if (!filePath) return
-    setResultText('')
+  const startTranscriptionForPath = async (filePath: string) => {
+    setActiveView(resolveTranscribeWorkspaceView('new-transcription'))
+    setDraftFilePath(filePath)
+    setDraftResultText('')
     setLoadError(null)
     setStatus({ phase: 'preparing', message: 'Starting…' })
     try {
-      setIsNewTranscription(true)
-      setSelectedItemId(null)
       await onSaveAppSettings({
         transcriptionModelId: modelId,
         transcriptionLanguage: language,
@@ -220,34 +280,44 @@ export function TranscribeWorkspace({
     }
   }
 
+  const start = async () => {
+    if (!draftFilePath) return
+    await startTranscriptionForPath(draftFilePath)
+  }
+
   const cancel = async () => {
     await window.narralab.transcription.cancel()
   }
 
-  const copyResult = async () => {
-    if (!resultText) return
-    await navigator.clipboard.writeText(resultText)
+  const copyText = async (text: string) => {
+    if (!text) return
+    await navigator.clipboard.writeText(text)
   }
 
-  const saveTxt = async () => {
-    if (!resultText.trim()) return
-    await window.narralab.transcription.saveAs(resultText)
+  const saveTxt = async (text: string) => {
+    if (!text.trim()) return
+    await window.narralab.transcription.saveAs(text)
   }
 
-  const handleSaveToLibrary = async () => {
-    if (!resultText.trim() || isSaving) return
+  const handleSaveDraftToLibrary = async () => {
+    if (!draftResultText.trim() || isSaving) return
     setIsSaving(true)
     try {
-      const name = filePath?.split(/[/\\]/).pop() || 'Untitled'
+      const name = draftFilePath?.split(/[/\\]/).pop() || 'Untitled'
       const newItem = await window.narralab.transcription.library.items.create({
         name,
-        content: resultText,
-        sourceFilePath: filePath
+        content: draftResultText,
+        sourceFilePath: draftFilePath
       })
       // Pre-emptively update local state so selection works immediately
-      setLibraryItems(prev => [...prev, newItem])
+      setLibraryItems((current) => sortLibraryItems([...current, newItem]))
       setSelectedItemId(newItem.id)
-      setIsNewTranscription(false)
+      setLibraryResultText(draftResultText)
+      setLibraryMetadataCollapsed(false)
+      setDraftResultText('')
+      setDraftFilePath(null)
+      setStatus({ phase: 'idle', message: '' })
+      setActiveView(resolveTranscribeWorkspaceView('library-selection'))
       await refreshLibrary() // Silent background refresh
     } catch (e) {
       console.error('Failed to save to library:', e)
@@ -256,9 +326,9 @@ export function TranscribeWorkspace({
     }
   }
 
-  const appendNotebook = async () => {
-    if (!resultText.trim()) return
-    const doc = await window.narralab.transcription.appendNotebook(resultText)
+  const appendNotebook = async (text: string) => {
+    if (!text.trim()) return
+    const doc = await window.narralab.transcription.appendNotebook(text)
     onNotebookSynced(doc)
   }
 
@@ -275,62 +345,70 @@ export function TranscribeWorkspace({
   const hasDownloadedModel = catalogRows.some((e) => e.downloaded)
 
   // File name for display
-  const fileName = filePath ? (filePath.split(/[/\\]/).pop() ?? null) : null
+  const fileName = draftFilePath ? (draftFilePath.split(/[/\\]/).pop() ?? null) : null
 
   const handleNewTranscription = () => {
-    setIsNewTranscription(true)
+    setActiveView(resolveTranscribeWorkspaceView('new-transcription'))
     setSelectedItemId(null)
-    setResultText('')
-    setFilePath(null)
+    setSelectedLinkedSceneId(null)
+    setLibraryResultText('')
+    setDraftResultText('')
+    setDraftFilePath(null)
+    setLoadError(null)
     setStatus({ phase: 'idle', message: '' })
   }
 
+  const updateLibraryItemLocally = useCallback(
+    (itemId: string, patch: Partial<TranscriptionItem>) => {
+      setLibraryItems((current) =>
+        sortLibraryItems(
+          current.map((item) =>
+            item.id === itemId
+              ? {
+                  ...item,
+                  ...patch,
+                }
+              : item,
+          ),
+        ),
+      )
+    },
+    [sortLibraryItems],
+  )
+
+  const mergeLibraryItemsLocally = useCallback(
+    (nextItems: TranscriptionItem[]) => {
+      setLibraryItems((current) => {
+        const byId = new Map(current.map((item) => [item.id, item]))
+        nextItems.forEach((item) => {
+          byId.set(item.id, item)
+        })
+        return sortLibraryItems(Array.from(byId.values()))
+      })
+    },
+    [sortLibraryItems],
+  )
+
   const selectedItem = libraryItems.find(i => i.id === selectedItemId)
-  const hasChanges = selectedItem ? resultText !== selectedItem.content : false
+  const hasChanges = selectedItem ? libraryResultText !== selectedItem.content : false
+  const libraryPaneStyle = {
+    '--transcribe-library-width': `${libraryResize.size}px`,
+  } as CSSProperties
+  const libraryMetadataPaneStyle = {
+    '--transcribe-library-metadata-width': `${libraryMetadataResize.size}px`,
+  } as CSSProperties
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
-      <TranscribeWorkspaceHeader setupOk={Boolean(setupOk)} onOpenTranscribeSettings={onOpenTranscribeSettings} />
+      <TranscribeWorkspaceHeader
+        activeView={activeView}
+        setupOk={Boolean(setupOk)}
+        onChangeView={setActiveView}
+        onOpenTranscribeSettings={onOpenTranscribeSettings}
+      />
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-hidden lg:grid-cols-[260px_1fr_1fr]">
-        <TranscriptionLibrarySidebar
-          folders={libraryFolders}
-          items={libraryItems}
-          selectedItemId={selectedItemId}
-          onSelectItem={handleSelectItem}
-          onCreateFolder={async (name, parentPath) => {
-            await window.narralab.transcription.library.folders.create(name, parentPath)
-            await refreshLibrary()
-          }}
-          onUpdateFolder={async (currentPath, input) => {
-            await window.narralab.transcription.library.folders.update(currentPath, input)
-            await refreshLibrary()
-          }}
-          onDeleteFolder={async (currentPath) => {
-            await window.narralab.transcription.library.folders.delete(currentPath)
-            await refreshLibrary()
-          }}
-          onMoveItemsToFolder={async (itemIds, folderPath) => {
-            await Promise.all(
-              itemIds.map((id) =>
-                window.narralab.transcription.library.items.update({ id, folder: folderPath }),
-              ),
-            )
-            await refreshLibrary()
-          }}
-          onUpdateItem={async (id, name) => {
-            await window.narralab.transcription.library.items.update({ id, name })
-            await refreshLibrary()
-          }}
-          onDeleteItem={async (id) => {
-            await window.narralab.transcription.library.items.delete(id)
-            if (id === selectedItemId) handleNewTranscription()
-            await refreshLibrary()
-          }}
-          onNewTranscription={handleNewTranscription}
-        />
-
-        {isNewTranscription ? (
+      {activeView === 'transcribe' ? (
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-hidden xl:grid-cols-2">
           <NewTranscriptionPanel
             catalogRows={catalogRows}
             modelId={modelId}
@@ -341,7 +419,7 @@ export function TranscribeWorkspace({
             onLanguageChange={setLanguage}
             onTimestampIntervalChange={setTimestampInterval}
             fileName={fileName}
-            filePath={filePath}
+            filePath={draftFilePath}
             onDropMedia={onDropMedia}
             onPickFile={() => void pickFile()}
             onStart={() => void start()}
@@ -352,76 +430,234 @@ export function TranscribeWorkspace({
             elapsedSec={elapsedSec}
             status={status}
             loadError={loadError}
-            resultText={resultText}
-            isSaving={isSaving}
-            onSaveToLibrary={() => void handleSaveToLibrary()}
           />
-        ) : (
-          <SavedTranscriptionMetadataPanel
-            filePath={filePath}
-            selectedItem={selectedItem}
-            selectedItemId={selectedItemId}
-            scenes={scenes}
-            isSaving={isSaving}
-            resultText={resultText}
-            onLinkScene={(nextSceneId) => {
-              if (!selectedItemId) return
-              void (async () => {
-                setIsSaving(true)
-                try {
-                  await window.narralab.transcription.library.items.update({
-                    id: selectedItemId,
-                    sceneId: nextSceneId,
-                  })
-                  await refreshLibrary()
-                } catch (error) {
-                  console.error('Failed to link scene:', error)
-                } finally {
-                  setIsSaving(false)
-                }
-              })()
-            }}
-            onSaveToArchive={() => {
-              if (!selectedItem) return
-              void window.narralab.transcription.saveToArchive({
-                name: selectedItem.name,
-                content: resultText,
-              })
-            }}
-            onTranscribeAgain={() => {
-              if (!filePath) return
-              void window.narralab.transcription.start({ filePath, modelId })
-            }}
-          />
-        )}
 
-        <TranscriptPanel
-          resultText={resultText}
-          projectMeta={projectMeta}
-          selectedItemId={selectedItemId}
-          isSaving={isSaving}
-          hasChanges={hasChanges}
-          onCopy={() => void copyResult()}
-          onAppendNotebook={() => void appendNotebook()}
-          onSaveChanges={() => {
-            if (!selectedItemId) return
-            void (async () => {
-              setIsSaving(true)
-              try {
-                await window.narralab.transcription.library.items.update({ id: selectedItemId, content: resultText })
+          <TranscriptPanel
+            resultText={draftResultText}
+            projectMeta={projectMeta}
+            selectedItemId={null}
+            isSaving={isSaving}
+            hasChanges={false}
+            onCopy={() => void copyText(draftResultText)}
+            onAppendNotebook={() => void appendNotebook(draftResultText)}
+            onSaveChanges={() => undefined}
+            onSaveToLibrary={() => void handleSaveDraftToLibrary()}
+            onSaveTxt={() => void saveTxt(draftResultText)}
+            onResultTextChange={setDraftResultText}
+          />
+        </div>
+      ) : (
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden lg:flex-row lg:items-stretch lg:gap-4">
+          <div
+            className="min-h-0 shrink-0 lg:h-full lg:w-[var(--transcribe-library-width)]"
+            style={libraryPaneStyle}
+          >
+            <TranscriptionLibrarySidebar
+              folders={libraryFolders}
+              items={libraryItems}
+              selectedItemId={selectedItemId}
+              onSelectItem={handleSelectItem}
+              onCreateFolder={async (name, parentPath) => {
+                await window.narralab.transcription.library.folders.create(name, parentPath)
                 await refreshLibrary()
-              } catch (error) {
-                console.error('Failed to save changes:', error)
-              } finally {
-                setIsSaving(false)
-              }
-            })()
-          }}
-          onSaveToLibrary={() => void handleSaveToLibrary()}
-          onSaveTxt={() => void saveTxt()}
-          onResultTextChange={setResultText}
-        />
-      </div>
+              }}
+              onUpdateFolder={async (currentPath, input) => {
+                await window.narralab.transcription.library.folders.update(currentPath, input)
+                await refreshLibrary()
+              }}
+              onDeleteFolder={async (currentPath) => {
+                await window.narralab.transcription.library.folders.delete(currentPath)
+                await refreshLibrary()
+              }}
+              onMoveItemsToFolder={async (itemIds, folderPath) => {
+                const updatedItems = await Promise.all(
+                  itemIds.map((id) =>
+                    window.narralab.transcription.library.items.update({ id, folder: folderPath }),
+                  ),
+                )
+                mergeLibraryItemsLocally(updatedItems)
+                void refreshLibrary()
+              }}
+              onUpdateItem={async (id, name) => {
+                const updatedItem = await window.narralab.transcription.library.items.update({ id, name })
+                mergeLibraryItemsLocally([updatedItem])
+                void refreshLibrary()
+              }}
+              onDeleteItem={async (id) => {
+                await window.narralab.transcription.library.items.delete(id)
+                if (id === selectedItemId) {
+                  setSelectedItemId(null)
+                  setLibraryResultText('')
+                }
+                await refreshLibrary()
+              }}
+              onNewTranscription={handleNewTranscription}
+            />
+          </div>
+
+          <div className="hidden lg:flex lg:h-full lg:items-stretch">
+            <ResizeHandle
+              label="Resize transcription library"
+              active={libraryResize.isResizing}
+              onPointerDown={libraryResize.startResize(1)}
+            />
+          </div>
+
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-hidden lg:flex-row lg:items-stretch lg:gap-4">
+            {selectedItem ? (
+              <>
+                <div className="min-h-0 min-w-0 flex-1 overflow-hidden lg:h-full">
+                  <TranscriptPanel
+                    resultText={libraryResultText}
+                    projectMeta={projectMeta}
+                    selectedItemId={selectedItemId}
+                    isSaving={isSaving}
+                    hasChanges={hasChanges}
+                    onCopy={() => void copyText(libraryResultText)}
+                    onAppendNotebook={() => void appendNotebook(libraryResultText)}
+                    onSaveChanges={() => {
+                      if (!selectedItemId) return
+                      void (async () => {
+                        setIsSaving(true)
+                        try {
+                          const updatedItem = await window.narralab.transcription.library.items.update({
+                            id: selectedItemId,
+                            content: libraryResultText,
+                          })
+                          mergeLibraryItemsLocally([updatedItem])
+                          void refreshLibrary()
+                        } catch (error) {
+                          console.error('Failed to save changes:', error)
+                        } finally {
+                          setIsSaving(false)
+                        }
+                      })()
+                    }}
+                    onSaveToLibrary={() => undefined}
+                    onSaveTxt={() => void saveTxt(libraryResultText)}
+                    onResultTextChange={setLibraryResultText}
+                  />
+                </div>
+
+                <div className="hidden lg:flex lg:h-full lg:shrink-0 lg:items-stretch">
+                  {libraryMetadataCollapsed ? (
+                    <div className="w-10 shrink-0">
+                      <CollapsedRail side="right" title="Metadata" onExpand={() => setLibraryMetadataCollapsed(false)} />
+                    </div>
+                  ) : (
+                    <>
+                      <div className="hidden lg:flex lg:h-full lg:items-stretch">
+                        <ResizeHandle
+                          label="Resize transcript metadata"
+                          active={libraryMetadataResize.isResizing}
+                          onPointerDown={libraryMetadataResize.startResize(-1)}
+                        />
+                      </div>
+                      <div
+                        className="min-h-0 shrink-0 overflow-hidden lg:h-full"
+                        style={{ ...libraryMetadataPaneStyle, width: 'var(--transcribe-library-metadata-width)' }}
+                      >
+                        <SavedTranscriptionMetadataPanel
+                          filePath={selectedItem.sourceFilePath}
+                          selectedItem={selectedItem}
+                          selectedItemId={selectedItemId}
+                          selectedSceneId={selectedLinkedSceneId}
+                          scenes={scenes}
+                          isSaving={isSaving}
+                          resultText={libraryResultText}
+                          onCollapse={() => setLibraryMetadataCollapsed(true)}
+                          onLinkScene={(nextSceneId) => {
+                            if (!selectedItemId) return
+                            const previousSceneId = selectedItem.sceneId
+                            void (async () => {
+                              setIsSaving(true)
+                              setSelectedLinkedSceneId(nextSceneId)
+                              updateLibraryItemLocally(selectedItemId, { sceneId: nextSceneId })
+                              try {
+                                const updatedItem = await window.narralab.transcription.library.items.update({
+                                  id: selectedItemId,
+                                  sceneId: nextSceneId,
+                                })
+                                mergeLibraryItemsLocally([updatedItem])
+                                setSelectedLinkedSceneId(updatedItem.sceneId)
+                                void refreshLibrary()
+                              } catch (error) {
+                                setSelectedLinkedSceneId(previousSceneId)
+                                updateLibraryItemLocally(selectedItemId, { sceneId: previousSceneId })
+                                console.error('Failed to link scene:', error)
+                              } finally {
+                                setIsSaving(false)
+                              }
+                            })()
+                          }}
+                          onSaveToArchive={() => {
+                            void window.narralab.transcription.saveToArchive({
+                              name: selectedItem.name,
+                              content: libraryResultText,
+                            })
+                          }}
+                          onTranscribeAgain={() => {
+                            if (!selectedItem.sourceFilePath) return
+                            void startTranscriptionForPath(selectedItem.sourceFilePath)
+                          }}
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <div className="lg:hidden">
+                  <SavedTranscriptionMetadataPanel
+                    filePath={selectedItem.sourceFilePath}
+                    selectedItem={selectedItem}
+                    selectedItemId={selectedItemId}
+                    selectedSceneId={selectedLinkedSceneId}
+                    scenes={scenes}
+                    isSaving={isSaving}
+                    resultText={libraryResultText}
+                    onLinkScene={(nextSceneId) => {
+                      if (!selectedItemId) return
+                      const previousSceneId = selectedItem.sceneId
+                      void (async () => {
+                        setIsSaving(true)
+                        setSelectedLinkedSceneId(nextSceneId)
+                        updateLibraryItemLocally(selectedItemId, { sceneId: nextSceneId })
+                        try {
+                          const updatedItem = await window.narralab.transcription.library.items.update({
+                            id: selectedItemId,
+                            sceneId: nextSceneId,
+                          })
+                          mergeLibraryItemsLocally([updatedItem])
+                          setSelectedLinkedSceneId(updatedItem.sceneId)
+                          void refreshLibrary()
+                        } catch (error) {
+                          setSelectedLinkedSceneId(previousSceneId)
+                          updateLibraryItemLocally(selectedItemId, { sceneId: previousSceneId })
+                          console.error('Failed to link scene:', error)
+                        } finally {
+                          setIsSaving(false)
+                        }
+                      })()
+                    }}
+                    onSaveToArchive={() => {
+                      void window.narralab.transcription.saveToArchive({
+                        name: selectedItem.name,
+                        content: libraryResultText,
+                      })
+                    }}
+                    onTranscribeAgain={() => {
+                      if (!selectedItem.sourceFilePath) return
+                      void startTranscriptionForPath(selectedItem.sourceFilePath)
+                    }}
+                  />
+                </div>
+              </>
+            ) : (
+              <LibraryEmptyState />
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -64,9 +64,13 @@ export class TranscriptionLibraryRepository {
     const existing = this.getItemById(input.id)
     const timestamp = nowIso()
     const merged = {
-      ...existing,
-      ...input,
+      id: existing.id,
       folder: input.folder !== undefined ? input.folder : existing.folder,
+      sceneId: input.sceneId !== undefined ? input.sceneId : existing.sceneId,
+      name: input.name !== undefined ? input.name : existing.name,
+      content: input.content !== undefined ? input.content : existing.content,
+      sourceFilePath: existing.sourceFilePath,
+      createdAt: existing.createdAt,
       updatedAt: timestamp,
     }
 

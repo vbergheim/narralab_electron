@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3'
 
-const SCHEMA_VERSION = 14
+const SCHEMA_VERSION = 15
 
 export function runMigrations(db: Database.Database) {
   db.exec(`
@@ -14,7 +14,11 @@ export function runMigrations(db: Database.Database) {
       sort_order INTEGER NOT NULL DEFAULT 0,
       title TEXT NOT NULL,
       synopsis TEXT NOT NULL DEFAULT '',
+      shoot_date TEXT NOT NULL DEFAULT '',
+      shoot_block TEXT NOT NULL DEFAULT '',
       notes TEXT NOT NULL DEFAULT '',
+      camera_notes TEXT NOT NULL DEFAULT '',
+      audio_notes TEXT NOT NULL DEFAULT '',
       color TEXT NOT NULL DEFAULT 'charcoal',
       status TEXT NOT NULL DEFAULT 'candidate',
       is_key_scene INTEGER NOT NULL DEFAULT 0,
@@ -132,7 +136,11 @@ export function runMigrations(db: Database.Database) {
 
   ensureColumn(db, 'scenes', 'is_key_scene', 'INTEGER NOT NULL DEFAULT 0')
   ensureColumn(db, 'scenes', 'sort_order', 'INTEGER NOT NULL DEFAULT 0')
+  ensureColumn(db, 'scenes', 'shoot_date', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn(db, 'scenes', 'shoot_block', "TEXT NOT NULL DEFAULT ''")
   ensureColumn(db, 'scenes', 'folder', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn(db, 'scenes', 'camera_notes', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn(db, 'scenes', 'audio_notes', "TEXT NOT NULL DEFAULT ''")
   ensureColumn(db, 'scenes', 'quote_moment', "TEXT NOT NULL DEFAULT ''")
   ensureColumn(db, 'scenes', 'quality', "TEXT NOT NULL DEFAULT ''")
   ensureColumn(db, 'scenes', 'source_paths', `TEXT NOT NULL DEFAULT '[]'`)

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import {
   closestCenter,
@@ -52,7 +52,7 @@ import { usePersistedStringArray } from '@/hooks/use-persisted-string-array'
 import { usePanelResize } from '@/hooks/use-panel-resize'
 import { cn } from '@/lib/cn'
 import { formatDuration } from '@/lib/durations'
-import type { BlockTemplate, Board, BoardFolder, BoardTextItemKind, BoardViewMode } from '@/types/board'
+import type { AddSceneToBoardResult, BlockTemplate, Board, BoardFolder, BoardTextItemKind, BoardViewMode } from '@/types/board'
 import { isSceneBoardItem } from '@/types/board'
 import type { Scene, SceneBeatUpdateInput, SceneFolder } from '@/types/scene'
 import type { Tag } from '@/types/tag'
@@ -74,6 +74,7 @@ type Props = {
   defaultBankCollapsed?: boolean
   /** localStorage key for Scene Bank panel width (e.g. per project path). */
   sceneBankWidthStorageKey?: string | null
+  detachedViewControl?: ReactNode
   onToggleImmersive?(): void
   onChangeViewMode(mode: BoardViewMode): void
   onSelectBoard(boardId: string): void
@@ -104,7 +105,11 @@ type Props = {
   onDuplicateScene(sceneId: string, afterItemId?: string | null): void
   onDeleteScene(sceneId: string): void
   onDeleteSelectedScenes(): void
-  onAddScene(sceneId: string, afterItemId?: string | null, boardPosition?: { x: number; y: number } | null): void
+  onAddScene(
+    sceneId: string,
+    afterItemId?: string | null,
+    boardPosition?: { x: number; y: number } | null,
+  ): Promise<AddSceneToBoardResult | null> | AddSceneToBoardResult | null
   onAddBlock(kind: BoardTextItemKind, afterItemId?: string | null): void
   onAddTemplate(templateId: string, afterItemId?: string | null): void
   onSaveTemplate(input: { kind: BoardTextItemKind; name: string; title: string; body: string }): void
@@ -137,6 +142,7 @@ export function OutlineWorkspace({
   immersive = false,
   defaultBankCollapsed = false,
   sceneBankWidthStorageKey = null,
+  detachedViewControl,
   onToggleImmersive,
   onChangeViewMode,
   onSelectBoard,
@@ -426,6 +432,7 @@ export function OutlineWorkspace({
                   onDeleteTemplate={onDeleteTemplate}
                   getInsertAfterItemId={() => resolveInsertAfterItemId(outlineScrollRef.current, selectedBoardItemId)}
                 />
+                {detachedViewControl}
                 <ViewModeToggle value={viewMode} onChange={onChangeViewMode} />
               </div>
             }
@@ -487,14 +494,13 @@ export function OutlineWorkspace({
                       event.clientY,
                       selectedBoardItemId,
                     )
-                    const sceneId = sceneIds[0]
-                    if (!sceneId) {
-                      setNativeSceneDropActive(false)
-                      setNativeSceneInsertAfterId(null)
-                      setNativeDraggedSceneCount(0)
-                      return
+                    let nextInsertAfterItemId = insertAfterItemId
+                    for (const sceneId of sceneIds) {
+                      const result = await onAddScene(sceneId, nextInsertAfterItemId)
+                      if (result?.item.id) {
+                        nextInsertAfterItemId = result.item.id
+                      }
                     }
-                    await onAddScene(sceneId, insertAfterItemId)
                     requestAnimationFrame(() => {
                       requestAnimationFrame(() => {
                         setNativeSceneDropActive(false)
@@ -516,45 +522,46 @@ export function OutlineWorkspace({
                     const showInsertAfter = (nativeSceneDropActive || sceneDragDropActive) && activeInsertAfterId === item.id
 
                     return (
-                      <div key={item.id} className="space-y-3">
-                        <BoardSortableItem
-                          item={item}
-                          index={index}
-                          scene={scene}
-                          tags={itemTags}
-                          density={density}
-                          muted={isSceneBoardItem(item) ? !filteredSceneIdSet.has(item.sceneId) : false}
-                          selected={selectedBoardItemId === item.id}
-                          onClick={() => onSelect(isSceneBoardItem(item) ? item.sceneId : null, item.id)}
-                          onDoubleClick={() => onOpenInspector(isSceneBoardItem(item) ? item.sceneId : null, item.id)}
-                          onToggleKeyScene={() => {
-                            if (scene) onToggleKeyScene(scene)
-                          }}
-                          beatsExpanded={scene ? expandedSceneIds.includes(scene.id) : false}
-                          onToggleBeats={() => {
-                            if (!scene) return
-                            setExpandedSceneIds((current) =>
-                              current.includes(scene.id)
-                                ? current.filter((id) => id !== scene.id)
-                                : [...current, scene.id],
-                            )
-                          }}
-                          onCreateBeat={onCreateBeat}
-                          onUpdateBeat={onUpdateBeat}
-                          onDeleteBeat={onDeleteBeat}
-                          onInlineUpdateScene={onInlineUpdateScene}
-                          onInlineUpdateBlock={onInlineUpdateBlock}
-                          onRemove={() => onRemoveBoardItem(item.id)}
-                          onContextMenu={(event) => {
-                            event.preventDefault()
-                            onSelect(isSceneBoardItem(item) ? item.sceneId : null, item.id)
-                            setMenuState({ itemId: item.id, x: event.clientX, y: event.clientY })
-                          }}
-                        />
-                        {showInsertAfter ? (
-                          <SceneReorderGap variant="outline" density={density} count={nativeDraggedSceneCount} />
-                        ) : null}
-                      </div>
+                      <BoardSortableItem
+                        key={item.id}
+                        item={item}
+                        index={index}
+                        scene={scene}
+                        tags={itemTags}
+                        density={density}
+                        muted={isSceneBoardItem(item) ? !filteredSceneIdSet.has(item.sceneId) : false}
+                        selected={selectedBoardItemId === item.id}
+                        onClick={() => onSelect(isSceneBoardItem(item) ? item.sceneId : null, item.id)}
+                        onDoubleClick={() => onOpenInspector(isSceneBoardItem(item) ? item.sceneId : null, item.id)}
+                        onToggleKeyScene={() => {
+                          if (scene) onToggleKeyScene(scene)
+                        }}
+                        beatsExpanded={scene ? expandedSceneIds.includes(scene.id) : false}
+                        onToggleBeats={() => {
+                          if (!scene) return
+                          setExpandedSceneIds((current) =>
+                            current.includes(scene.id)
+                              ? current.filter((id) => id !== scene.id)
+                              : [...current, scene.id],
+                          )
+                        }}
+                        onCreateBeat={onCreateBeat}
+                        onUpdateBeat={onUpdateBeat}
+                        onDeleteBeat={onDeleteBeat}
+                        onInlineUpdateScene={onInlineUpdateScene}
+                        onInlineUpdateBlock={onInlineUpdateBlock}
+                        onRemove={() => onRemoveBoardItem(item.id)}
+                        onContextMenu={(event) => {
+                          event.preventDefault()
+                          onSelect(isSceneBoardItem(item) ? item.sceneId : null, item.id)
+                          setMenuState({ itemId: item.id, x: event.clientX, y: event.clientY })
+                        }}
+                        afterContent={
+                          showInsertAfter ? (
+                            <SceneReorderGap variant="outline" density={density} count={nativeDraggedSceneCount} />
+                          ) : null
+                        }
+                      />
                     )
                   })}
                   {board.items.length === 0 && (nativeSceneDropActive || sceneDragDropActive) ? (
@@ -583,11 +590,11 @@ export function OutlineWorkspace({
                 onUpdatePosition={onUpdateItemPosition}
                 onNativeSceneDrop={(sceneIds, boardPosition) => {
                   setNativeSceneDropActive(false)
-                  const sceneId = sceneIds[0]
-                  if (!sceneId) {
-                    return
-                  }
-                  onAddScene(sceneId, null, boardPosition)
+                  void (async () => {
+                    for (const sceneId of sceneIds) {
+                      await onAddScene(sceneId, null, boardPosition)
+                    }
+                  })()
                 }}
                 onInlineUpdateScene={onInlineUpdateScene}
                 onInlineUpdateBlock={onInlineUpdateBlock}

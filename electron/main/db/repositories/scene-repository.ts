@@ -17,7 +17,11 @@ const defaultSceneRecord = {
   sortOrder: 0,
   title: 'Untitled scene',
   synopsis: '',
+  shootDate: '',
+  shootBlock: '',
   notes: '',
+  cameraNotes: '',
+  audioNotes: '',
   color: 'charcoal' as SceneColor,
   status: 'candidate' as SceneStatus,
   keyRating: 0,
@@ -75,12 +79,12 @@ export class SceneRepository {
     this.db
       .prepare(`
         INSERT INTO scenes (
-          id, sort_order, title, synopsis, notes, color, status, is_key_scene, folder,
+          id, sort_order, title, synopsis, shoot_date, shoot_block, notes, camera_notes, audio_notes, color, status, is_key_scene, folder,
           category,
           estimated_duration, actual_duration, location, characters,
           function, source_reference, quote_moment, quality, source_paths, created_at, updated_at
         ) VALUES (
-          @id, @sortOrder, @title, @synopsis, @notes, @color, @status, @keyRating, @folder, @category,
+          @id, @sortOrder, @title, @synopsis, @shootDate, @shootBlock, @notes, @cameraNotes, @audioNotes, @color, @status, @keyRating, @folder, @category,
           @estimatedDuration, @actualDuration, @location, @characters,
           @function, @sourceReference, @quoteMoment, @quality, @sourcePaths, @createdAt, @updatedAt
         )
@@ -116,7 +120,11 @@ export class SceneRepository {
           sort_order = @sortOrder,
           title = @title,
           synopsis = @synopsis,
+          shoot_date = @shootDate,
+          shoot_block = @shootBlock,
           notes = @notes,
+          camera_notes = @cameraNotes,
+          audio_notes = @audioNotes,
           color = @color,
           status = @status,
           is_key_scene = @keyRating,
@@ -260,7 +268,11 @@ export class SceneRepository {
           sort_order AS sortOrder,
           title,
           synopsis,
+          shoot_date AS shootDate,
+          shoot_block AS shootBlock,
           notes,
+          camera_notes AS cameraNotes,
+          audio_notes AS audioNotes,
           color,
           status,
           is_key_scene AS keyRating,
@@ -391,7 +403,11 @@ export class SceneRepository {
           sort_order AS sortOrder,
           title,
           synopsis,
+          shoot_date AS shootDate,
+          shoot_block AS shootBlock,
           notes,
+          camera_notes AS cameraNotes,
+          audio_notes AS audioNotes,
           color,
           status,
           is_key_scene AS keyRating,

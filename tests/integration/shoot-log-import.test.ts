@@ -85,24 +85,18 @@ describe('shoot log import', () => {
       })
       expect(scenes).toHaveLength(3)
       expect(scenes.map((scene) => scene.title)).toEqual(['Existing scene', 'Car pickup', 'Kitchen reset'])
+      expect(importedKitchen?.shootDate).toBe('2026-03-29')
+      expect(importedKitchen?.shootBlock).toBe('Morning')
       expect(importedKitchen?.folder).toBe('2026-03-29/Morning')
       expect(importedCar?.folder).toBe('2026-03-29')
+      expect(importedKitchen?.cameraNotes).toBe('Tight handheld on hands and dishes.')
+      expect(importedKitchen?.audioNotes).toBe('Fridge hum in the room tone.')
       expect(importedKitchen?.characters).toEqual(['Mia', 'Mom'])
       expect(importedKitchen?.sourceReference).toBe('shoot-log.xlsx')
       expect(importedKitchen?.sourcePaths).toEqual(['shoot-log.xlsx'])
       expect(importedKitchen?.quoteMoment).toBe('')
       expect(importedKitchen?.quality).toBe('')
-      expect(importedKitchen?.notes).toBe(
-        [
-          'Shoot date: 2026-03-29',
-          'Shoot block: Morning',
-          'Capture status: partial',
-          'Camera notes: Tight handheld on hands and dishes.',
-          'Audio notes: Fridge hum in the room tone.',
-          '',
-          'Need tighter entry beat.',
-        ].join('\n'),
-      )
+      expect(importedKitchen?.notes).toBe('Need tighter entry beat.')
       expect(importedKitchen?.beats.map((beat) => beat.text)).toEqual([
         'Mia laughs while stacking mugs.',
         'Mia stops talking when the room goes quiet.',
@@ -291,12 +285,10 @@ describe('shoot log import', () => {
 
       const first = scenes.find((scene) => scene.title === 'Morgenrapport på vaktrommet')
       expect(first?.folder).toBe(expectedFolderDate)
+      expect(first?.shootDate).toBe(expectedFolderDate)
       expect(first?.estimatedDuration).toBe(90)
       expect(first?.keyRating).toBe(5)
       expect(first?.characters).toEqual(['Hai'])
-      expect(first?.notes).toContain('Regi: Ina Lerner Grevstad')
-      expect(first?.notes).toMatch(/Opptakssted:\s+\S/)
-      expect(first?.notes).toContain('Opptaksdag:')
       expect(first?.sourceReference).toBe('shoot-log-template.xlsx')
       expect(first?.sourcePaths).toEqual(['shoot-log-template.xlsx'])
     } finally {

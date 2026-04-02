@@ -168,6 +168,24 @@ export class ProjectService {
     return targetPath
   }
 
+  async revealPath(filePath: string): Promise<void> {
+    const resolvedPath = path.resolve(filePath)
+    if (!fs.existsSync(resolvedPath)) {
+      throw new Error('Path not found')
+    }
+
+    const stat = fs.statSync(resolvedPath)
+    if (stat.isDirectory()) {
+      const result = await shell.openPath(resolvedPath)
+      if (result) {
+        throw new Error(result)
+      }
+      return
+    }
+
+    shell.showItemInFolder(resolvedPath)
+  }
+
   async importJson(requestedPath?: string | null) {
     const sourcePath =
       requestedPath ??
@@ -325,15 +343,15 @@ export class ProjectService {
     return this.ensureRepositories().archive.listItems()
   }
 
-  createArchiveFolder(name: string, parentId?: string | null): ArchiveFolder[] {
-    return this.ensureRepositories().archive.createFolder(name, parentId)
+  createArchiveFolder(name: string, parentId?: string | null, color?: ArchiveFolder['color']): ArchiveFolder[] {
+    return this.ensureRepositories().archive.createFolder(name, parentId, color)
   }
 
   renameArchiveFolder(folderId: string, name: string): ArchiveFolder[] {
     return this.ensureRepositories().archive.renameFolder(folderId, name)
   }
 
-  updateArchiveFolder(input: { id: string; name?: string; color?: Scene['color'] }): ArchiveFolder[] {
+  updateArchiveFolder(input: { id: string; name?: string; color?: Scene['color']; parentId?: string | null }): ArchiveFolder[] {
     return this.ensureRepositories().archive.updateFolder(input)
   }
 

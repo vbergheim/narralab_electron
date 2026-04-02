@@ -5,7 +5,6 @@ import { ProjectsToolbar } from '@/features/projects/projects-toolbar'
 import type { SettingsTab } from '@/features/settings/settings-workspace'
 import {
   ConsultantDock,
-  DetachedWindowHeader,
   ErrorBanner,
   InspectorSidebar,
   WorkspaceTabsBar,
@@ -369,6 +368,23 @@ export function App() {
     setViewMenuOpen(true)
   }, [])
 
+  const detachedViewControl = detachedWorkspace === 'outline' || detachedWorkspace === 'bank' ? (
+    <button
+      ref={viewButtonRef}
+      type="button"
+      className="inline-flex h-9 shrink-0 items-center gap-2 rounded-xl border border-border bg-panel px-2.5 text-sm font-medium text-foreground transition hover:bg-panelMuted lg:px-3"
+      onClick={openViewMenu}
+      aria-label={`View: ${densityOption.label}`}
+      title={`View: ${densityOption.label}`}
+    >
+      <span className="hidden text-[11px] font-semibold uppercase tracking-[0.16em] text-muted xl:inline">
+        View
+      </span>
+      <densityOption.icon className="h-4 w-4" />
+      <span className="hidden sm:inline">{densityOption.label}</span>
+    </button>
+  ) : null
+
   const addSceneToCurrentBoard = async (
     sceneId: string,
     afterItemId?: string | null,
@@ -598,21 +614,13 @@ export function App() {
   if (detachedWorkspace) {
     return (
       <div className="flex h-screen min-h-0 flex-col overflow-hidden bg-[radial-gradient(circle_at_top,#1a1f2d_0%,#10131c_32%,#0b0d12_100%)] text-foreground">
-        {!outlineImmersive ? (
-          <DetachedWindowHeader
-            projectTitle={projectTitle}
-            detachedWorkspace={detachedWorkspace}
-            densityOption={densityOption}
-            viewButtonRef={viewButtonRef}
-            onOpenViewMenu={openViewMenu}
-            onToggleOutlineImmersive={() => void toggleOutlineImmersive()}
-          />
-        ) : null}
+        {!outlineImmersive ? <div className="app-drag h-14 shrink-0 pl-24" /> : null}
         <div className={cn('min-h-0 flex-1 overflow-hidden', outlineImmersive ? 'p-0' : 'p-4')}>
           <DetachedWorkspacePanel
             {...sharedWorkspaceProps}
             detachedWorkspace={detachedWorkspace}
             outlineImmersive={outlineImmersive}
+            detachedViewControl={!outlineImmersive ? detachedViewControl : null}
             onToggleOutlineImmersive={toggleOutlineImmersive}
             onChangeBoardViewMode={(mode) => setBoardViewMode(normalizeBoardViewMode(mode))}
           />

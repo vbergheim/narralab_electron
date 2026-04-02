@@ -76,6 +76,7 @@ export function OutlineWorkspacePanel({
   onUpdateSceneBeat,
   onDeleteSceneBeat,
   onReorderSceneBeats,
+  detachedViewControl,
 }: OutlineWorkspacePanelProps) {
   if (!projectMeta || !activeBoard) {
     return null
@@ -96,6 +97,7 @@ export function OutlineWorkspacePanel({
       availableBlockKinds={boardBlockKindsForProject}
       immersive={immersive}
       defaultBankCollapsed={defaultBankCollapsed}
+      detachedViewControl={detachedViewControl}
       sceneBankWidthStorageKey={`narralab:outline-scene-bank-width:${encodeURIComponent(projectMeta.path)}`}
       onToggleImmersive={onToggleOutlineImmersive ? () => void onToggleOutlineImmersive() : undefined}
       onChangeViewMode={onChangeBoardViewMode}
@@ -128,7 +130,7 @@ export function OutlineWorkspacePanel({
       onDeleteScene={(sceneId) => void onDeleteScene(sceneId)}
       onDeleteSelectedScenes={() => void onDeleteSelectedScenes()}
       onAddScene={(sceneId, afterItemId, boardPosition) =>
-        void onAddSceneToCurrentBoard(sceneId, afterItemId, boardPosition)
+        onAddSceneToCurrentBoard(sceneId, afterItemId, boardPosition)
       }
       onAddBlock={(kind, afterItemId) => onAddBlockToCurrentBoard(kind, afterItemId)}
       onAddTemplate={(templateId, afterItemId) => onAddBlockTemplateToCurrentBoard(templateId, afterItemId)}
@@ -175,6 +177,7 @@ export function SceneBankWorkspacePanel({
   onDeleteSelectedScenes,
   onAddSceneToCurrentBoard,
   onSendScenesToOpenOutline,
+  detachedViewControl,
 }: SceneBankWorkspacePanelProps) {
   if (!activeBoard) {
     return null
@@ -206,6 +209,7 @@ export function SceneBankWorkspacePanel({
       onDeleteSelected={() => void onDeleteSelectedScenes()}
       onAdd={(sceneId) => void onAddSceneToCurrentBoard(sceneId, selectedBoardItemId)}
       onSendToOpenOutline={(sceneIds) => void onSendScenesToOpenOutline(sceneIds)}
+      headerAction={detachedViewControl}
     />
   )
 }
@@ -238,7 +242,7 @@ export function ArchiveWorkspacePanel({
       items={archiveItems}
       selectedFolderId={selectedArchiveFolderId}
       onSelectFolder={onSetSelectedArchiveFolder}
-      onCreateFolder={(name, parentId) => void onCreateArchiveFolder(name, parentId)}
+      onCreateFolder={(name, parentId, color) => void onCreateArchiveFolder(name, parentId, color)}
       onUpdateFolder={(folderId, input) => void onUpdateArchiveFolder(folderId, input)}
       onDeleteFolder={(folderId) => void onDeleteArchiveFolder(folderId)}
       onAddFiles={(filePaths, folderId) => void onAddArchiveFiles(filePaths, folderId)}

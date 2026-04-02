@@ -3,6 +3,7 @@ import { useMemo, useRef, useState } from 'react'
 import {
   ChevronDown,
   ChevronRight,
+  Check,
   FileAudio2,
   FileImage,
   FileSpreadsheet,
@@ -29,7 +30,7 @@ type Props = {
   items: ArchiveItem[]
   selectedFolderId: string | null
   onSelectFolder(folderId: string | null): void
-  onCreateFolder(name: string, parentId?: string | null): void
+  onCreateFolder(name: string, parentId?: string | null, color?: ArchiveFolder['color']): void
   onUpdateFolder(folderId: string, input: { name?: string; color?: ArchiveFolder['color']; parentId?: string | null }): void
   onDeleteFolder(folderId: string): void
   onAddFiles(filePaths?: string[] | null, folderId?: string | null): void
@@ -54,6 +55,7 @@ export function ArchiveWorkspace({
   onDeleteItem,
 }: Props) {
   const [folderDraft, setFolderDraft] = useState('')
+  const [folderDraftColor, setFolderDraftColor] = useState<ArchiveFolder['color']>('slate')
   const [showFolderForm, setShowFolderForm] = useState(false)
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null)
   const [editingFolderDraft, setEditingFolderDraft] = useState('')
@@ -142,6 +144,7 @@ export function ArchiveWorkspace({
 
   const handleDropFiles = (event: DragEvent<HTMLDivElement>, folderId: string | null) => {
     event.preventDefault()
+    event.stopPropagation()
     setDragOverFolderId(null)
     if (draggedFolderId) {
       if (draggedFolderId !== folderId) {
@@ -165,8 +168,9 @@ export function ArchiveWorkspace({
   const submitNewFolder = () => {
     const name = folderDraft.trim()
     if (!name) return
-    onCreateFolder(name, null)
+    onCreateFolder(name, null, folderDraftColor)
     setFolderDraft('')
+    setFolderDraftColor('slate')
     setShowFolderForm(false)
   }
 
@@ -208,17 +212,58 @@ export function ArchiveWorkspace({
 
         {showFolderForm ? (
           <div className="mt-3 px-1">
-            <InlineNameEditor
-              autoFocus
-              value={folderDraft}
-              placeholder="New archive folder"
-              onChange={setFolderDraft}
+            <InlineEditScope
               onSubmit={submitNewFolder}
               onCancel={() => {
                 setFolderDraft('')
+                setFolderDraftColor('slate')
                 setShowFolderForm(false)
               }}
-            />
+            >
+              <div className="flex items-center gap-2">
+                <InlineNameEditor
+                  autoFocus
+                  value={folderDraft}
+                  placeholder="New archive folder"
+                  onChange={setFolderDraft}
+                  onSubmit={submitNewFolder}
+                  onCancel={() => {
+                    setFolderDraft('')
+                    setFolderDraftColor('slate')
+                    setShowFolderForm(false)
+                  }}
+                  className="flex-1"
+                />
+                <InlineEditActions
+                  onSave={submitNewFolder}
+                  onCancel={() => {
+                    setFolderDraft('')
+                    setFolderDraftColor('slate')
+                    setShowFolderForm(false)
+                  }}
+                />
+              </div>
+              <div className="mt-2 flex flex-wrap gap-1">
+                {sceneColors.map((color) => (
+                  <button
+                    key={`new-archive-folder-${color.value}`}
+                    type="button"
+                    className={cn(
+                      'relative h-4 w-4 rounded-full border transition',
+                      folderDraftColor === color.value ? 'border-white/90 ring-1 ring-white/40' : 'border-white/10',
+                    )}
+                    style={{ backgroundColor: color.hex }}
+                    onClick={() => setFolderDraftColor(color.value)}
+                    aria-label={color.label}
+                    title={color.label}
+                  >
+                    {folderDraftColor === color.value ? (
+                      <Check className="absolute inset-0 m-auto h-3 w-3 text-white drop-shadow" />
+                    ) : null}
+                  </button>
+                ))}
+              </div>
+            </InlineEditScope>
           </div>
         ) : null}
 
@@ -426,7 +471,9 @@ export function ArchiveWorkspace({
                   type="button"
                   draggable
                   onDragStart={(event) => {
+                    event.stopPropagation()
                     event.dataTransfer.setData('application/x-narralab-archive-item', item.id)
+                    event.dataTransfer.setData('text/plain', item.id)
                     event.dataTransfer.effectAllowed = 'move'
                   }}
                   onDoubleClick={() => onOpenItem(item.id)}

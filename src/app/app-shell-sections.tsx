@@ -14,7 +14,7 @@ import {
 
 import { ConsultantWorkspace } from '@/features/consultant/consultant-workspace'
 import { CollapsedRail, ResizeHandle } from '@/app/app-shell-controls'
-import { densityOptions, detachedLabel } from '@/app/app-shell-utils'
+import { densityOptions, detachedLabel, detachedTitle } from '@/app/app-shell-utils'
 import { Button } from '@/components/ui/button'
 import { Panel } from '@/components/ui/panel'
 import type {
@@ -61,14 +61,12 @@ export function ErrorBanner({
 }
 
 export function DetachedWindowHeader({
-  projectTitle,
   detachedWorkspace,
   densityOption,
   viewButtonRef,
   onOpenViewMenu,
   onToggleOutlineImmersive,
 }: {
-  projectTitle: string
   detachedWorkspace: WindowWorkspace
   densityOption: DensityOption
   viewButtonRef: RefObject<HTMLButtonElement | null>
@@ -78,7 +76,7 @@ export function DetachedWindowHeader({
   return (
     <div className="app-drag flex items-center justify-between border-b border-border/90 px-5 py-3 pl-24">
       <div>
-        <div className="font-display text-lg font-semibold text-foreground">{projectTitle}</div>
+        <div className="font-display text-lg font-semibold text-foreground">{detachedTitle(detachedWorkspace)}</div>
         <div className="text-sm text-muted">{detachedLabel(detachedWorkspace)}</div>
       </div>
       <div className="app-no-drag flex items-center gap-2">

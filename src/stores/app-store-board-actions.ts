@@ -354,17 +354,49 @@ export function createBoardActions(
 
     async reorderBoard(boardId, itemIds) {
       await runProjectAction(set, async () => {
-        const items = await window.narralab.boards.reorder(boardId, itemIds)
+        const previousBoard = get().boards.find((board) => board.id === boardId)
+        if (!previousBoard) {
+          return
+        }
+
+        const optimisticItems = buildReorderedBoardItems(previousBoard.items, itemIds)
+
         set((state) => ({
           boards: state.boards.map((board) =>
             board.id === boardId
               ? {
                   ...board,
-                  items,
+                  items: optimisticItems,
                 }
               : board,
           ),
         }))
+
+        try {
+          const items = await window.narralab.boards.reorder(boardId, itemIds)
+          set((state) => ({
+            boards: state.boards.map((board) =>
+              board.id === boardId
+                ? {
+                    ...board,
+                    items,
+                  }
+                : board,
+            ),
+          }))
+        } catch (error) {
+          set((state) => ({
+            boards: state.boards.map((board) =>
+              board.id === boardId
+                ? {
+                    ...board,
+                    items: previousBoard.items,
+                  }
+                : board,
+            ),
+          }))
+          throw error
+        }
       })
     },
 
@@ -388,4 +420,14 @@ function normalizeBoardItems(items: BoardItem[]) {
   return [...items]
     .sort((left, right) => left.position - right.position)
     .map((entry, index) => ({ ...entry, position: index }) as BoardItem)
+}
+
+function buildReorderedBoardItems(items: BoardItem[], itemIds: string[]) {
+  const itemById = new Map(items.map((item) => [item.id, item] as const))
+  return itemIds
+    .map((itemId, index) => {
+      const item = itemById.get(itemId)
+      return item ? ({ ...item, position: index } as BoardItem) : null
+    })
+    .filter((item): item is BoardItem => item !== null)
 }

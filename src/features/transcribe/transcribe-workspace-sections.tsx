@@ -1,4 +1,5 @@
-import type { DragEvent } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties, type DragEvent } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Archive,
   CircleStop,
@@ -9,14 +10,21 @@ import {
   Loader2,
   MicVocal,
   NotebookPen,
+  PanelRightClose,
+  PanelRightOpen,
+  Radio,
   Save,
+  Search,
   Settings,
+  X,
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Panel } from '@/components/ui/panel'
 import { Textarea } from '@/components/ui/textarea'
+import { ResizeHandle } from '@/features/boards/outline-workspace-shared'
+import { usePanelResize } from '@/hooks/use-panel-resize'
 import { cn } from '@/lib/cn'
 import type { ProjectMeta } from '@/types/project'
 import type { Scene } from '@/types/scene'
@@ -29,13 +37,22 @@ import type {
   TranscriptionItem,
 } from '@/types/transcription'
 
-import { formatJobElapsed, languageOptions, selectCls } from './transcribe-workspace-utils'
+import {
+  formatJobElapsed,
+  languageOptions,
+  selectCls,
+  type TranscribeWorkspaceView,
+} from './transcribe-workspace-utils'
 
 export function TranscribeWorkspaceHeader({
+  activeView,
   setupOk,
+  onChangeView,
   onOpenTranscribeSettings,
 }: {
+  activeView: TranscribeWorkspaceView
   setupOk: boolean
+  onChangeView(view: TranscribeWorkspaceView): void
   onOpenTranscribeSettings(): void
 }) {
   return (
@@ -46,7 +63,11 @@ export function TranscribeWorkspaceHeader({
             <MicVocal className="h-4 w-4 text-accent" />
             <span>Transcribe</span>
           </div>
-          {setupOk ? (
+          {activeView === 'library' ? (
+            <div className="mt-1 text-sm text-muted">
+              Browse saved transcripts, revise the text, and link each transcript to scenes.
+            </div>
+          ) : setupOk ? (
             <div className="mt-1 text-sm text-muted">
               Select a file and model to transcribe audio or video locally.
             </div>
@@ -64,10 +85,29 @@ export function TranscribeWorkspaceHeader({
             </div>
           )}
         </div>
-        <Button variant="ghost" size="sm" type="button" onClick={onOpenTranscribeSettings}>
-          <Settings className="h-4 w-4" />
-          Settings
-        </Button>
+        <div className="flex items-center gap-2">
+          <div className="inline-flex rounded-xl border border-border/70 bg-panelMuted/30 p-1">
+            {(['library', 'transcribe'] as const).map((view) => (
+              <button
+                key={view}
+                type="button"
+                className={cn(
+                  'rounded-lg px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] transition',
+                  activeView === view
+                    ? 'bg-accent text-accent-foreground shadow-sm'
+                    : 'text-muted hover:text-foreground',
+                )}
+                onClick={() => onChangeView(view)}
+              >
+                {view === 'transcribe' ? 'Transcribe' : 'Library'}
+              </button>
+            ))}
+          </div>
+          <Button variant="ghost" size="sm" type="button" onClick={onOpenTranscribeSettings}>
+            <Settings className="h-4 w-4" />
+            Settings
+          </Button>
+        </div>
       </div>
     </Panel>
   )
@@ -124,9 +164,6 @@ export function NewTranscriptionPanel({
   elapsedSec,
   status,
   loadError,
-  resultText,
-  isSaving,
-  onSaveToLibrary,
 }: {
   catalogRows: Array<TranscriptionModelCatalogEntry & { downloaded: boolean }>
   modelId: TranscriptionModelId
@@ -148,9 +185,6 @@ export function NewTranscriptionPanel({
   elapsedSec: number
   status: TranscriptionStatus
   loadError: string | null
-  resultText: string
-  isSaving: boolean
-  onSaveToLibrary(): void
 }) {
   return (
     <Panel className="relative z-10 flex min-h-0 flex-col gap-0 overflow-hidden">
@@ -307,24 +341,23 @@ export function NewTranscriptionPanel({
         {loadError ? (
           <div className="mt-2 text-xs text-red-300">{loadError}</div>
         ) : null}
+      </div>
+    </Panel>
+  )
+}
 
-        {resultText.trim() && !jobActive ? (
-          <div className="mt-4 border-t border-border/40 pt-4">
-            <Button
-              variant="accent"
-              size="sm"
-              className="w-full"
-              disabled={isSaving}
-              onClick={onSaveToLibrary}
-            >
-              {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              Save to Library
-            </Button>
-            <p className="mt-2 text-center text-xs text-muted">
-              Save this transcript to enable scene linking and organization.
-            </p>
-          </div>
-        ) : null}
+export function LibraryEmptyState() {
+  return (
+    <Panel className="flex h-full min-h-[min(36vh,240px)] flex-col overflow-hidden lg:min-h-0">
+      <div className="flex shrink-0 items-center justify-between border-b border-border/90 px-5 py-4">
+        <div className="font-display text-sm font-semibold uppercase tracking-[0.16em] text-foreground">
+          Transcript Details
+        </div>
+      </div>
+      <div className="flex min-h-0 flex-1 items-center justify-center p-8 text-center">
+        <div className="max-w-sm text-sm text-muted">
+          Select a saved transcript from the library to inspect metadata, revise text, and link it to a scene.
+        </div>
       </div>
     </Panel>
   )
@@ -334,9 +367,11 @@ export function SavedTranscriptionMetadataPanel({
   filePath,
   selectedItem,
   selectedItemId,
+  selectedSceneId,
   scenes,
   isSaving,
   resultText,
+  onCollapse,
   onLinkScene,
   onSaveToArchive,
   onTranscribeAgain,
@@ -344,19 +379,26 @@ export function SavedTranscriptionMetadataPanel({
   filePath: string | null
   selectedItem: TranscriptionItem | undefined
   selectedItemId: string | null
+  selectedSceneId: string | null
   scenes: Scene[]
   isSaving: boolean
   resultText: string
+  onCollapse?(): void
   onLinkScene(sceneId: string | null): void
   onSaveToArchive(): void
   onTranscribeAgain(): void
 }) {
   return (
-    <Panel className="flex flex-col overflow-hidden">
+    <Panel className="flex h-full min-h-0 flex-col overflow-hidden">
       <div className="flex shrink-0 items-center justify-between border-b border-border/90 px-5 py-4">
         <div className="font-display text-sm font-semibold uppercase tracking-[0.16em] text-foreground">
           Metadata
         </div>
+        {onCollapse ? (
+          <Button variant="ghost" size="sm" type="button" onClick={onCollapse} title="Collapse metadata" aria-label="Collapse metadata">
+            <PanelRightClose className="h-4 w-4" />
+          </Button>
+        ) : null}
       </div>
       <div className="flex-1 overflow-y-auto p-5 text-sm">
         <div className="space-y-6">
@@ -376,17 +418,14 @@ export function SavedTranscriptionMetadataPanel({
               <Link className="h-3 w-3" />
               Linked Scene
             </label>
-            <select
-              className={cn(selectCls, 'mt-2 h-9 rounded-lg')}
-              value={selectedItem?.sceneId ?? ''}
-              disabled={isSaving}
-              onChange={(event) => onLinkScene(event.target.value || null)}
-            >
-              <option value="">(None)</option>
-              {scenes.map((scene) => (
-                <option key={scene.id} value={scene.id}>{scene.title}</option>
-              ))}
-            </select>
+            <div className="mt-2">
+              <LinkedScenePicker
+                scenes={scenes}
+                selectedSceneId={selectedSceneId}
+                disabled={isSaving}
+                onSelectScene={onLinkScene}
+              />
+            </div>
           </div>
 
           <div className="space-y-2 pt-4">
@@ -417,6 +456,249 @@ export function SavedTranscriptionMetadataPanel({
   )
 }
 
+function LinkedScenePicker({
+  scenes,
+  selectedSceneId,
+  disabled,
+  onSelectScene,
+}: {
+  scenes: Scene[]
+  selectedSceneId: string | null
+  disabled: boolean
+  onSelectScene(sceneId: string | null): void
+}) {
+  const [isOpen, setIsOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const pickerResize = usePanelResize({
+    initial: 720,
+    min: 420,
+    max: 1100,
+    storageKey: 'narralab:transcribe-linked-scene-picker-width',
+  })
+
+  const selectedScene = useMemo(
+    () => scenes.find((scene) => scene.id === selectedSceneId) ?? null,
+    [scenes, selectedSceneId],
+  )
+
+  const filteredScenes = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase()
+    if (!normalizedQuery) return scenes
+    return scenes.filter((scene) => {
+      const haystacks = [
+        scene.title,
+        scene.synopsis,
+        scene.folder,
+        scene.category,
+        scene.location,
+      ]
+      return haystacks.some((value) => value.toLowerCase().includes(normalizedQuery))
+    })
+  }, [query, scenes])
+
+  useEffect(() => {
+    if (!isOpen) {
+      setQuery('')
+      return
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsOpen(false)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isOpen])
+
+  const selectScene = (sceneId: string | null) => {
+    onSelectScene(sceneId)
+    setIsOpen(false)
+  }
+
+  const pickerStyle = {
+    '--transcribe-scene-picker-width': `${pickerResize.size}px`,
+  } as CSSProperties
+
+  return (
+    <div className="space-y-2">
+      <div className="rounded-2xl border border-border/80 bg-panelMuted/20 p-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className={cn('truncate text-sm font-medium', selectedScene ? 'text-foreground' : 'text-muted')}>
+              {selectedScene ? selectedScene.title : 'No scene linked'}
+            </div>
+            <div className="mt-1 text-xs text-muted">
+              {selectedScene ? formatScenePickerMeta(selectedScene) : `${scenes.length} scenes available`}
+            </div>
+          </div>
+          {selectedSceneId ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              type="button"
+              disabled={disabled}
+              onClick={() => selectScene(null)}
+            >
+              <X className="h-4 w-4" />
+              Clear
+            </Button>
+          ) : null}
+        </div>
+
+        <div className="mt-3 flex items-center gap-2">
+          <Button
+            variant="default"
+            size="sm"
+            type="button"
+            disabled={disabled}
+            onClick={() => setIsOpen(true)}
+          >
+            <PanelRightOpen className="h-4 w-4" />
+            Browse Scenes
+          </Button>
+        </div>
+      </div>
+
+      {isOpen && typeof document !== 'undefined'
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[200] bg-black/45 backdrop-blur-sm"
+              onClick={() => setIsOpen(false)}
+            >
+              <div
+                className="fixed inset-4 z-[201] flex min-h-0 items-center justify-center"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="flex min-h-0 max-h-full max-w-full items-stretch" style={pickerStyle}>
+                  <div className="hidden sm:flex sm:h-full sm:items-stretch">
+                    <ResizeHandle
+                      label="Resize linked scene picker"
+                      active={pickerResize.isResizing}
+                      onPointerDown={pickerResize.startResize(-1)}
+                    />
+                  </div>
+                  <Panel className="flex h-[min(78vh,720px)] min-h-0 w-[min(var(--transcribe-scene-picker-width),calc(100vw-3rem))] min-w-[min(26rem,calc(100vw-3rem))] max-w-[calc(100vw-3rem)] flex-col overflow-hidden">
+                    <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border/80 px-4 py-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 truncate font-display text-sm font-semibold uppercase tracking-[0.16em] text-foreground">
+                          <Radio className="h-4 w-4 text-accent" />
+                          <span>Link Scene</span>
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        {selectedSceneId ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            type="button"
+                            disabled={disabled}
+                            onClick={() => selectScene(null)}
+                          >
+                            Clear
+                          </Button>
+                        ) : null}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          type="button"
+                          className="h-8 w-8 p-0"
+                          onClick={() => setIsOpen(false)}
+                          aria-label="Close scene picker"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="shrink-0 border-b border-border/60 px-4 py-3">
+                      <div className="relative">
+                        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+                        <Input
+                          autoFocus
+                          value={query}
+                          onChange={(event) => setQuery(event.target.value)}
+                          className="pl-9"
+                          placeholder="Search scenes by title, folder, category…"
+                        />
+                      </div>
+                      <div className="mt-2 text-xs text-muted">
+                        {filteredScenes.length === scenes.length
+                          ? `${scenes.length} scenes`
+                          : `${filteredScenes.length} of ${scenes.length} scenes`}
+                      </div>
+                    </div>
+
+                    <div className="min-h-0 flex-1 overflow-y-auto bg-panelMuted/10 px-3 py-3">
+                      {filteredScenes.length > 0 ? (
+                        <div className="space-y-2">
+                          {filteredScenes.map((scene) => {
+                            const active = scene.id === selectedSceneId
+                            return (
+                              <button
+                                key={scene.id}
+                                type="button"
+                                className={cn(
+                                  'flex w-full items-start gap-3 rounded-xl border px-3 py-2.5 text-left transition',
+                                  active
+                                    ? 'border-accent/55 bg-accent/12 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.03)]'
+                                    : 'border-border/60 bg-panel/80 hover:border-accent/30 hover:bg-panelMuted/70',
+                                )}
+                                onClick={() => selectScene(scene.id)}
+                              >
+                                <div
+                                  className={cn(
+                                    'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border',
+                                    active
+                                      ? 'border-accent bg-accent text-accent-foreground'
+                                      : 'border-border/80 bg-panel text-transparent',
+                                  )}
+                                >
+                                  <div className="h-2.5 w-2.5 rounded-full bg-current" />
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="truncate font-medium text-foreground">{scene.title}</div>
+                                    {active ? (
+                                      <div className="shrink-0 text-[11px] font-semibold uppercase tracking-[0.16em] text-accent">
+                                        Linked
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                  <div className="mt-1 text-xs text-muted">{formatScenePickerMeta(scene)}</div>
+                                  {scene.synopsis.trim() ? (
+                                    <div className="mt-1.5 line-clamp-2 text-sm text-foreground/75">{scene.synopsis}</div>
+                                  ) : null}
+                                </div>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      ) : (
+                        <div className="px-4 py-10 text-sm text-muted">
+                          No scenes match the current search.
+                        </div>
+                      )}
+                    </div>
+                  </Panel>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
+    </div>
+  )
+}
+
+function formatScenePickerMeta(scene: Scene) {
+  const parts = [scene.folder || null, scene.category || null, scene.location || null].filter(
+    (value): value is string => Boolean(value && value.trim()),
+  )
+  return parts.length > 0 ? parts.join(' · ') : 'No folder or category'
+}
+
 export function TranscriptPanel({
   resultText,
   projectMeta,
@@ -443,7 +725,7 @@ export function TranscriptPanel({
   onResultTextChange(value: string): void
 }) {
   return (
-    <Panel className="relative z-0 flex min-h-[min(36vh,240px)] flex-col overflow-hidden lg:min-h-0">
+    <Panel className="relative z-0 flex h-full min-h-[min(36vh,240px)] flex-col overflow-hidden lg:min-h-0">
       <div className="flex shrink-0 items-center justify-between border-b border-border/90 px-5 py-4">
         <div className="font-display text-sm font-semibold uppercase tracking-[0.16em] text-foreground">
           Transcript

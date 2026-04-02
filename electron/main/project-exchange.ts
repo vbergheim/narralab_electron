@@ -64,11 +64,11 @@ export class ProjectExchangeService {
 
       const insertScene = db.prepare(`
         INSERT INTO scenes (
-          id, sort_order, title, synopsis, notes, color, status, is_key_scene, folder, category,
+          id, sort_order, title, synopsis, shoot_date, shoot_block, notes, camera_notes, audio_notes, color, status, is_key_scene, folder, category,
           estimated_duration, actual_duration, location, characters,
           function, source_reference, quote_moment, quality, source_paths, created_at, updated_at
         ) VALUES (
-          @id, @sortOrder, @title, @synopsis, @notes, @color, @status, @keyRating, @folder, @category,
+          @id, @sortOrder, @title, @synopsis, @shootDate, @shootBlock, @notes, @cameraNotes, @audioNotes, @color, @status, @keyRating, @folder, @category,
           @estimatedDuration, @actualDuration, @location, @characters,
           @function, @sourceReference, @quoteMoment, @quality, @sourcePaths, @createdAt, @updatedAt
         )
@@ -101,7 +101,11 @@ export class ProjectExchangeService {
         insertScene.run({
           ...scene,
           sortOrder: scene.sortOrder ?? index,
+          shootDate: scene.shootDate ?? '',
+          shootBlock: scene.shootBlock ?? '',
           folder: scene.folder ?? '',
+          cameraNotes: scene.cameraNotes ?? '',
+          audioNotes: scene.audioNotes ?? '',
           keyRating: normalizeSceneKeyRating(scene),
           characters: JSON.stringify(scene.characters),
           sourceReference: sourcePaths[0] ?? scene.sourceReference ?? '',
@@ -300,7 +304,11 @@ function normalizeSnapshotScene(scene: Scene) {
 
   return {
     ...scene,
+    shootDate: typeof scene.shootDate === 'string' ? scene.shootDate : '',
+    shootBlock: typeof scene.shootBlock === 'string' ? scene.shootBlock : '',
     sourceReference: sourcePaths[0] ?? (typeof scene.sourceReference === 'string' ? scene.sourceReference : ''),
+    cameraNotes: typeof scene.cameraNotes === 'string' ? scene.cameraNotes : '',
+    audioNotes: typeof scene.audioNotes === 'string' ? scene.audioNotes : '',
     quoteMoment: typeof scene.quoteMoment === 'string' ? scene.quoteMoment : '',
     quality: typeof scene.quality === 'string' ? scene.quality : '',
     sourcePaths,

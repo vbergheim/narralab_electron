@@ -29,7 +29,11 @@ export type Scene = {
   sortOrder: number
   title: string
   synopsis: string
+  shootDate: string
+  shootBlock: string
   notes: string
+  cameraNotes: string
+  audioNotes: string
   color: SceneColor
   status: SceneStatus
   keyRating: number

@@ -94,9 +94,9 @@ export type AppStore = {
   initialize(): Promise<void>
   refreshAll(): Promise<void>
   syncProjectChanges(scopes: ProjectChangeScope[]): Promise<void>
-  createArchiveFolder(name: string, parentId?: string | null): Promise<void>
+  createArchiveFolder(name: string, parentId?: string | null, color?: ArchiveFolder['color']): Promise<void>
   renameArchiveFolder(folderId: string, name: string): Promise<void>
-  updateArchiveFolder(folderId: string, input: { name?: string; color?: ArchiveFolder['color'] }): Promise<void>
+  updateArchiveFolder(folderId: string, input: { name?: string; color?: ArchiveFolder['color']; parentId?: string | null }): Promise<void>
   deleteArchiveFolder(folderId: string): Promise<void>
   addArchiveFiles(filePaths?: string[] | null, folderId?: string | null): Promise<void>
   moveArchiveItem(itemId: string, folderId: string | null): Promise<void>
