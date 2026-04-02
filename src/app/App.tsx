@@ -537,6 +537,92 @@ export function App() {
     return order.filter((kind) => enabled.includes(kind))
   }, [projectSettings])
 
+  const sharedWorkspaceProps = {
+    projectMeta,
+    projectSettings,
+    appSettings,
+    notebook,
+    archiveFolders,
+    archiveItems,
+    scenes,
+    sceneFolders,
+    boards,
+    boardFolders,
+    blockTemplates,
+    tags,
+    activeBoardId,
+    activeBoard,
+    selectedSceneId,
+    selectedSceneIds,
+    selectedBoardItemId,
+    selectedArchiveFolderId,
+    filteredScenes,
+    filteredSceneIds,
+    sceneDensity,
+    boardViewMode: effectiveBoardViewMode,
+    boardBlockKindsForProject,
+    inspectorContent,
+    onCreateProject: () => void createProject(),
+    onOpenProject: () => void openProject(),
+    onUpdateAppSettings: updateAppSettings,
+    onUpdateProjectSettings: updateProjectSettings,
+    onUpdateNotebookDraft: updateNotebookDraft,
+    onPersistNotebook: persistNotebook,
+    onSetSelectedArchiveFolder: setSelectedArchiveFolder,
+    onCreateArchiveFolder: createArchiveFolder,
+    onUpdateArchiveFolder: updateArchiveFolder,
+    onDeleteArchiveFolder: deleteArchiveFolder,
+    onAddArchiveFiles: addArchiveFiles,
+    onMoveArchiveItem: moveArchiveItem,
+    onOpenArchiveItem: openArchiveItem,
+    onRevealArchiveItem: revealArchiveItem,
+    onDeleteArchiveItem: deleteArchiveItem,
+    onSelectBoardForWindow: setBoardForCurrentWindow,
+    onOpenBoardDetailsForWindow: openBoardDetailsForCurrentWindow,
+    onUpdateBoardDraft: updateBoardDraft,
+    onCloneBoard: cloneBoard,
+    onCreateBoard: createBoard,
+    onCreateBoardFolder: createBoardFolder,
+    onUpdateBoardFolder: updateBoardFolder,
+    onDeleteBoardFolder: deleteBoardFolder,
+    onDeleteBoard: deleteBoard,
+    onMoveBoard: moveBoard,
+    onReorderBoards: reorderBoards,
+    onSelectScene: selectScene,
+    onOpenInspector: openInspector,
+    onCreateScene: createScene,
+    onToggleSceneSelection: toggleSceneSelection,
+    onSetSceneSelection: setSceneSelection,
+    onClearSceneSelection: clearSceneSelection,
+    onCreateSceneFolder: createSceneFolder,
+    onUpdateSceneFolder: updateSceneFolder,
+    onDeleteSceneFolder: deleteSceneFolder,
+    onMoveScenesToFolder: moveScenesToFolder,
+    onToggleKeyScene: toggleKeyScene,
+    onDuplicateScene: (sceneId: string, afterItemId?: string | null) =>
+      duplicateScene(sceneId, { addToBoardAfterItemId: afterItemId ?? null }),
+    onDeleteScene: deleteScene,
+    onDeleteSelectedScenes: () => deleteScenes(selectedSceneIds),
+    onAddSceneToCurrentBoard: addSceneToCurrentBoard,
+    onAddBlockToCurrentBoard: addBlockToCurrentBoard,
+    onAddBlockTemplateToCurrentBoard: addBlockTemplateToCurrentBoard,
+    onSaveBlockTemplate: saveBlockTemplate,
+    onDeleteBlockTemplate: deleteBlockTemplate,
+    onCopyBlockToBoard: copyBlockToBoard,
+    onDuplicateBoardItem: duplicateBoardItem,
+    onRemoveBoardItem: removeBoardItem,
+    onReorderCurrentBoard: reorderCurrentBoard,
+    onPersistBoardItemDraft: persistBoardItemDraft,
+    onInlineUpdateScene: inlineUpdateScene,
+    onInlineUpdateBlock: inlineUpdateBlock,
+    onCreateSceneBeat: createSceneBeat,
+    onUpdateSceneBeat: updateSceneBeat,
+    onDeleteSceneBeat: deleteSceneBeat,
+    onReorderSceneBeats: reorderSceneBeats,
+    onSendScenesToOpenOutline: sendScenesToOpenOutline,
+    onOpenTranscribeSettings: openAppSettingsTranscribe,
+  }
+
   if (!ready) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-bg text-foreground">
@@ -583,90 +669,9 @@ export function App() {
         ) : null}
         <div className={cn('min-h-0 flex-1 overflow-hidden', outlineImmersive ? 'p-0' : 'p-4')}>
           <DetachedWorkspacePanel
-            projectMeta={projectMeta}
-            projectSettings={projectSettings}
-            appSettings={appSettings}
-            notebook={notebook}
-            archiveFolders={archiveFolders}
-            archiveItems={archiveItems}
-            scenes={scenes}
-            sceneFolders={sceneFolders}
-            boards={boards}
-            boardFolders={boardFolders}
-            blockTemplates={blockTemplates}
-            tags={tags}
-            activeBoardId={activeBoardId}
-            activeBoard={activeBoard}
-            selectedSceneId={selectedSceneId}
-            selectedSceneIds={selectedSceneIds}
-            selectedBoardItemId={selectedBoardItemId}
-            selectedArchiveFolderId={selectedArchiveFolderId}
-            filteredScenes={filteredScenes}
-            filteredSceneIds={filteredSceneIds}
-            sceneDensity={sceneDensity}
-            boardViewMode={effectiveBoardViewMode}
-            boardBlockKindsForProject={boardBlockKindsForProject}
-            inspectorContent={inspectorContent}
+            {...sharedWorkspaceProps}
             detachedWorkspace={detachedWorkspace}
             outlineImmersive={outlineImmersive}
-            onCreateProject={() => void createProject()}
-            onOpenProject={() => void openProject()}
-            onUpdateAppSettings={updateAppSettings}
-            onUpdateProjectSettings={updateProjectSettings}
-            onUpdateNotebookDraft={updateNotebookDraft}
-            onPersistNotebook={persistNotebook}
-            onSetSelectedArchiveFolder={setSelectedArchiveFolder}
-            onCreateArchiveFolder={createArchiveFolder}
-            onUpdateArchiveFolder={updateArchiveFolder}
-            onDeleteArchiveFolder={deleteArchiveFolder}
-            onAddArchiveFiles={addArchiveFiles}
-            onMoveArchiveItem={moveArchiveItem}
-            onOpenArchiveItem={openArchiveItem}
-            onRevealArchiveItem={revealArchiveItem}
-            onDeleteArchiveItem={deleteArchiveItem}
-            onSelectBoardForWindow={setBoardForCurrentWindow}
-            onOpenBoardDetailsForWindow={openBoardDetailsForCurrentWindow}
-            onUpdateBoardDraft={updateBoardDraft}
-            onCloneBoard={cloneBoard}
-            onCreateBoard={createBoard}
-            onCreateBoardFolder={createBoardFolder}
-            onUpdateBoardFolder={updateBoardFolder}
-            onDeleteBoardFolder={deleteBoardFolder}
-            onDeleteBoard={deleteBoard}
-            onMoveBoard={moveBoard}
-            onReorderBoards={reorderBoards}
-            onSelectScene={selectScene}
-            onOpenInspector={openInspector}
-            onCreateScene={createScene}
-            onToggleSceneSelection={toggleSceneSelection}
-            onSetSceneSelection={setSceneSelection}
-            onClearSceneSelection={clearSceneSelection}
-            onCreateSceneFolder={createSceneFolder}
-            onUpdateSceneFolder={updateSceneFolder}
-            onDeleteSceneFolder={deleteSceneFolder}
-            onMoveScenesToFolder={moveScenesToFolder}
-            onToggleKeyScene={toggleKeyScene}
-            onDuplicateScene={(sceneId, afterItemId) => duplicateScene(sceneId, { addToBoardAfterItemId: afterItemId ?? null })}
-            onDeleteScene={deleteScene}
-            onDeleteSelectedScenes={() => deleteScenes(selectedSceneIds)}
-            onAddSceneToCurrentBoard={addSceneToCurrentBoard}
-            onAddBlockToCurrentBoard={addBlockToCurrentBoard}
-            onAddBlockTemplateToCurrentBoard={addBlockTemplateToCurrentBoard}
-            onSaveBlockTemplate={saveBlockTemplate}
-            onDeleteBlockTemplate={deleteBlockTemplate}
-            onCopyBlockToBoard={copyBlockToBoard}
-            onDuplicateBoardItem={duplicateBoardItem}
-            onRemoveBoardItem={removeBoardItem}
-            onReorderCurrentBoard={reorderCurrentBoard}
-            onPersistBoardItemDraft={persistBoardItemDraft}
-            onInlineUpdateScene={inlineUpdateScene}
-            onInlineUpdateBlock={inlineUpdateBlock}
-            onCreateSceneBeat={createSceneBeat}
-            onUpdateSceneBeat={updateSceneBeat}
-            onDeleteSceneBeat={deleteSceneBeat}
-            onReorderSceneBeats={reorderSceneBeats}
-            onSendScenesToOpenOutline={sendScenesToOpenOutline}
-            onOpenTranscribeSettings={openAppSettingsTranscribe}
             onToggleOutlineImmersive={toggleOutlineImmersive}
             onChangeBoardViewMode={(mode) => setBoardViewMode(normalizeBoardViewMode(mode))}
           />
@@ -773,94 +778,13 @@ export function App() {
         <div className="flex min-h-0 flex-1 gap-4">
           <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4">
             <MainWorkspacePanel
+              {...sharedWorkspaceProps}
               workspaceMode={workspaceMode}
-              projectMeta={projectMeta}
-              projectSettings={projectSettings}
-              appSettings={appSettings}
-              notebook={notebook}
-              archiveFolders={archiveFolders}
-              archiveItems={archiveItems}
-              scenes={scenes}
-              sceneFolders={sceneFolders}
-              boards={boards}
-              boardFolders={boardFolders}
-              blockTemplates={blockTemplates}
-              tags={tags}
-              activeBoardId={activeBoardId}
-              activeBoard={activeBoard}
-              selectedSceneId={selectedSceneId}
-              selectedSceneIds={selectedSceneIds}
-              selectedBoardItemId={selectedBoardItemId}
-              selectedArchiveFolderId={selectedArchiveFolderId}
               consultantBusy={consultantBusy}
               consultantMessages={consultantMessages}
               consultantContextMode={consultantContextMode}
-              filteredScenes={filteredScenes}
-              filteredSceneIds={filteredSceneIds}
-              sceneDensity={sceneDensity}
-              boardViewMode={effectiveBoardViewMode}
-              boardBlockKindsForProject={boardBlockKindsForProject}
               busy={busy}
               settingsNavigate={settingsNavigate}
-              inspectorContent={inspectorContent}
-              onCreateProject={() => void createProject()}
-              onOpenProject={() => void openProject()}
-              onUpdateAppSettings={updateAppSettings}
-              onUpdateProjectSettings={updateProjectSettings}
-              onUpdateNotebookDraft={updateNotebookDraft}
-              onPersistNotebook={persistNotebook}
-              onSetSelectedArchiveFolder={setSelectedArchiveFolder}
-              onCreateArchiveFolder={createArchiveFolder}
-              onUpdateArchiveFolder={updateArchiveFolder}
-              onDeleteArchiveFolder={deleteArchiveFolder}
-              onAddArchiveFiles={addArchiveFiles}
-              onMoveArchiveItem={moveArchiveItem}
-              onOpenArchiveItem={openArchiveItem}
-              onRevealArchiveItem={revealArchiveItem}
-              onDeleteArchiveItem={deleteArchiveItem}
-              onSelectBoardForWindow={setBoardForCurrentWindow}
-              onOpenBoardDetailsForWindow={openBoardDetailsForCurrentWindow}
-              onUpdateBoardDraft={updateBoardDraft}
-              onCloneBoard={cloneBoard}
-              onCreateBoard={createBoard}
-              onCreateBoardFolder={createBoardFolder}
-              onUpdateBoardFolder={updateBoardFolder}
-              onDeleteBoardFolder={deleteBoardFolder}
-              onDeleteBoard={deleteBoard}
-              onMoveBoard={moveBoard}
-              onReorderBoards={reorderBoards}
-              onSelectScene={selectScene}
-              onOpenInspector={openInspector}
-              onCreateScene={createScene}
-              onToggleSceneSelection={toggleSceneSelection}
-              onSetSceneSelection={setSceneSelection}
-              onClearSceneSelection={clearSceneSelection}
-              onCreateSceneFolder={createSceneFolder}
-              onUpdateSceneFolder={updateSceneFolder}
-              onDeleteSceneFolder={deleteSceneFolder}
-              onMoveScenesToFolder={moveScenesToFolder}
-              onToggleKeyScene={toggleKeyScene}
-              onDuplicateScene={(sceneId, afterItemId) => duplicateScene(sceneId, { addToBoardAfterItemId: afterItemId ?? null })}
-              onDeleteScene={deleteScene}
-              onDeleteSelectedScenes={() => deleteScenes(selectedSceneIds)}
-              onAddSceneToCurrentBoard={addSceneToCurrentBoard}
-              onAddBlockToCurrentBoard={addBlockToCurrentBoard}
-              onAddBlockTemplateToCurrentBoard={addBlockTemplateToCurrentBoard}
-              onSaveBlockTemplate={saveBlockTemplate}
-              onDeleteBlockTemplate={deleteBlockTemplate}
-              onCopyBlockToBoard={copyBlockToBoard}
-              onDuplicateBoardItem={duplicateBoardItem}
-              onRemoveBoardItem={removeBoardItem}
-              onReorderCurrentBoard={reorderCurrentBoard}
-              onPersistBoardItemDraft={persistBoardItemDraft}
-              onInlineUpdateScene={inlineUpdateScene}
-              onInlineUpdateBlock={inlineUpdateBlock}
-              onCreateSceneBeat={createSceneBeat}
-              onUpdateSceneBeat={updateSceneBeat}
-              onDeleteSceneBeat={deleteSceneBeat}
-              onReorderSceneBeats={reorderSceneBeats}
-              onSendScenesToOpenOutline={sendScenesToOpenOutline}
-              onOpenTranscribeSettings={openAppSettingsTranscribe}
               onSetWorkspaceMode={setWorkspaceMode}
               onSetConsultantContextMode={setConsultantContextMode}
               onSendConsultantMessage={sendConsultantMessage}
