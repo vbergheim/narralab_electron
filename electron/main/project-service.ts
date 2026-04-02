@@ -32,6 +32,17 @@ import { openProjectDatabase, type ProjectDatabase } from './db/connection'
 import { ArchiveRepository } from './db/repositories/archive-repository'
 import { BoardRepository } from './db/repositories/board-repository'
 import { ProjectMetadataRepository } from './db/repositories/project-metadata-repository'
+import {
+  buildFolderPath,
+  getFolderNameFromPath,
+  isFolderWithinPath,
+  makeFolderRecord,
+  normalizeFolderPath,
+  normalizeNullableFolderPath,
+  normalizeStoredFolders,
+  parseStoredFolders,
+  replaceFolderPathPrefix,
+} from './folder-utils'
 import { NotebookService } from './notebook-service'
 import {
   defaultProjectSettings,
@@ -393,7 +404,7 @@ export class ProjectService {
 
   listTranscriptionFolders(): TranscriptionFolder[] {
     const storedValue = this.ensureRepositories().metadata.getTranscriptionFolders()
-    const storedFolders = parseTranscriptionFolders(storedValue)
+    const storedFolders = parseStoredFolders<TranscriptionFolder>(storedValue)
     const itemFolderPaths = Array.from(
       new Set(
         this.listTranscriptionItems()
@@ -407,11 +418,11 @@ export class ProjectService {
       const normalizedPath = normalizeFolderPath(folderPath)
       if (!normalizedPath) return
       if (!merged.some((folder) => folder.path.toLowerCase() === normalizedPath.toLowerCase())) {
-        merged.push(makeFolderRecord(normalizedPath, 'slate', merged.length))
+        merged.push(makeFolderRecord<TranscriptionFolder>(normalizedPath, 'slate', merged.length))
       }
     })
 
-    return normalizeSceneFolders(merged)
+    return normalizeStoredFolders(merged)
   }
 
   createTranscriptionFolder(name: string, parentPath?: string | null): TranscriptionFolder[] {
@@ -431,7 +442,7 @@ export class ProjectService {
       return folders
     }
 
-    const nextFolders = normalizeSceneFolders([...folders, makeFolderRecord(nextPath, 'slate', folders.length)])
+    const nextFolders = normalizeStoredFolders([...folders, makeFolderRecord<TranscriptionFolder>(nextPath, 'slate', folders.length)])
     this.setTranscriptionFolders(nextFolders)
     return nextFolders
   }
@@ -487,7 +498,7 @@ export class ProjectService {
       throw new Error('A folder with that name already exists')
     }
 
-    const nextFolders = normalizeSceneFolders(
+    const nextFolders = normalizeStoredFolders(
       folders.map((folder) =>
         isFolderWithinPath(folder.path, previousPath)
           ? {
@@ -527,7 +538,7 @@ export class ProjectService {
       throw new Error('Folder not found')
     }
 
-    const nextFolders = normalizeSceneFolders(
+    const nextFolders = normalizeStoredFolders(
       folders.filter((folder) => !isFolderWithinPath(folder.path, previousPath)),
     )
 
@@ -612,7 +623,7 @@ export class ProjectService {
 
   listSceneFolders(): SceneFolder[] {
     const storedValue = this.ensureRepositories().metadata.getSceneFolders()
-    const storedFolders = parseSceneFolders(storedValue)
+    const storedFolders = parseStoredFolders<SceneFolder>(storedValue)
     const sceneFolderPaths = Array.from(
       new Set(
         this.listScenes()
@@ -626,11 +637,11 @@ export class ProjectService {
       const normalizedPath = normalizeFolderPath(path)
       if (!normalizedPath) return
       if (!merged.some((folder) => folder.path.toLowerCase() === normalizedPath.toLowerCase())) {
-        merged.push(makeFolderRecord(normalizedPath, 'slate', merged.length))
+        merged.push(makeFolderRecord<SceneFolder>(normalizedPath, 'slate', merged.length))
       }
     })
 
-    return normalizeSceneFolders(merged)
+    return normalizeStoredFolders(merged)
   }
 
   createSceneFolder(name: string, parentPath?: string | null): SceneFolder[] {
@@ -650,7 +661,7 @@ export class ProjectService {
       return folders
     }
 
-    const nextFolders = normalizeSceneFolders([...folders, makeFolderRecord(nextPath, 'slate', folders.length)])
+    const nextFolders = normalizeStoredFolders([...folders, makeFolderRecord<SceneFolder>(nextPath, 'slate', folders.length)])
     this.setSceneFolders(nextFolders)
     return nextFolders
   }
@@ -703,7 +714,7 @@ export class ProjectService {
       throw new Error('A folder with that name already exists')
     }
 
-    const nextFolders = normalizeSceneFolders(
+    const nextFolders = normalizeStoredFolders(
       folders.map((folder) =>
         isFolderWithinPath(folder.path, previousPath)
           ? {
@@ -743,7 +754,7 @@ export class ProjectService {
       throw new Error('Folder not found')
     }
 
-    const nextFolders = normalizeSceneFolders(
+    const nextFolders = normalizeStoredFolders(
       folders.filter((folder) => !isFolderWithinPath(folder.path, previousPath)),
     )
 
@@ -845,7 +856,7 @@ export class ProjectService {
 
   listBoardFolders(): BoardFolder[] {
     const storedValue = this.ensureRepositories().metadata.getBoardFolders()
-    const storedFolders = parseBoardFolders(storedValue)
+    const storedFolders = parseStoredFolders<BoardFolder>(storedValue)
     const boardFolderPaths = Array.from(
       new Set(
         this.listBoards()
@@ -859,11 +870,11 @@ export class ProjectService {
       const normalizedPath = normalizeFolderPath(path)
       if (!normalizedPath) return
       if (!merged.some((folder) => folder.path.toLowerCase() === normalizedPath.toLowerCase())) {
-        merged.push(makeFolderRecord(normalizedPath, 'slate', merged.length))
+        merged.push(makeFolderRecord<BoardFolder>(normalizedPath, 'slate', merged.length))
       }
     })
 
-    return normalizeBoardFolders(merged)
+    return normalizeStoredFolders(merged)
   }
 
   createBoardFolder(name: string, parentPath?: string | null): BoardFolder[] {
@@ -883,7 +894,7 @@ export class ProjectService {
       return folders
     }
 
-    const nextFolders = normalizeBoardFolders([...folders, makeFolderRecord(nextPath, 'slate', folders.length)])
+    const nextFolders = normalizeStoredFolders([...folders, makeFolderRecord<BoardFolder>(nextPath, 'slate', folders.length)])
     this.setBoardFolders(nextFolders)
     return nextFolders
   }
@@ -940,7 +951,7 @@ export class ProjectService {
       throw new Error('A folder with that name already exists')
     }
 
-    const nextFolders = normalizeBoardFolders(
+    const nextFolders = normalizeStoredFolders(
       folders.map((folder) =>
         isFolderWithinPath(folder.path, previousPath)
           ? {
@@ -980,7 +991,7 @@ export class ProjectService {
       throw new Error('Folder not found')
     }
 
-    const nextFolders = normalizeBoardFolders(
+    const nextFolders = normalizeStoredFolders(
       folders.filter((folder) => !isFolderWithinPath(folder.path, previousPath)),
     )
 
@@ -1069,7 +1080,7 @@ export class ProjectService {
       return
     }
 
-    this.setBoardFolders([...folders, makeFolderRecord(nextPath, 'slate', folders.length)])
+    this.setBoardFolders([...folders, makeFolderRecord<BoardFolder>(nextPath, 'slate', folders.length)])
   }
 
   private ensureSceneFolder(path: string) {
@@ -1085,11 +1096,11 @@ export class ProjectService {
   }
 
   private setBoardFolders(folders: BoardFolder[]) {
-    this.ensureRepositories().metadata.setBoardFolders(JSON.stringify(normalizeBoardFolders(folders)))
+    this.ensureRepositories().metadata.setBoardFolders(JSON.stringify(normalizeStoredFolders(folders)))
   }
 
   private setSceneFolders(folders: SceneFolder[]) {
-    this.ensureRepositories().metadata.setSceneFolders(JSON.stringify(normalizeSceneFolders(folders)))
+    this.ensureRepositories().metadata.setSceneFolders(JSON.stringify(normalizeStoredFolders(folders)))
   }
 
   private ensureTranscriptionFolder(path: string) {
@@ -1101,12 +1112,12 @@ export class ProjectService {
       return
     }
 
-    this.setTranscriptionFolders([...folders, makeFolderRecord(nextPath, 'slate', folders.length)])
+    this.setTranscriptionFolders([...folders, makeFolderRecord<TranscriptionFolder>(nextPath, 'slate', folders.length)])
   }
 
   private setTranscriptionFolders(folders: TranscriptionFolder[]) {
     this.ensureRepositories().metadata.setTranscriptionFolders(
-      JSON.stringify(normalizeSceneFolders(folders)),
+      JSON.stringify(normalizeStoredFolders(folders)),
     )
   }
 
@@ -1204,223 +1215,6 @@ function toProjectDisplayName(filePath: string) {
     .replace(/\.sqlite$/i, '')
 }
 
-function parseBoardFolders(value?: string | null): BoardFolder[] {
-  if (!value) return []
-
-  try {
-    const parsed = JSON.parse(value)
-    if (!Array.isArray(parsed)) return []
-    return normalizeBoardFolders(
-      parsed
-        .filter((entry): entry is { name?: unknown; color?: unknown; sortOrder?: unknown } => typeof entry === 'object' && entry !== null)
-        .map((entry) => ({
-          path:
-            'path' in entry && typeof entry.path === 'string'
-              ? entry.path.trim()
-              : typeof entry.name === 'string'
-                ? entry.name.trim()
-                : '',
-          name: typeof entry.name === 'string' ? entry.name.trim() : '',
-          parentPath:
-            'parentPath' in entry && typeof entry.parentPath === 'string' && entry.parentPath.trim().length > 0
-              ? entry.parentPath.trim()
-              : null,
-          color: isSceneColor(entry.color) ? entry.color : 'slate',
-          sortOrder: typeof entry.sortOrder === 'number' ? entry.sortOrder : 0,
-        }))
-        .filter((entry) => entry.path.length > 0 || entry.name.length > 0),
-    )
-  } catch {
-    return []
-  }
-}
-
-function normalizeBoardFolders(folders: BoardFolder[]) {
-  const deduped: BoardFolder[] = []
-
-  folders
-    .map((folder, index) => {
-      const path = normalizeFolderPath(folder.path || folder.name)
-      if (!path) return null
-      return {
-        path,
-        name: getFolderNameFromPath(path),
-        parentPath: getParentFolderPath(path),
-        color: folder.color ?? 'slate',
-        sortOrder: typeof folder.sortOrder === 'number' ? folder.sortOrder : index,
-      } satisfies BoardFolder
-    })
-    .filter((folder): folder is BoardFolder => Boolean(folder))
-    .sort((left, right) => left.sortOrder - right.sortOrder || left.path.localeCompare(right.path))
-    .forEach((folder) => {
-      if (!deduped.some((entry) => entry.path.toLowerCase() === folder.path.toLowerCase())) {
-        deduped.push({ ...folder, sortOrder: deduped.length })
-      }
-    })
-
-  return deduped
-}
-
-function parseSceneFolders(value?: string | null): SceneFolder[] {
-  if (!value) return []
-
-  try {
-    const parsed = JSON.parse(value)
-    if (!Array.isArray(parsed)) return []
-    return normalizeSceneFolders(
-      parsed
-        .filter((entry): entry is { name?: unknown; color?: unknown; sortOrder?: unknown } => typeof entry === 'object' && entry !== null)
-        .map((entry) => ({
-          path:
-            'path' in entry && typeof entry.path === 'string'
-              ? entry.path.trim()
-              : typeof entry.name === 'string'
-                ? entry.name.trim()
-                : '',
-          name: typeof entry.name === 'string' ? entry.name.trim() : '',
-          parentPath:
-            'parentPath' in entry && typeof entry.parentPath === 'string' && entry.parentPath.trim().length > 0
-              ? entry.parentPath.trim()
-              : null,
-          color: isSceneColor(entry.color) ? entry.color : 'slate',
-          sortOrder: typeof entry.sortOrder === 'number' ? entry.sortOrder : 0,
-        }))
-        .filter((entry) => entry.path.length > 0 || entry.name.length > 0),
-    )
-  } catch {
-    return []
-  }
-}
-
-function parseTranscriptionFolders(value?: string | null): TranscriptionFolder[] {
-  if (!value) return []
-
-  try {
-    const parsed = JSON.parse(value)
-    if (!Array.isArray(parsed)) return []
-    return normalizeSceneFolders(
-      parsed
-        .filter((entry): entry is { name?: unknown; color?: unknown; sortOrder?: unknown } => typeof entry === 'object' && entry !== null)
-        .map((entry) => ({
-          path:
-            'path' in entry && typeof entry.path === 'string'
-              ? entry.path.trim()
-              : typeof entry.name === 'string'
-                ? entry.name.trim()
-                : '',
-          name: typeof entry.name === 'string' ? entry.name.trim() : '',
-          parentPath:
-            'parentPath' in entry && typeof entry.parentPath === 'string' && entry.parentPath.trim().length > 0
-              ? entry.parentPath.trim()
-              : null,
-          color: isSceneColor(entry.color) ? entry.color : 'slate',
-          sortOrder: typeof entry.sortOrder === 'number' ? entry.sortOrder : 0,
-        }))
-        .filter((entry) => entry.path.length > 0 || entry.name.length > 0),
-    )
-  } catch {
-    return []
-  }
-}
-
-function normalizeSceneFolders(folders: SceneFolder[]) {
-  const deduped: SceneFolder[] = []
-
-  folders
-    .map((folder, index) => {
-      const path = normalizeFolderPath(folder.path || folder.name)
-      if (!path) return null
-      return {
-        path,
-        name: getFolderNameFromPath(path),
-        parentPath: getParentFolderPath(path),
-        color: folder.color ?? 'slate',
-        sortOrder: typeof folder.sortOrder === 'number' ? folder.sortOrder : index,
-      } satisfies SceneFolder
-    })
-    .filter((folder): folder is SceneFolder => Boolean(folder))
-    .sort((left, right) => left.sortOrder - right.sortOrder || left.path.localeCompare(right.path))
-    .forEach((folder) => {
-      if (!deduped.some((entry) => entry.path.toLowerCase() === folder.path.toLowerCase())) {
-        deduped.push({ ...folder, sortOrder: deduped.length })
-      }
-    })
-
-  return deduped
-}
-
-function makeFolderRecord(path: string, color: Scene['color'], sortOrder: number) {
-  const normalizedPath = normalizeFolderPath(path)
-  if (!normalizedPath) {
-    throw new Error('Folder path cannot be empty')
-  }
-
-  return {
-    path: normalizedPath,
-    name: getFolderNameFromPath(normalizedPath),
-    parentPath: getParentFolderPath(normalizedPath),
-    color,
-    sortOrder,
-  }
-}
-
-function normalizeFolderPath(value?: string | null) {
-  if (!value) return ''
-  return value
-    .split('/')
-    .map((segment) => segment.trim())
-    .filter(Boolean)
-    .join('/')
-}
-
-function normalizeNullableFolderPath(value?: string | null) {
-  const normalized = normalizeFolderPath(value)
-  return normalized || null
-}
-
-function buildFolderPath(name: string, parentPath?: string | null) {
-  const normalizedName = normalizeFolderPath(name)
-  const normalizedParentPath = normalizeFolderPath(parentPath)
-  return normalizedParentPath ? `${normalizedParentPath}/${normalizedName}` : normalizedName
-}
-
-function getFolderNameFromPath(path: string) {
-  const normalizedPath = normalizeFolderPath(path)
-  if (!normalizedPath) return ''
-  const segments = normalizedPath.split('/')
-  return segments[segments.length - 1] ?? ''
-}
-
-function getParentFolderPath(path: string) {
-  const normalizedPath = normalizeFolderPath(path)
-  if (!normalizedPath || !normalizedPath.includes('/')) return null
-  return normalizedPath.split('/').slice(0, -1).join('/') || null
-}
-
-function isFolderWithinPath(path: string | null | undefined, basePath: string) {
-  const normalizedPath = normalizeFolderPath(path)
-  const normalizedBasePath = normalizeFolderPath(basePath)
-  if (!normalizedPath || !normalizedBasePath) return false
-  return (
-    normalizedPath.toLowerCase() === normalizedBasePath.toLowerCase() ||
-    normalizedPath.toLowerCase().startsWith(`${normalizedBasePath.toLowerCase()}/`)
-  )
-}
-
-function replaceFolderPathPrefix(path: string, fromPath: string, toPath: string) {
-  const normalizedPath = normalizeFolderPath(path)
-  const normalizedFromPath = normalizeFolderPath(fromPath)
-  const normalizedToPath = normalizeFolderPath(toPath)
-
-  if (!normalizedFromPath) return normalizedPath
-  if (normalizedPath.toLowerCase() === normalizedFromPath.toLowerCase()) {
-    return normalizedToPath
-  }
-
-  const suffix = normalizedPath.slice(normalizedFromPath.length)
-  return normalizeFolderPath(`${normalizedToPath}${suffix}`)
-}
-
 function parseBlockTemplates(value?: string | null): BlockTemplate[] {
   if (!value) return []
 
@@ -1467,25 +1261,6 @@ function normalizeBlockTemplates(templates: BlockTemplate[]) {
       title: template.title.trim(),
     }))
     .sort((left, right) => left.name.localeCompare(right.name))
-}
-
-function isSceneColor(value: unknown): value is Scene['color'] {
-  return typeof value === 'string' && [
-    'charcoal',
-    'slate',
-    'amber',
-    'ochre',
-    'crimson',
-    'rose',
-    'olive',
-    'moss',
-    'teal',
-    'cyan',
-    'blue',
-    'indigo',
-    'violet',
-    'plum',
-  ].includes(value)
 }
 
 function isBoardTextItemKind(value: unknown): value is BoardTextItemKind {
