@@ -490,7 +490,7 @@ export function BoardManagerDialog({
                     group.folderPath && collapsedFolders.includes(group.folderPath) && 'hidden',
                   )}
                 >
-                  {group.boards.map((board, boardIndex) => {
+                  {group.boards.map((board) => {
                     const isSelected = selectedBoardIdSet.has(board.id)
                     return (
                       <div
@@ -507,11 +507,11 @@ export function BoardManagerDialog({
                         onDragStart={() => {
                           const draggedBoardIds = isSelected && selectedBoardIds.length > 1 ? selectedBoardIds : [board.id]
                           setDraggedBoardId(board.id)
-                          window.narralab.boards = { draggedBoardIds }
+                          window.narralabBoardDrag = { draggedBoardIds }
                         }}
                         onDragEnd={() => {
                           setDraggedBoardId(null)
-                          window.narralab.boards = undefined
+                          window.narralabBoardDrag = undefined
                         }}
                         onDragOver={(event) => {
                           if (draggedBoardId) {
@@ -523,10 +523,7 @@ export function BoardManagerDialog({
                           if (draggedBoardId && draggedBoardId !== board.id) {
                             event.preventDefault()
                             event.stopPropagation()
-                            const draggedBoardIds =
-                              (window.narralab.boards as { draggedBoardIds?: string[] } | undefined)?.draggedBoardIds ?? [
-                                draggedBoardId,
-                              ]
+                            const draggedBoardIds = window.narralabBoardDrag?.draggedBoardIds ?? [draggedBoardId]
                             const targetBoardInSameFolder = boards.find((b) => b.id === board.id && b.folder === boards.find((db) => db.id === draggedBoardId)?.folder)
                             if (targetBoardInSameFolder && draggedBoardIds.length === 1) {
                               const siblingBoards = boards.filter((b) => b.folder === targetBoardInSameFolder.folder)
@@ -657,12 +654,17 @@ export function BoardManagerDialog({
 
   if (embedded) {
     return (
-      <Panel
-        heading="Board Manager"
-        icon={<Layers3 className="h-4 w-4 text-accent" />}
-        summary={`${boards.length} boards, ${boardFolders.length} folders`}
-      >
-        {contentArea}
+      <Panel className="flex min-h-0 flex-col overflow-hidden p-0">
+        <div className="flex shrink-0 items-center gap-2 border-b border-border/80 px-4 py-3">
+          <Layers3 className="h-4 w-4 text-accent" />
+          <div>
+            <div className="text-sm font-semibold text-foreground">Board Manager</div>
+            <div className="text-xs text-muted">
+              {boards.length} boards, {folders.length} folders
+            </div>
+          </div>
+        </div>
+        <div className="min-h-0 flex-1 overflow-hidden p-4">{contentArea}</div>
       </Panel>
     )
   }

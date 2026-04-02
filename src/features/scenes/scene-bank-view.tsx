@@ -56,6 +56,7 @@ type Props = {
   onDelete(sceneId: string): void
   onDeleteSelected(): void
   onAdd(sceneId: string, afterItemId?: string | null): void
+  onSendToOpenOutline?(sceneIds: string[]): void
   embedded?: boolean
 }
 
@@ -83,6 +84,7 @@ export function SceneBankView({
   onDelete,
   onDeleteSelected,
   onAdd,
+  onSendToOpenOutline,
   embedded = false,
 }: Props) {
   const boardSceneIds = useMemo(
@@ -128,6 +130,11 @@ export function SceneBankView({
         onSelect: () => onAdd(scene.id),
         disabled: boardSceneIds.has(scene.id),
       },
+      {
+        label: multiSelectionActive ? 'Send Selection to Open Outline' : 'Send to Open Outline',
+        onSelect: () => onSendToOpenOutline?.(targetSceneIds),
+        disabled: !onSendToOpenOutline,
+      },
       { label: 'Duplicate Scene', onSelect: () => onDuplicate(scene.id) },
       {
         label: scene.keyRating >= 5 ? 'Reset Key Rating' : 'Increase Key Rating',
@@ -166,7 +173,7 @@ export function SceneBankView({
         },
       },
     ]
-  }, [boardSceneIds, menuState, onAdd, onDelete, onDeleteSelected, onDuplicate, onMoveToFolder, onOpenInspector, onToggleKeyScene, scenes, selectedSceneIds])
+  }, [boardSceneIds, menuState, onAdd, onDelete, onDeleteSelected, onDuplicate, onMoveToFolder, onOpenInspector, onSendToOpenOutline, onToggleKeyScene, scenes, selectedSceneIds])
 
   const folderMenuItems = useMemo<ContextMenuItem[]>(() => {
     if (!folderMenuState) return []

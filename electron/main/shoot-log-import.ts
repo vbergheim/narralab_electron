@@ -34,6 +34,9 @@ const sceneHeaders = [
   'audio_notes',
   'source_reference',
   'notes',
+  'source_paths_pipe_separated',
+  'quote_moment',
+  'quality',
 ] as const
 
 const beatHeaders = ['scene_ref', 'beat_order', 'beat_text'] as const
@@ -83,6 +86,9 @@ type ParsedSceneRow = {
   cameraNotes: string
   audioNotes: string
   sourceReference: string
+  sourcePaths: string[]
+  quoteMoment: string
+  quality: string
   notes: string
 }
 
@@ -172,6 +178,9 @@ export function buildShootLogTemplateWorkbook() {
     ['editorial_status', 'Allowed values: candidate, selected, maybe, omitted, locked.'],
     ['capture_status', 'Allowed values: complete, partial, pickup.'],
     ['characters_pipe_separated', 'Separate names with |, for example Mia|Mamma|Intervjuer.'],
+    ['source_paths_pipe_separated', 'Optional list of files or folders separated by |. The first entry becomes the primary source reference.'],
+    ['quote_moment', 'Optional memorable quote, beat, or observation tied to the scene.'],
+    ['quality', 'Optional quality note, for example Strong, Usable, Pickup, Needs follow-up.'],
     ['Example scene', 'scene_ref=2026-03-29_mia_kitchen, shoot_date=2026-03-29, title=Kitchen reset, synopsis=Mia resets in the kitchen after the interview.'],
     ['Example beat', 'scene_ref=2026-03-29_mia_kitchen, beat_order=1, beat_text=Mia laughs, then goes quiet while clearing mugs.'],
   ])
@@ -201,6 +210,9 @@ export function buildShootLogTemplateWorkbook() {
     camera_notes: 28,
     audio_notes: 28,
     source_reference: 30,
+    source_paths_pipe_separated: 32,
+    quote_moment: 32,
+    quality: 18,
     notes: 44,
   })
   applyListValidation(scenes, 'M2:M500', [...sceneStatuses])
@@ -249,7 +261,7 @@ function parseMachineShootLogWorkbook(
   const errors: ShootLogImportError[] = []
   let skippedRowCount = 0
 
-  const sceneIndex = readHeaderIndex(scenesSheet, sceneHeaders, errors)
+  const sceneIndex = readHeaderIndex(scenesSheet, sceneHeaders, requiredSceneHeaders, errors)
   if (!sceneIndex) {
     return { scenes: [], beats: [], skippedRowCount, errors }
   }
@@ -307,6 +319,11 @@ function parseMachineShootLogWorkbook(
     const editorialStatus = parseSceneStatus(cells.editorial_status, SCENES_SHEET, rowNumber, errors)
     const color = parseSceneColor(cells.color, SCENES_SHEET, rowNumber, errors)
     const captureStatus = parseCaptureStatus(cells.capture_status, SCENES_SHEET, rowNumber, errors)
+    const sourceReference = cells.source_reference || workbookFileName
+    const sourcePaths = normalizeStringList([
+      ...parsePipeSeparatedList(cells.source_paths_pipe_separated),
+      ...(sourceReference ? [sourceReference] : []),
+    ])
 
     scenes.push({
       rowNumber,
@@ -328,7 +345,10 @@ function parseMachineShootLogWorkbook(
       captureStatus,
       cameraNotes: cells.camera_notes,
       audioNotes: cells.audio_notes,
-      sourceReference: cells.source_reference || workbookFileName,
+      sourceReference: sourcePaths[0] ?? sourceReference,
+      sourcePaths,
+      quoteMoment: cells.quote_moment,
+      quality: cells.quality,
       notes: cells.notes,
     })
   }
@@ -430,6 +450,8 @@ function parseOpptaksloggShootLogWorkbook(
 
     const sortOrder = parseOptionalNumber(nrRaw, SCENES_SHEET, rowNumber, 'Nr.', errors)
 
+    const sourcePaths = normalizeStringList(workbookFileName ? [workbookFileName] : [])
+
     scenes.push({
       rowNumber,
       sceneRef,
@@ -440,8 +462,8 @@ function parseOpptaksloggShootLogWorkbook(
       synopsis,
       location: cellStr(row, 'location'),
       characters: splitMedvirkende(cellStr(row, 'medvirkende')),
-      category: '',
-      functionText: '',
+      category: cellStr(row, 'type'),
+      functionText: cellStr(row, 'funksjon'),
       estimatedDuration,
       actualDuration: 0,
       editorialStatus: 'candidate',
@@ -450,7 +472,10 @@ function parseOpptaksloggShootLogWorkbook(
       captureStatus: '',
       cameraNotes: '',
       audioNotes: '',
-      sourceReference: workbookFileName,
+      sourceReference: sourcePaths[0] ?? workbookFileName,
+      sourcePaths,
+      quoteMoment: cellStr(row, 'quote_moment'),
+      quality: cellStr(row, 'quality'),
       notes: cellStr(row, 'notater'),
     })
   }
@@ -478,7 +503,7 @@ function parseBeatsSheet(
     return { beats: [], skippedRowCount }
   }
 
-  const beatIndex = readHeaderIndex(beatsSheet, beatHeaders, errors)
+  const beatIndex = readHeaderIndex(beatsSheet, beatHeaders, requiredBeatHeaders, errors)
   if (!beatIndex) {
     return { beats: [], skippedRowCount }
   }
@@ -687,12 +712,20 @@ function mapOpptaksloggColumns(headerRow: Row) {
       key = 'location'
     } else if (token === 'medvirkende') {
       key = 'medvirkende'
+    } else if (token === 'type') {
+      key = 'type'
+    } else if (token === 'funksjon') {
+      key = 'funksjon'
     } else if (token === 'est tid' || token === 'est. tid') {
       key = 'est_tid'
     } else if (token.startsWith('rating')) {
       key = 'rating'
     } else if (token === 'notater') {
       key = 'notater'
+    } else if (token === 'sitat / øyeblikk') {
+      key = 'quote_moment'
+    } else if (token === 'kvalitet') {
+      key = 'quality'
     }
     if (key && !map.has(key)) {
       map.set(key, column)
@@ -824,11 +857,11 @@ function appendParsedShootLog(db: ProjectDatabase, parsed: ParsedShootLog) {
     INSERT INTO scenes (
       id, sort_order, title, synopsis, notes, color, status, is_key_scene, folder, category,
       estimated_duration, actual_duration, location, characters,
-      function, source_reference, created_at, updated_at
+      function, source_reference, quote_moment, quality, source_paths, created_at, updated_at
     ) VALUES (
       @id, @sortOrder, @title, @synopsis, @notes, @color, @status, @keyRating, @folder, @category,
       @estimatedDuration, @actualDuration, @location, @characters,
-      @function, @sourceReference, @createdAt, @updatedAt
+      @function, @sourceReference, @quoteMoment, @quality, @sourcePaths, @createdAt, @updatedAt
     )
   `)
 
@@ -877,6 +910,9 @@ function appendParsedShootLog(db: ProjectDatabase, parsed: ParsedShootLog) {
         characters: JSON.stringify(scene.characters),
         function: scene.functionText,
         sourceReference: scene.sourceReference,
+        quoteMoment: scene.quoteMoment,
+        quality: scene.quality,
+        sourcePaths: JSON.stringify(scene.sourcePaths),
         createdAt: timestamp,
         updatedAt: timestamp,
       })
@@ -909,14 +945,15 @@ function appendParsedShootLog(db: ProjectDatabase, parsed: ParsedShootLog) {
 
 function readHeaderIndex<THeader extends string>(
   worksheet: Worksheet,
-  expectedHeaders: readonly THeader[],
+  supportedHeaders: readonly THeader[],
+  requiredHeaders: ReadonlySet<THeader>,
   errors: ShootLogImportError[],
 ) {
   const headerErrorsBefore = errors.length
   const headerRow = worksheet.getRow(1)
   const headerIndex = new Map<THeader, number>()
   const seenHeaders = new Map<string, number>()
-  const expectedHeaderSet = new Set(expectedHeaders)
+  const supportedHeaderSet = new Set(supportedHeaders)
 
   for (let column = 1; column <= headerRow.cellCount; column += 1) {
     const rawHeader = readCellValue(headerRow.getCell(column).value).toLowerCase()
@@ -932,7 +969,7 @@ function readHeaderIndex<THeader extends string>(
     }
 
     seenHeaders.set(rawHeader, column)
-    if (!expectedHeaderSet.has(rawHeader as THeader)) {
+    if (!supportedHeaderSet.has(rawHeader as THeader)) {
       errors.push({
         sheet: worksheet.name,
         row: 1,
@@ -944,17 +981,22 @@ function readHeaderIndex<THeader extends string>(
     headerIndex.set(rawHeader as THeader, column)
   }
 
-  expectedHeaders.forEach((header) => {
-    if (!headerIndex.has(header)) {
-      errors.push({
-        sheet: worksheet.name,
-        row: 1,
-        message: `Missing required header "${header}".`,
-      })
+  supportedHeaders.forEach((header) => {
+    if (!requiredHeaders.has(header) || headerIndex.has(header)) {
+      return
     }
+    errors.push({
+      sheet: worksheet.name,
+      row: 1,
+      message: `Missing required header "${header}".`,
+    })
   })
 
-  return errors.length > headerErrorsBefore ? null : headerIndex
+  if (errors.length > headerErrorsBefore) {
+    return null
+  }
+
+  return headerIndex
 }
 
 function readCells<THeader extends string>(
@@ -1065,6 +1107,23 @@ function parsePipeSeparatedList(value: string) {
     .split('|')
     .map((entry) => entry.trim())
     .filter(Boolean)
+}
+
+function normalizeStringList(values: string[]) {
+  const normalized: string[] = []
+  const seen = new Set<string>()
+
+  values.forEach((value) => {
+    const trimmed = value.trim()
+    if (!trimmed) return
+    const display = trimmed.replace(/\\/g, '/')
+    const key = display.toLowerCase()
+    if (seen.has(key)) return
+    seen.add(key)
+    normalized.push(display)
+  })
+
+  return normalized
 }
 
 function buildSceneFolder(shootDate: string, shootBlock: string) {

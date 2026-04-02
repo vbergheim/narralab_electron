@@ -26,6 +26,7 @@ const DEFAULT_GLOBAL_UI_STATE: GlobalUiState = {
   selectedSceneIds: [],
   selectedBoardItemId: null,
   selectedArchiveFolderId: null,
+  selectedTranscriptionItemId: null,
 }
 
 export class WindowManager {
@@ -59,6 +60,10 @@ export class WindowManager {
 
   getContext(windowId: number): WindowContext {
     return this.windows.get(windowId)?.context ?? this.buildFallbackContext(windowId)
+  }
+
+  listContexts() {
+    return Array.from(this.windows.values()).map((record) => record.context)
   }
 
   updateContext(windowId: number, input: Partial<Pick<WindowContext, 'boardId' | 'viewMode' | 'sceneDensity'>>) {
@@ -153,6 +158,10 @@ export class WindowManager {
 
     this.dragSession = null
 
+    this.broadcast({ type: 'project-changed' })
+  }
+
+  refreshProject() {
     this.broadcast({ type: 'project-changed' })
   }
 
@@ -384,21 +393,31 @@ function clampBounds(
 }
 
 function workspaceLabel(workspace: WindowWorkspace) {
+  if (workspace === 'board-manager') return 'Board Manager'
+  if (workspace === 'transcribe') return 'Transcribe'
   return workspace.charAt(0).toUpperCase() + workspace.slice(1)
 }
 
 function normalizeDragSession(session: WindowDragSession): WindowDragSession {
-  if (!session || session.kind !== 'scene') {
+  if (!session) {
     return null
   }
 
-  const sceneIds = session.sceneIds.filter((value) => typeof value === 'string' && value.trim().length > 0)
-  if (sceneIds.length === 0) {
-    return null
+  if (session.kind === 'scene') {
+    const sceneIds = session.sceneIds.filter((value) => typeof value === 'string' && value.trim().length > 0)
+    if (sceneIds.length === 0) {
+      return null
+    }
+    return { kind: 'scene', sceneIds }
   }
 
-  return {
-    kind: 'scene',
-    sceneIds,
+  if (session.kind === 'transcription') {
+    const itemIds = session.itemIds.filter((value) => typeof value === 'string' && value.startsWith('tx_item_'))
+    if (itemIds.length === 0) {
+      return null
+    }
+    return { kind: 'transcription', itemIds }
   }
+
+  return null
 }

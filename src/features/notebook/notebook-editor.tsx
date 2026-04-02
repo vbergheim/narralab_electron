@@ -54,7 +54,7 @@ export function NotebookEditor({ notebook, onChange, onSave }: Props) {
       return
     }
     syncEditorHtml(activeTab.contentHtml || '')
-  }, [activeTab?.id, activeTab?.contentHtml, syncEditorHtml])
+  }, [activeTab, syncEditorHtml])
 
   useEffect(() => {
     lastPersistedJsonRef.current = JSON.stringify(notebook)

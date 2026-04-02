@@ -1,10 +1,18 @@
 import type { BoardViewMode } from './board'
+import type { TranscriptionLanguage, TranscriptionModelId, TranscriptionTimestampInterval } from './transcription'
 import type { SceneDensity } from './view'
 
 export type AIProvider = 'openai' | 'gemini'
 export type ConsultantResponseStyle = 'structured' | 'concise' | 'exploratory'
 export type ConsultantContextMode = 'none' | 'active-board'
-export type WindowWorkspace = 'outline' | 'bank' | 'inspector' | 'notebook' | 'archive' | 'board-manager'
+export type WindowWorkspace =
+  | 'outline'
+  | 'bank'
+  | 'inspector'
+  | 'notebook'
+  | 'archive'
+  | 'board-manager'
+  | 'transcribe'
 
 export type SavedWindowLayoutWindow = {
   id: string
@@ -22,6 +30,13 @@ export type SavedWindowLayout = {
   createdAt: string
   updatedAt: string
   windows: SavedWindowLayoutWindow[]
+}
+
+export type AppTranscriptionSettings = {
+  modelId: TranscriptionModelId
+  language: TranscriptionLanguage
+  /** How often to insert [HH:MM:SS] markers in transcript output. */
+  timestampInterval: TranscriptionTimestampInterval
 }
 
 export type AppSettings = {
@@ -46,6 +61,7 @@ export type AppSettings = {
     lastLayoutByProject: Record<string, string>
     savedLayouts: SavedWindowLayout[]
   }
+  transcription: AppTranscriptionSettings
 }
 
 export type AppSettingsUpdateInput = {
@@ -67,6 +83,9 @@ export type AppSettingsUpdateInput = {
   lastProjectPath?: string | null
   lastLayoutByProject?: Record<string, string>
   savedLayouts?: SavedWindowLayout[]
+  transcriptionModelId?: TranscriptionModelId
+  transcriptionLanguage?: TranscriptionLanguage
+  transcriptionTimestampInterval?: TranscriptionTimestampInterval
 }
 
 export type ConsultantRole = 'system' | 'user' | 'assistant'

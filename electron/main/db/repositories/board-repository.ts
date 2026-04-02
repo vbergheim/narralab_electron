@@ -121,12 +121,12 @@ export class BoardRepository {
         item.kind === 'scene' ? '' : item.body,
         item.kind === 'scene' ? 'charcoal' : item.color,
         index,
+        timestamp,
+        timestamp,
         item.boardX,
         item.boardY,
         item.boardW,
         item.boardH,
-        timestamp,
-        timestamp,
       )
     })
 
@@ -329,6 +329,18 @@ export class BoardRepository {
   }
 
   reorder(boardId: string, itemIds: string[]): BoardItem[] {
+    const currentItems = this.list().find((board) => board.id === boardId)?.items ?? []
+    const currentIds = currentItems.map((item) => item.id)
+    const uniqueIds = new Set(itemIds)
+
+    if (
+      currentItems.length !== itemIds.length ||
+      uniqueIds.size !== itemIds.length ||
+      itemIds.some((itemId) => !currentIds.includes(itemId))
+    ) {
+      throw new Error('Board item order is invalid')
+    }
+
     const update = this.db.prepare(`
       UPDATE board_items
       SET position = ?, updated_at = ?

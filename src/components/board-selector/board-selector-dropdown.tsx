@@ -20,7 +20,7 @@ type Props = {
   folders: BoardFolder[]
   activeBoardId: string | null
   open: boolean
-  buttonRef?: React.RefObject<HTMLButtonElement>
+  buttonRef?: React.RefObject<HTMLButtonElement | null>
   onClose(): void
   onSelectBoard(boardId: string): void
   onOpenManager(): void

@@ -2,6 +2,7 @@ import type { ArchiveFolder, ArchiveFolderUpdateInput, ArchiveItem, ArchiveItemU
 import type {
   AppSettings,
   AppSettingsUpdateInput,
+  AppTranscriptionSettings,
   ConsultantChatInput,
   ConsultantChatResult,
   SavedWindowLayout,
@@ -22,6 +23,18 @@ import type {
 } from './board'
 import type { Scene, SceneBeat, SceneBeatUpdateInput, SceneFolder, SceneUpdateInput } from './scene'
 import type { Tag, TagType } from './tag'
+import type {
+  TranscriptionLanguage,
+  TranscriptionMainDiagnostics,
+  TranscriptionModelCatalogEntry,
+  TranscriptionModelId,
+  TranscriptionProgressEvent,
+  TranscriptionStatus,
+  TranscriptionTimestampInterval,
+  TranscriptionFolder,
+  TranscriptionItem,
+  TranscriptionItemUpdateInput,
+} from './transcription'
 
 export type ProjectMeta = {
   path: string
@@ -63,6 +76,7 @@ export type GlobalUiState = {
   selectedSceneIds: string[]
   selectedBoardItemId: string | null
   selectedArchiveFolderId: string | null
+  selectedTranscriptionItemId: string | null
 }
 
 export type WindowContext = {
@@ -79,7 +93,23 @@ export type WindowDragSession =
       kind: 'scene'
       sceneIds: string[]
     }
+  | {
+      kind: 'transcription'
+      itemIds: string[]
+    }
   | null
+
+export type TranscriptionSetup = {
+  catalog: Array<TranscriptionModelCatalogEntry & { downloaded: boolean }>
+  ffmpegPath: string | null
+  ffprobePath: string | null
+  whisperPath: string | null
+  /** One-click FFmpeg install (same binaries as the ffmpeg-static npm package). */
+  ffmpegAutoDownloadSupported: boolean
+  /** One-click engine install (Windows zip / macOS Homebrew bottles). */
+  engineAutoDownloadSupported: boolean
+  settings: AppTranscriptionSettings
+}
 
 export type BoardScriptExportFormat = 'txt-formatted' | 'txt-plain' | 'md' | 'html-screenplay' | 'doc-screenplay'
 
@@ -271,8 +301,10 @@ export interface NarraLabApi {
   }
   windows: {
     getContext(): Promise<WindowContext>
+    listContexts(): Promise<WindowContext[]>
     openWorkspace(workspace: WindowWorkspace, options?: Partial<WindowContext>): Promise<WindowContext>
     updateContext(input: Partial<Pick<WindowContext, 'boardId' | 'viewMode' | 'sceneDensity'>>): Promise<WindowContext>
+    refreshProject(): Promise<void>
     getDragSession(): WindowDragSession
     readDragSession(): Promise<WindowDragSession>
     consumeDragSession(): Promise<WindowDragSession>
@@ -298,5 +330,48 @@ export interface NarraLabApi {
     list(): Promise<Tag[]>
     upsert(input: { id?: string; name: string; type?: TagType }): Promise<Tag>
     delete(id: string): Promise<void>
+  }
+  transcription: {
+    pickFile(): Promise<string | null>
+    getSetup(): Promise<TranscriptionSetup>
+    downloadEngine(): Promise<void>
+    downloadFfmpeg(): Promise<void>
+    downloadModel(modelId: TranscriptionModelId): Promise<void>
+    deleteModel(modelId: TranscriptionModelId): Promise<void>
+    start(input: {
+      filePath: string
+      modelId?: TranscriptionModelId
+      language?: TranscriptionLanguage
+      timestampInterval?: TranscriptionTimestampInterval
+    }): Promise<{ ok: true }>
+    cancel(): Promise<{ ok: true }>
+    getStatus(): Promise<TranscriptionStatus>
+    getDiagnostics(): Promise<TranscriptionMainDiagnostics>
+    appendNotebook(text: string): Promise<NotebookDocument>
+    saveAs(text: string): Promise<string | null>
+    saveToArchive(input: { name: string; content: string }): Promise<ArchiveItem | null>
+    subscribe(listener: (event: TranscriptionProgressEvent) => void): () => void
+    library: {
+      folders: {
+        list(): Promise<TranscriptionFolder[]>
+        create(name: string, parentPath?: string | null): Promise<TranscriptionFolder[]>
+        update(
+          currentPath: string,
+          input: { name?: string; color?: TranscriptionFolder['color']; parentPath?: string | null },
+        ): Promise<TranscriptionFolder[]>
+        delete(currentPath: string): Promise<TranscriptionFolder[]>
+      }
+      items: {
+        list(): Promise<TranscriptionItem[]>
+        create(input: {
+          name: string
+          content: string
+          folder?: string
+          sourceFilePath?: string | null
+        }): Promise<TranscriptionItem>
+        update(input: TranscriptionItemUpdateInput): Promise<TranscriptionItem>
+        delete(itemId: string): Promise<void>
+      }
+    }
   }
 }

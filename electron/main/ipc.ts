@@ -13,6 +13,8 @@ import {
   nullableString,
   optionalString,
   parseAppSettingsUpdateInput,
+  parseTranscriptionDownloadInput,
+  parseTranscriptionStartInput,
   parseArchiveFolderUpdateInput,
   parseArchiveItemUpdateInput,
   parseBlockTemplateInput,
@@ -33,8 +35,10 @@ import {
   parseWindowWorkspace,
   requireString,
   requireStringArray,
+  requireTranscriptionItemUpdateInput,
 } from './ipc-validators'
 import { ProjectService } from './project-service'
+import { TranscriptionService } from './transcription-service'
 import { WindowManager } from './window-manager'
 
 export function registerIpc(
@@ -43,6 +47,8 @@ export function registerIpc(
   consultantService: AIConsultantService,
   windowManager: WindowManager,
 ) {
+  const transcriptionService = new TranscriptionService(settingsService, projectService)
+
   ipcMain.handle('project:create', async (_, requestedPath?: string | null) => {
     const result = await projectService.createProject(requestedPath)
     windowManager.notifyProjectChanged()
@@ -350,12 +356,14 @@ export function registerIpc(
   )
 
   ipcMain.handle('windows:getContext', (event) => windowManager.getContext(event.sender.id))
+  ipcMain.handle('windows:listContexts', () => windowManager.listContexts())
   ipcMain.handle('windows:openWorkspace', (_, workspace: WindowWorkspace, options) =>
     windowManager.openWorkspace(parseWindowWorkspace(workspace), parseWindowContextUpdate(options ?? {})),
   )
   ipcMain.handle('windows:updateContext', (event, input) =>
     windowManager.updateContext(event.sender.id, parseWindowContextUpdate(input)),
   )
+  ipcMain.handle('windows:refreshProject', () => windowManager.refreshProject())
   ipcMain.handle('windows:getDragSession', () => windowManager.getDragSession())
   ipcMain.handle('windows:consumeDragSession', () => windowManager.consumeDragSession())
   ipcMain.handle('windows:setDragSession', (_, session) =>
@@ -381,6 +389,114 @@ export function registerIpc(
   })
   ipcMain.handle('tags:delete', (_, id: string) => {
     projectService.deleteTag(requireString(id, 'Tag id'))
+    windowManager.notifyProjectChanged()
+  })
+
+  ipcMain.handle('transcription:pickFile', () => transcriptionService.pickMediaFile())
+  ipcMain.handle('transcription:getSetup', () => transcriptionService.getSetup())
+  ipcMain.handle('transcription:downloadEngine', async (event) => {
+    await transcriptionService.downloadEngine(event.sender)
+  })
+  ipcMain.handle('transcription:downloadFfmpeg', async (event) => {
+    await transcriptionService.downloadFfmpeg(event.sender)
+  })
+  ipcMain.handle('transcription:downloadModel', async (event, input: unknown) => {
+    const { modelId } = parseTranscriptionDownloadInput(input)
+    await transcriptionService.downloadModel(modelId, event.sender)
+  })
+  ipcMain.handle('transcription:deleteModel', async (_, input: unknown) => {
+    const { modelId } = parseTranscriptionDownloadInput(input)
+    await transcriptionService.deleteModel(modelId)
+  })
+  ipcMain.handle('transcription:start', (event, input: unknown) => {
+    try {
+      const payload = parseTranscriptionStartInput(input)
+      transcriptionService.runJob(payload, event.sender).catch((err) => {
+        console.error('Unhandled transcriptionService.runJob error:', err)
+      })
+      return { ok: true as const }
+    } catch (error) {
+      console.error('transcription:start failed before runJob:', error)
+      throw error
+    }
+  })
+  ipcMain.handle('transcription:cancel', () => {
+    transcriptionService.cancel()
+    return { ok: true as const }
+  })
+  ipcMain.handle('transcription:getStatus', () => transcriptionService.getStatus())
+  ipcMain.handle('transcription:getDiagnostics', () => transcriptionService.getDiagnostics())
+  ipcMain.handle('transcription:appendNotebook', (_, text: unknown) => {
+    const value = requireString(text, 'Transcript text')
+    if (!projectService.getMeta()) {
+      throw new Error('Open a project first')
+    }
+    const doc = projectService.appendNotebookPlainText(value)
+    windowManager.notifyProjectChanged()
+    return doc
+  })
+  ipcMain.handle('transcription:saveAs', (_, text: unknown) =>
+    transcriptionService.saveTranscriptAs(requireString(text, 'Transcript text')),
+  )
+  ipcMain.handle('transcription:saveToArchive', (_, input: { name: string; content: string }) => {
+    const name = requireString(input.name, 'Transcript name')
+    const content = requireString(input.content, 'Transcript content')
+    const result = projectService.saveTranscriptionToArchive(name, content)
+    windowManager.notifyProjectChanged()
+    return result
+  })
+
+  // Transcription Library
+  ipcMain.handle('transcription:library:folders:list', () => {
+    return projectService.listTranscriptionFolders()
+  })
+  ipcMain.handle('transcription:library:folders:create', (_, name: string, parentPath?: string | null) => {
+    const result = projectService.createTranscriptionFolder(
+      requireString(name, 'Transcription folder name'),
+      nullableString(parentPath, 'Transcription folder parent path'),
+    )
+    windowManager.notifyProjectChanged()
+    return result
+  })
+  ipcMain.handle(
+    'transcription:library:folders:update',
+    (_, currentPath: string, input: { name?: string; color?: SceneColor; parentPath?: string | null }) => {
+      const result = projectService.updateTranscriptionFolder(
+        requireString(currentPath, 'Transcription folder path'),
+        parseFolderUpdateInput(input),
+      )
+      windowManager.notifyProjectChanged()
+      return result
+    },
+  )
+  ipcMain.handle('transcription:library:folders:delete', (_, currentPath: string) => {
+    const result = projectService.deleteTranscriptionFolder(requireString(currentPath, 'Transcription folder path'))
+    windowManager.notifyProjectChanged()
+    return result
+  })
+
+  ipcMain.handle('transcription:library:items:list', () => {
+    return projectService.listTranscriptionItems()
+  })
+  ipcMain.handle('transcription:library:items:create', (_, input: { name: string; content: string; folder?: string; sourceFilePath?: string | null }) => {
+    const payload = {
+      name: requireString(input.name, 'Item name'),
+      content: requireString(input.content, 'Content'),
+      folder: input.folder !== undefined ? optionalString(input.folder, 'Transcription folder path') ?? '' : '',
+      sourceFilePath: nullableString(input.sourceFilePath, 'Source file path'),
+    }
+    const result = projectService.createTranscriptionItem(payload)
+    windowManager.notifyProjectChanged()
+    return result
+  })
+  ipcMain.handle('transcription:library:items:update', (_, input: unknown) => {
+    const payload = requireTranscriptionItemUpdateInput(input)
+    const result = projectService.updateTranscriptionItem(payload)
+    windowManager.notifyProjectChanged()
+    return result
+  })
+  ipcMain.handle('transcription:library:items:delete', (_, id: string) => {
+    projectService.deleteTranscriptionItem(requireString(id, 'Item id'))
     windowManager.notifyProjectChanged()
   })
 }

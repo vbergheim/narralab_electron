@@ -100,8 +100,10 @@ const api: NarraLabApi = {
   },
   windows: {
     getContext: () => ipcRenderer.invoke('windows:getContext'),
+    listContexts: () => ipcRenderer.invoke('windows:listContexts'),
     openWorkspace: (workspace, options) => ipcRenderer.invoke('windows:openWorkspace', workspace, options),
     updateContext: (input) => ipcRenderer.invoke('windows:updateContext', input),
+    refreshProject: () => ipcRenderer.invoke('windows:refreshProject'),
     getDragSession: () => currentDragSession,
     readDragSession: () => ipcRenderer.invoke('windows:getDragSession'),
     consumeDragSession: async () => {
@@ -134,6 +136,44 @@ const api: NarraLabApi = {
     list: () => ipcRenderer.invoke('tags:list'),
     upsert: (input) => ipcRenderer.invoke('tags:upsert', input),
     delete: (id) => ipcRenderer.invoke('tags:delete', id),
+  },
+  transcription: {
+    pickFile: () => ipcRenderer.invoke('transcription:pickFile'),
+    getSetup: () => ipcRenderer.invoke('transcription:getSetup'),
+    downloadEngine: () => ipcRenderer.invoke('transcription:downloadEngine'),
+    downloadFfmpeg: () => ipcRenderer.invoke('transcription:downloadFfmpeg'),
+    downloadModel: (modelId) => ipcRenderer.invoke('transcription:downloadModel', { modelId }),
+    deleteModel: (modelId) => ipcRenderer.invoke('transcription:deleteModel', { modelId }),
+    start: (input) => ipcRenderer.invoke('transcription:start', input),
+    cancel: () => ipcRenderer.invoke('transcription:cancel'),
+    getStatus: () => ipcRenderer.invoke('transcription:getStatus'),
+    getDiagnostics: () => ipcRenderer.invoke('transcription:getDiagnostics'),
+    appendNotebook: (text) => ipcRenderer.invoke('transcription:appendNotebook', text),
+    saveAs: (text) => ipcRenderer.invoke('transcription:saveAs', text),
+    saveToArchive: (input) => ipcRenderer.invoke('transcription:saveToArchive', input),
+    subscribe: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, payload: Parameters<typeof listener>[0]) =>
+        listener(payload)
+      ipcRenderer.on('transcription:event', handler)
+      return () => {
+        ipcRenderer.removeListener('transcription:event', handler)
+      }
+    },
+    library: {
+      folders: {
+        list: () => ipcRenderer.invoke('transcription:library:folders:list'),
+        create: (name, parentPath) => ipcRenderer.invoke('transcription:library:folders:create', name, parentPath),
+        update: (currentPath, input) =>
+          ipcRenderer.invoke('transcription:library:folders:update', currentPath, input),
+        delete: (currentPath) => ipcRenderer.invoke('transcription:library:folders:delete', currentPath),
+      },
+      items: {
+        list: () => ipcRenderer.invoke('transcription:library:items:list'),
+        create: (input) => ipcRenderer.invoke('transcription:library:items:create', input),
+        update: (input) => ipcRenderer.invoke('transcription:library:items:update', input),
+        delete: (itemId) => ipcRenderer.invoke('transcription:library:items:delete', itemId),
+      },
+    },
   },
 }
 

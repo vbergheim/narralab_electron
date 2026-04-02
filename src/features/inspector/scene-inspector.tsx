@@ -1,6 +1,6 @@
-import type { Dispatch, ReactNode, SetStateAction } from 'react'
+import type { Dispatch, DragEvent, ReactNode, SetStateAction } from 'react'
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowDown, ArrowUp, Clock3, PanelRightClose, Plus, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Clock3, FileText, Folder, PanelRightClose, Plus, Trash2, X } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -15,6 +15,7 @@ import { sceneColors, sceneStatuses } from '@/lib/constants'
 import { minutesToSeconds, secondsToMinutes } from '@/lib/durations'
 import type { Scene, SceneBeat, SceneBeatUpdateInput } from '@/types/scene'
 import type { Tag } from '@/types/tag'
+import type { TranscriptionItem } from '@/types/transcription'
 
 type Draft = {
   id: string
@@ -33,6 +34,9 @@ type Draft = {
   characters: string
   function: string
   sourceReference: string
+  quoteMoment: string
+  quality: string
+  sourcePaths: string[]
   tags: string
 }
 
@@ -57,6 +61,9 @@ type Props = {
     characters: string[]
     function: string
     sourceReference: string
+    quoteMoment: string
+    quality: string
+    sourcePaths: string[]
     tagNames: string[]
   }): void
   onCreateBeat(sceneId: string, afterBeatId?: string | null): void
@@ -78,10 +85,39 @@ export function SceneInspector({
   onDelete,
 }: Props) {
   const [draft, setDraft] = useState<Draft | null>(() => (scene ? toDraft(scene, tags) : null))
+  const [transcriptions, setTranscriptions] = useState<TranscriptionItem[]>([])
+  const [sourceCollapsed, setSourceCollapsed] = useState(false)
+  const [sourceDragActive, setSourceDragActive] = useState(false)
 
   const payload = useMemo(() => (draft ? toPayload(draft) : null), [draft])
   const sourceFingerprint = scene ? JSON.stringify(toDraft(scene, tags)) : null
   const draftFingerprint = draft ? JSON.stringify(draft) : null
+
+  useEffect(() => {
+    let cancelled = false
+
+    void (async () => {
+      try {
+        const items = await window.narralab.transcription.library.items.list()
+        if (!cancelled) {
+          setTranscriptions(items)
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Failed to load transcriptions:', error)
+        }
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [scene?.id])
+
+  const linkedTranscriptions = useMemo(() => {
+    if (!scene) return []
+    return transcriptions.filter((t) => t.sceneId === scene.id)
+  }, [transcriptions, scene])
 
   useEffect(() => {
     if (!payload || sourceFingerprint === draftFingerprint) {
@@ -104,6 +140,16 @@ export function SceneInspector({
         onCollapse={onCollapse}
       />
     )
+  }
+
+  const handleSourceDrop = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    setSourceDragActive(false)
+    const paths = window.narralab.archive.items.resolveDroppedPaths(Array.from(event.dataTransfer.files))
+    if (paths.length === 0) {
+      return
+    }
+    updateDraft(setDraft, 'sourcePaths', normalizeSourcePaths([...draft.sourcePaths, ...paths]))
   }
 
   return (
@@ -270,6 +316,13 @@ export function SceneInspector({
           />
         </InspectorField>
 
+        <InspectorField label="Quote / Moment">
+          <Textarea
+            value={draft.quoteMoment}
+            onChange={(event) => updateDraft(setDraft, 'quoteMoment', event.target.value)}
+          />
+        </InspectorField>
+
         <InspectorField label="Characters / Contributors">
           <Input
             value={draft.characters}
@@ -285,11 +338,142 @@ export function SceneInspector({
           />
         </InspectorField>
 
-        <InspectorField label="Source / Reference">
+        <InspectorField label="Quality">
           <Input
-            value={draft.sourceReference}
-            onChange={(event) => updateDraft(setDraft, 'sourceReference', event.target.value)}
+            value={draft.quality}
+            onChange={(event) => updateDraft(setDraft, 'quality', event.target.value)}
           />
+        </InspectorField>
+
+        <InspectorField label="Source">
+          <div className="rounded-xl border border-border/80 bg-panel/40">
+            <button
+              type="button"
+              className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left"
+              onClick={() => setSourceCollapsed((current) => !current)}
+            >
+              <div>
+                <div className="text-sm font-medium text-foreground">
+                  {draft.sourcePaths.length === 0
+                    ? 'No linked files yet'
+                    : `${draft.sourcePaths.length} linked item${draft.sourcePaths.length === 1 ? '' : 's'}`}
+                </div>
+                <div className="mt-0.5 text-xs text-muted">
+                  Primary source: {draft.sourceReference || 'None'}
+                </div>
+              </div>
+              {sourceCollapsed ? (
+                <ChevronRight className="h-4 w-4 text-muted" />
+              ) : (
+                <ChevronDown className="h-4 w-4 text-muted" />
+              )}
+            </button>
+
+            {!sourceCollapsed ? (
+              <div
+                className={`border-t px-3 py-3 transition ${
+                  sourceDragActive
+                    ? 'border-accent/50 bg-accent/10'
+                    : 'border-border/70 bg-transparent'
+                }`}
+                onDragOver={(event) => {
+                  event.preventDefault()
+                  setSourceDragActive(true)
+                }}
+                onDragEnter={(event) => {
+                  event.preventDefault()
+                  setSourceDragActive(true)
+                }}
+                onDragLeave={(event) => {
+                  event.preventDefault()
+                  setSourceDragActive(false)
+                }}
+                onDrop={handleSourceDrop}
+              >
+                <div className="rounded-xl border border-dashed border-border/80 px-4 py-4 text-center text-xs text-muted">
+                  Drop files or folders here
+                </div>
+
+                <div className="mt-3 space-y-2">
+                  {draft.sourcePaths.map((path) => (
+                    <div
+                      key={path}
+                      className="group flex items-start gap-3 rounded-xl border border-border/70 bg-panel px-3 py-3 transition hover:border-accent/40 hover:bg-panelMuted/50"
+                    >
+                      <div className="flex min-w-0 flex-1 items-start gap-3">
+                        <Folder className="mt-0.5 h-4 w-4 shrink-0 text-accent/80" />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm font-medium text-foreground">
+                            {pathLabel(path)}
+                          </div>
+                          <div className="mt-0.5 break-all text-xs text-muted">{path}</div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted transition hover:bg-panelMuted hover:text-foreground"
+                        onClick={(event) => {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          updateDraft(
+                            setDraft,
+                            'sourcePaths',
+                            draft.sourcePaths.filter((entry) => entry !== path),
+                          )
+                        }}
+                        aria-label={`Remove ${pathLabel(path)}`}
+                        title="Remove source"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  ))}
+                  {draft.sourcePaths.length === 0 ? (
+                    <div className="rounded-xl border border-border/60 bg-panel px-4 py-4 text-center text-xs text-muted">
+                      No source references yet.
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </InspectorField>
+
+        <InspectorField label="Transcriptions">
+          <div className="space-y-1.5">
+            {linkedTranscriptions.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={async () => {
+                  await window.narralab.windows.updateGlobalUiState({
+                    selectedTranscriptionItemId: item.id,
+                  })
+                  await window.narralab.windows.openWorkspace('transcribe')
+                }}
+                className="group flex w-full items-center gap-2 rounded-lg border border-border/60 bg-panel/40 px-3 py-2 text-left transition hover:border-accent/40 hover:bg-panelMuted/50"
+              >
+                <FileText className="h-4 w-4 shrink-0 text-accent/80" />
+                <span className="flex-1 truncate text-xs font-medium text-foreground/90">
+                  {item.name}
+                </span>
+                <ChevronRight className="h-3.5 w-3.5 text-muted opacity-0 transition group-hover:opacity-100" />
+              </button>
+            ))}
+            {linkedTranscriptions.length === 0 && (
+              <div className="rounded-xl border border-dashed border-border/80 px-4 py-6 text-center">
+                <div className="text-xs text-muted">No linked transcriptions.</div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="mt-2 h-7 text-[10px]"
+                  onClick={() => window.narralab.windows.openWorkspace('transcribe')}
+                >
+                  Open Transcribe →
+                </Button>
+              </div>
+            )}
+          </div>
         </InspectorField>
 
         <div className="mt-6 flex flex-wrap gap-2 border-t border-border/90 pt-4 text-xs text-muted">
@@ -337,6 +521,9 @@ function toDraft(scene: Scene, tags: Tag[]): Draft {
     characters: scene.characters.join(', '),
     function: scene.function,
     sourceReference: scene.sourceReference,
+    quoteMoment: scene.quoteMoment,
+    quality: scene.quality,
+    sourcePaths: normalizeSourcePaths(scene.sourcePaths),
     tags: tags
       .filter((tag) => scene.tagIds.includes(tag.id))
       .map((tag) => tag.name)
@@ -364,7 +551,10 @@ function toPayload(draft: Draft) {
       .map((entry) => entry.trim())
       .filter(Boolean),
     function: draft.function,
-    sourceReference: draft.sourceReference,
+    sourceReference: draft.sourcePaths[0] ?? draft.sourceReference,
+    quoteMoment: draft.quoteMoment,
+    quality: draft.quality,
+    sourcePaths: normalizeSourcePaths(draft.sourcePaths),
     tagNames: draft.tags
       .split(',')
       .map((entry) => entry.trim())
@@ -372,12 +562,46 @@ function toPayload(draft: Draft) {
   }
 }
 
-function updateDraft(
+function updateDraft<K extends keyof Draft>(
   setDraft: Dispatch<SetStateAction<Draft | null>>,
-  key: keyof Draft,
-  value: string | number,
+  key: K,
+  value: Draft[K],
 ) {
-  setDraft((current) => (current ? { ...current, [key]: value } : current))
+  setDraft((current) => {
+    if (!current) {
+      return current
+    }
+
+    const next = { ...current, [key]: value }
+    if (key === 'sourcePaths') {
+      next.sourcePaths = normalizeSourcePaths(value as Draft['sourcePaths'])
+      next.sourceReference = next.sourcePaths[0] ?? ''
+    }
+    return next
+  })
+}
+
+function normalizeSourcePaths(paths: string[]) {
+  const normalized: string[] = []
+  const seen = new Set<string>()
+
+  for (const path of paths) {
+    const trimmed = path.trim()
+    if (!trimmed) continue
+    const display = trimmed.replace(/\\/g, '/')
+    const key = display.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    normalized.push(display)
+  }
+
+  return normalized
+}
+
+function pathLabel(path: string) {
+  const normalized = path.replace(/\\/g, '/')
+  const parts = normalized.split('/').filter(Boolean)
+  return parts.at(-1) ?? normalized
 }
 
 function InspectorField({ label, children }: { label: string; children: ReactNode }) {

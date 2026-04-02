@@ -1,5 +1,5 @@
 import type { PointerEventHandler } from 'react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   AlignJustify,
@@ -11,6 +11,7 @@ import {
   Loader2,
   Maximize2,
   MessageCircle,
+  Mic,
   NotebookText,
   PanelLeftOpen,
   PanelRightOpen,
@@ -28,7 +29,8 @@ import { SceneInspector } from '@/features/inspector/scene-inspector'
 import { NotebookEditor } from '@/features/notebook/notebook-editor'
 import { ProjectsToolbar } from '@/features/projects/projects-toolbar'
 import { SceneBankView } from '@/features/scenes/scene-bank-view'
-import { SettingsWorkspace } from '@/features/settings/settings-workspace'
+import { SettingsWorkspace, type SettingsTab } from '@/features/settings/settings-workspace'
+import { TranscribeWorkspace } from '@/features/transcribe/transcribe-workspace'
 import { BoardManagerDialog } from '@/components/board-selector/board-manager-dialog'
 import { Button } from '@/components/ui/button'
 import { ContextMenu, type ContextMenuItem } from '@/components/ui/context-menu'
@@ -50,12 +52,15 @@ const workspaceTabs = [
   { value: 'bank', label: 'Scene Bank', shortLabel: 'Bank', icon: LayoutGrid },
   { value: 'notebook', label: 'Notebook', shortLabel: 'Notebook', icon: NotebookText },
   { value: 'archive', label: 'Archive', shortLabel: 'Archive', icon: ArchiveIcon },
+  { value: 'transcribe', label: 'Transcribe', shortLabel: 'Transcribe', icon: Mic },
 ] as const
 
 export function App() {
   const searchRef = useRef<HTMLInputElement | null>(null)
   const viewButtonRef = useRef<HTMLButtonElement | null>(null)
   const [rightCollapsed, setRightCollapsed] = useState(true)
+  const [, setLeftCollapsed] = useState(false)
+  const [settingsNavigate, setSettingsNavigate] = useState<{ tab: SettingsTab; requestId: number } | null>(null)
   const [consultantDockOpen, setConsultantDockOpen] = useState(false)
   const [sceneDensity, setSceneDensity] = useState<SceneDensity>('compact')
   const [boardViewMode, setBoardViewMode] = useState<BoardViewMode>('outline')
@@ -149,16 +154,26 @@ export function App() {
     cloneBoard,
     moveBoard,
     addSceneToBoard,
-    addBlockToActiveBoard,
-    addBlockTemplateToActiveBoard,
+    addBlockToBoard,
+    addBlockTemplateToBoard,
     saveBlockTemplate,
     deleteBlockTemplate,
     copyBlockToBoard,
     duplicateBoardItem,
     removeBoardItem,
-    reorderActiveBoard,
+    reorderBoard,
     dismissError,
   } = useAppStore()
+
+  const openAppSettings = useCallback(() => {
+    setSettingsNavigate(null)
+    setWorkspaceMode('settings')
+  }, [setWorkspaceMode])
+
+  const openAppSettingsTranscribe = useCallback(() => {
+    setSettingsNavigate({ tab: 'transcribe', requestId: Date.now() })
+    setWorkspaceMode('settings')
+  }, [setWorkspaceMode])
 
   const filters = useFilterStore()
 
@@ -216,7 +231,9 @@ export function App() {
   useEffect(() => {
     if (!ready || windowContext === null) return
     if (windowContext.role !== 'main') return
-    setSceneDensity(appSettings.ui.defaultSceneDensity)
+    startTransition(() => {
+      setSceneDensity(appSettings.ui.defaultSceneDensity)
+    })
   }, [ready, appSettings.ui.defaultSceneDensity, windowContext])
 
   useEffect(() => {
@@ -229,7 +246,9 @@ export function App() {
     const key = `${projectMeta.path}:${projectSettings.defaultBoardView}`
     if (lastAppliedProjectBoardViewKeyRef.current === key) return
     lastAppliedProjectBoardViewKeyRef.current = key
-    setBoardViewMode(normalizeBoardViewMode(projectSettings.defaultBoardView))
+    startTransition(() => {
+      setBoardViewMode(normalizeBoardViewMode(projectSettings.defaultBoardView))
+    })
   }, [ready, projectMeta, projectSettings, windowContext])
 
   useEffect(() => {
@@ -351,10 +370,34 @@ export function App() {
     setRightCollapsed(false)
   }
 
-  const openBoardDetails = (boardId: string) => {
+  const openBoardDetails = useCallback((boardId: string) => {
     openBoardInspector(boardId)
     setRightCollapsed(false)
-  }
+  }, [openBoardInspector])
+
+  const setBoardForCurrentWindow = useCallback((boardId: string) => {
+    if (windowContext?.role === 'detached' && detachedWorkspace) {
+      setWindowContext((current) =>
+        current && current.role === 'detached'
+          ? { ...current, boardId }
+          : current,
+      )
+      void window.narralab.windows.updateContext({ boardId })
+      return
+    }
+
+    setActiveBoard(boardId)
+  }, [detachedWorkspace, setActiveBoard, windowContext?.role])
+
+  const openBoardDetailsForCurrentWindow = useCallback((boardId: string) => {
+    if (windowContext?.role === 'detached' && detachedWorkspace) {
+      setBoardForCurrentWindow(boardId)
+      setRightCollapsed(false)
+      return
+    }
+
+    openBoardDetails(boardId)
+  }, [detachedWorkspace, openBoardDetails, setBoardForCurrentWindow, windowContext?.role])
 
   const toggleKeyScene = (scene: Scene) => {
     const tagNames = tags.filter((tag) => scene.tagIds.includes(tag.id)).map((tag) => tag.name)
@@ -415,6 +458,8 @@ export function App() {
         ? `${archiveItems.length} files in archive`
       : workspaceMode === 'board-manager'
         ? `${boards.length} boards, ${boardFolders.length} folders`
+      : workspaceMode === 'transcribe'
+        ? 'Local Whisper transcription'
       : workspaceMode === 'notebook'
       ? notebook.updatedAt
         ? `Notebook saved ${new Date(notebook.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
@@ -423,7 +468,12 @@ export function App() {
         ? `${activeBoard.items.length} rows in active outline`
         : 'No board selected'
   const showDensityControl = workspaceMode === 'outline' || workspaceMode === 'bank'
-  const showInspector = workspaceMode !== 'consultant' && workspaceMode !== 'settings' && workspaceMode !== 'archive' && workspaceMode !== 'board-manager'
+  const showInspector =
+    workspaceMode !== 'consultant' &&
+    workspaceMode !== 'settings' &&
+    workspaceMode !== 'archive' &&
+    workspaceMode !== 'board-manager' &&
+    workspaceMode !== 'transcribe'
   const densityOption = densityOptions.find((option) => option.value === sceneDensity) ?? densityOptions[1]
   const densityMenuItems = useMemo<ContextMenuItem[]>(
     () =>
@@ -447,6 +497,61 @@ export function App() {
     }
     return addSceneToBoard(targetBoardId, sceneId, afterItemId, boardPosition)
   }
+
+  const sendScenesToOpenOutline = useCallback(async (sceneIds: string[]) => {
+    const uniqueSceneIds = [...new Set(sceneIds.filter(Boolean))]
+    if (uniqueSceneIds.length === 0) {
+      return
+    }
+
+    const contexts = await window.narralab.windows.listContexts()
+    const outlineTargets = contexts.filter(
+      (context) =>
+        context.role === 'detached' &&
+        context.workspace === 'outline' &&
+        Boolean(context.boardId) &&
+        context.windowId !== windowContext?.windowId,
+    )
+
+    const target = outlineTargets.at(-1)
+    if (!target?.boardId) {
+      window.alert('No detached outline window is open.')
+      return
+    }
+
+    for (const sceneId of uniqueSceneIds) {
+      await addSceneToBoard(target.boardId, sceneId)
+    }
+
+    await window.narralab.windows.refreshProject()
+  }, [addSceneToBoard, windowContext?.windowId])
+
+  const addBlockToCurrentBoard = useCallback((kind: import('@/types/board').BoardTextItemKind, afterItemId?: string | null) => {
+    const targetBoardId = boardIdForWindow
+    if (!targetBoardId) {
+      return
+    }
+
+    void addBlockToBoard(targetBoardId, kind, afterItemId)
+  }, [addBlockToBoard, boardIdForWindow])
+
+  const addBlockTemplateToCurrentBoard = useCallback((templateId: string, afterItemId?: string | null) => {
+    const targetBoardId = boardIdForWindow
+    if (!targetBoardId) {
+      return
+    }
+
+    void addBlockTemplateToBoard(targetBoardId, templateId, afterItemId)
+  }, [addBlockTemplateToBoard, boardIdForWindow])
+
+  const reorderCurrentBoard = useCallback((itemIds: string[]) => {
+    const targetBoardId = boardIdForWindow
+    if (!targetBoardId) {
+      return
+    }
+
+    void reorderBoard(targetBoardId, itemIds)
+  }, [boardIdForWindow, reorderBoard])
 
   const saveCurrentLayout = async () => {
     const name = window.prompt('Layout name')
@@ -599,8 +704,8 @@ export function App() {
               }
               onToggleImmersive={() => void toggleOutlineImmersive()}
               onChangeViewMode={(mode) => setBoardViewMode(normalizeBoardViewMode(mode))}
-              onSelectBoard={setActiveBoard}
-              onOpenBoardInspector={openBoardDetails}
+              onSelectBoard={setBoardForCurrentWindow}
+              onOpenBoardInspector={openBoardDetailsForCurrentWindow}
               onInlineUpdateBoard={(boardId, input) => void updateBoardDraft({ id: boardId, ...input })}
               onDuplicateBoard={(boardId) => void cloneBoard(boardId)}
               onCreateBoard={(folder) => void createBoard('New Board', folder)}
@@ -629,14 +734,14 @@ export function App() {
               onDeleteScene={(sceneId) => void deleteScene(sceneId)}
               onDeleteSelectedScenes={() => void deleteScenes(selectedSceneIds)}
               onAddScene={(sceneId, afterItemId, boardPosition) => void addSceneToCurrentBoard(sceneId, afterItemId, boardPosition)}
-              onAddBlock={(kind, afterItemId) => void addBlockToActiveBoard(kind, afterItemId)}
-              onAddTemplate={(templateId, afterItemId) => void addBlockTemplateToActiveBoard(templateId, afterItemId)}
+              onAddBlock={(kind, afterItemId) => void addBlockToCurrentBoard(kind, afterItemId)}
+              onAddTemplate={(templateId, afterItemId) => void addBlockTemplateToCurrentBoard(templateId, afterItemId)}
               onSaveTemplate={(input) => void saveBlockTemplate(input)}
               onDeleteTemplate={(templateId) => void deleteBlockTemplate(templateId)}
               onCopyBlockToBoard={(itemId, boardId) => void copyBlockToBoard(itemId, boardId)}
               onDuplicateBlock={(itemId) => void duplicateBoardItem(itemId)}
               onRemoveBoardItem={(itemId) => void removeBoardItem(itemId)}
-              onReorder={(itemIds) => void reorderActiveBoard(itemIds)}
+              onReorder={(itemIds) => void reorderCurrentBoard(itemIds)}
               onUpdateItemPosition={(itemId, boardX, boardY) => void persistBoardItemDraft({ id: itemId, boardX, boardY })}
               onInlineUpdateScene={inlineUpdateScene}
               onInlineUpdateBlock={inlineUpdateBlock}
@@ -670,6 +775,7 @@ export function App() {
               onDelete={(sceneId) => void deleteScene(sceneId)}
               onDeleteSelected={() => void deleteScenes(selectedSceneIds)}
               onAdd={(sceneId) => void addSceneToCurrentBoard(sceneId, selectedBoardItemId)}
+              onSendToOpenOutline={(sceneIds) => void sendScenesToOpenOutline(sceneIds)}
             />
           ) : detachedWorkspace === 'notebook' ? (
             <NotebookEditor notebook={notebook} onChange={updateNotebookDraft} onSave={(content) => void persistNotebook(content)} />
@@ -690,6 +796,34 @@ export function App() {
             />
           ) : detachedWorkspace === 'inspector' ? (
             <Panel className="h-full overflow-y-auto overscroll-contain">{inspectorContent}</Panel>
+          ) : detachedWorkspace === 'board-manager' && projectMeta ? (
+            <BoardManagerDialog
+              boards={boards}
+              folders={boardFolders}
+              activeBoardId={activeBoardId}
+              open={true}
+              embedded={true}
+              onClose={() => void window.close()}
+              onSelectBoard={setBoardForCurrentWindow}
+              onOpenBoardInspector={openBoardDetailsForCurrentWindow}
+              onInlineUpdateBoard={(boardId, input) => void updateBoardDraft({ id: boardId, ...input })}
+              onDuplicateBoard={(boardId) => void cloneBoard(boardId)}
+              onCreateBoard={(folder) => void createBoard('New Board', folder)}
+              onCreateFolder={(name, parentPath) => void createBoardFolder(name, parentPath)}
+              onUpdateFolder={(currentPath, input) => void updateBoardFolder(currentPath, input)}
+              onDeleteFolder={(currentPath) => void deleteBoardFolder(currentPath)}
+              onDeleteBoard={(boardId) => void deleteBoard(boardId)}
+              onMoveBoard={(boardId, folder, beforeBoardId) => void moveBoard(boardId, folder, beforeBoardId)}
+              onReorderBoards={(boardIds) => void reorderBoards(boardIds)}
+            />
+          ) : detachedWorkspace === 'transcribe' ? (
+            <TranscribeWorkspace
+              projectMeta={projectMeta}
+              settings={appSettings}
+              onSaveAppSettings={updateAppSettings}
+              onNotebookSynced={updateNotebookDraft}
+              onOpenTranscribeSettings={openAppSettingsTranscribe}
+            />
           ) : null}
         </div>
         <ContextMenu
@@ -717,7 +851,7 @@ export function App() {
         onImportShootLog={() => void importShootLog()}
         onExportJson={() => void exportJson()}
         onExportScript={(format) => void exportActiveBoardScript(format)}
-        onOpenSettings={() => setWorkspaceMode('settings')}
+        onOpenSettings={openAppSettings}
         onOpenWorkspaceWindow={(workspace) => void openWorkspaceWindow(workspace)}
         onSaveLayout={() => void saveCurrentLayout()}
         onApplyLayout={(layoutId) => void applyLayout(layoutId)}
@@ -800,6 +934,7 @@ export function App() {
                 busy={busy}
                 onSaveApp={(input) => void updateAppSettings(input)}
                 onSaveProject={(input) => void updateProjectSettings(input)}
+                navigateToTab={settingsNavigate ?? undefined}
               />
             ) : workspaceMode === 'consultant' ? (
               <ConsultantWorkspace
@@ -811,7 +946,15 @@ export function App() {
                 onChangeContextMode={setConsultantContextMode}
                 onSend={(content) => void sendConsultantMessage(content)}
                 onClear={clearConsultantConversation}
-                onOpenSettings={() => setWorkspaceMode('settings')}
+                onOpenSettings={openAppSettings}
+              />
+            ) : workspaceMode === 'transcribe' ? (
+              <TranscribeWorkspace
+                projectMeta={projectMeta}
+                settings={appSettings}
+                onSaveAppSettings={updateAppSettings}
+                onNotebookSynced={updateNotebookDraft}
+                onOpenTranscribeSettings={openAppSettingsTranscribe}
               />
             ) : workspaceMode === 'archive' && projectMeta ? (
               <ArchiveWorkspace
@@ -866,8 +1009,8 @@ export function App() {
                     projectMeta ? `narralab:outline-scene-bank-width:${encodeURIComponent(projectMeta.path)}` : null
                   }
                   onChangeViewMode={(mode) => setBoardViewMode(normalizeBoardViewMode(mode))}
-                  onSelectBoard={setActiveBoard}
-                  onOpenBoardInspector={openBoardDetails}
+                  onSelectBoard={setBoardForCurrentWindow}
+                  onOpenBoardInspector={openBoardDetailsForCurrentWindow}
                   onInlineUpdateBoard={(boardId, input) => void updateBoardDraft({ id: boardId, ...input })}
                   onDuplicateBoard={(boardId) => void cloneBoard(boardId)}
                   onCreateBoard={(folder) => void createBoard('New Board', folder)}
@@ -895,14 +1038,14 @@ export function App() {
                   onDeleteScene={(sceneId) => void deleteScene(sceneId)}
                   onDeleteSelectedScenes={() => void deleteScenes(selectedSceneIds)}
                   onAddScene={(sceneId, afterItemId, boardPosition) => void addSceneToCurrentBoard(sceneId, afterItemId, boardPosition)}
-                  onAddBlock={(kind, afterItemId) => void addBlockToActiveBoard(kind, afterItemId)}
-                  onAddTemplate={(templateId, afterItemId) => void addBlockTemplateToActiveBoard(templateId, afterItemId)}
+                  onAddBlock={(kind, afterItemId) => void addBlockToCurrentBoard(kind, afterItemId)}
+                  onAddTemplate={(templateId, afterItemId) => void addBlockTemplateToCurrentBoard(templateId, afterItemId)}
                   onSaveTemplate={(input) => void saveBlockTemplate(input)}
                   onDeleteTemplate={(templateId) => void deleteBlockTemplate(templateId)}
                   onCopyBlockToBoard={(itemId, boardId) => void copyBlockToBoard(itemId, boardId)}
                   onDuplicateBlock={(itemId) => void duplicateBoardItem(itemId)}
                   onRemoveBoardItem={(itemId) => void removeBoardItem(itemId)}
-                  onReorder={(itemIds) => void reorderActiveBoard(itemIds)}
+                  onReorder={(itemIds) => void reorderCurrentBoard(itemIds)}
                   onUpdateItemPosition={(itemId, boardX, boardY) => void persistBoardItemDraft({ id: itemId, boardX, boardY })}
                   onInlineUpdateScene={inlineUpdateScene}
                   onInlineUpdateBlock={inlineUpdateBlock}
@@ -942,6 +1085,7 @@ export function App() {
                   onDelete={(sceneId) => void deleteScene(sceneId)}
                   onDeleteSelected={() => void deleteScenes(selectedSceneIds)}
                   onAdd={(sceneId) => void addSceneToCurrentBoard(sceneId, selectedBoardItemId)}
+                  onSendToOpenOutline={(sceneIds) => void sendScenesToOpenOutline(sceneIds)}
                 />
               )
             ) : (
@@ -1005,7 +1149,7 @@ export function App() {
                   onChangeContextMode={setConsultantContextMode}
                   onSend={(content) => void sendConsultantMessage(content)}
                   onClear={clearConsultantConversation}
-                  onOpenSettings={() => setWorkspaceMode('settings')}
+                  onOpenSettings={openAppSettings}
                 />
               </div>
             </Panel>
@@ -1043,6 +1187,9 @@ function matchesFilters(scene: Scene, filters: ReturnType<typeof useFilterStore.
     scene.category,
     scene.function,
     scene.sourceReference,
+    scene.quoteMoment,
+    scene.quality,
+    scene.sourcePaths.join(' '),
     scene.characters.join(' '),
   ]
     .join(' ')
@@ -1159,6 +1306,7 @@ function detachedLabel(workspace: WindowWorkspace) {
   if (workspace === 'inspector') return 'Inspector Window'
   if (workspace === 'notebook') return 'Notebook Window'
   if (workspace === 'archive') return 'Archive Window'
+  if (workspace === 'transcribe') return 'Transcribe Window'
   return 'Outline Window'
 }
 

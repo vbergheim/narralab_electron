@@ -1,5 +1,5 @@
-import { type ReactNode, useMemo, useState } from 'react'
-import { KeyRound, Save, Settings2, SlidersHorizontal, Sparkles, Trash2 } from 'lucide-react'
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
+import { Download, KeyRound, Loader2, Mic, Save, Settings2, SlidersHorizontal, Sparkles, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -7,7 +7,15 @@ import { Panel } from '@/components/ui/panel'
 import { Textarea } from '@/components/ui/textarea'
 import { boardBlockKinds, geminiModelOptions, openAiModelOptions } from '@/lib/constants'
 import type { AppSettings, AppSettingsUpdateInput } from '@/types/ai'
-import type { ProjectSettings, ProjectSettingsUpdateInput } from '@/types/project'
+import type { ProjectSettings, ProjectSettingsUpdateInput, TranscriptionSetup } from '@/types/project'
+import {
+  TRANSCRIPTION_MODEL_CATALOG,
+  type TranscriptionEngineDownloadPart,
+  type TranscriptionLanguage,
+  type TranscriptionModelId,
+  type TranscriptionProgressEvent,
+  type TranscriptionTimestampInterval,
+} from '@/types/transcription'
 
 type Props = {
   settings: AppSettings
@@ -15,12 +23,34 @@ type Props = {
   busy: boolean
   onSaveApp(input: AppSettingsUpdateInput): void
   onSaveProject(input: ProjectSettingsUpdateInput): void
+  /** When requestId changes, switch to this tab (e.g. open Transcribe from the transcribe window). */
+  navigateToTab?: { tab: SettingsTab; requestId: number }
 }
 
-type SettingsTab = 'app' | 'project' | 'ai'
+export type SettingsTab = 'app' | 'project' | 'ai' | 'transcribe'
+const presetTimestampIntervals: ReadonlyArray<TranscriptionTimestampInterval> = ['none', 'segment', 30, 60, 120, 300, 600, 1800]
 
-export function SettingsWorkspace({ settings, projectSettings, busy, onSaveApp, onSaveProject }: Props) {
+export function SettingsWorkspace({
+  settings,
+  projectSettings,
+  busy,
+  onSaveApp,
+  onSaveProject,
+  navigateToTab,
+}: Props) {
   const [tab, setTab] = useState<SettingsTab>('app')
+
+  useEffect(() => {
+    if (navigateToTab?.requestId) {
+      const nextTab = navigateToTab.tab
+      const timeoutId = window.setTimeout(() => {
+        setTab(nextTab)
+      }, 0)
+      return () => {
+        window.clearTimeout(timeoutId)
+      }
+    }
+  }, [navigateToTab?.requestId, navigateToTab?.tab])
 
   return (
     <div className="grid min-h-0 gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
@@ -30,6 +60,7 @@ export function SettingsWorkspace({ settings, projectSettings, busy, onSaveApp, 
             { value: 'app', label: 'App', icon: SlidersHorizontal },
             { value: 'project', label: 'Project', icon: Settings2 },
             { value: 'ai', label: 'AI', icon: Sparkles },
+            { value: 'transcribe', label: 'Transcribe', icon: Mic },
           ].map((entry) => {
             const Icon = entry.icon
             return (
@@ -53,8 +84,10 @@ export function SettingsWorkspace({ settings, projectSettings, busy, onSaveApp, 
         <AppSettingsPanel settings={settings} busy={busy} onSave={onSaveApp} />
       ) : tab === 'project' ? (
         <ProjectSettingsPanel settings={projectSettings} busy={busy} onSave={onSaveProject} />
-      ) : (
+      ) : tab === 'ai' ? (
         <AiSettingsPanel settings={settings} busy={busy} onSave={onSaveApp} />
+      ) : (
+        <TranscriptionSettingsPanel settings={settings} busy={busy} onSave={onSaveApp} />
       )}
     </div>
   )
@@ -129,11 +162,356 @@ function AppSettingsPanel({
           >
             <option value="outline">Outline</option>
             <option value="bank">Scene Bank</option>
+            <option value="board-manager">Board Manager</option>
             <option value="inspector">Inspector</option>
             <option value="notebook">Notebook</option>
             <option value="archive">Archive</option>
+            <option value="transcribe">Transcribe</option>
           </select>
         </Field>
+      </div>
+    </Panel>
+  )
+}
+
+function TranscriptionSettingsPanel({
+  settings,
+  busy,
+  onSave,
+}: {
+  settings: AppSettings
+  busy: boolean
+  onSave(input: AppSettingsUpdateInput): void
+}) {
+  const [modelId, setModelId] = useState<TranscriptionModelId>(settings.transcription.modelId)
+  const [language, setLanguage] = useState<TranscriptionLanguage>(settings.transcription.language)
+  const [timestampInterval, setTimestampInterval] = useState<TranscriptionTimestampInterval>(
+    settings.transcription.timestampInterval,
+  )
+  const [setup, setSetup] = useState<TranscriptionSetup | null>(null)
+  const [downloadError, setDownloadError] = useState<string | null>(null)
+  const [downloadLabel, setDownloadLabel] = useState<string | null>(null)
+  const [downloadingId, setDownloadingId] = useState<TranscriptionModelId | null>(null)
+  const [downloadingEngine, setDownloadingEngine] = useState(false)
+  const [downloadingFfmpeg, setDownloadingFfmpeg] = useState(false)
+  const [saveFeedback, setSaveFeedback] = useState(false)
+
+  const refreshSetup = useCallback(async () => {
+    try {
+      const next = await window.narralab.transcription.getSetup()
+      setSetup(next)
+      setDownloadError(null)
+    } catch (e) {
+      setDownloadError(e instanceof Error ? e.message : 'Could not fetch transcription setup')
+    }
+  }, [])
+
+  useEffect(() => {
+    void refreshSetup()
+  }, [refreshSetup])
+
+  useEffect(() => {
+    const dispose = window.narralab.transcription.subscribe((event: TranscriptionProgressEvent) => {
+      if (event.type === 'download') {
+        const { bytesReceived, totalBytes } = event.payload
+        const mb = (bytesReceived / (1024 * 1024)).toFixed(1)
+        if (totalBytes) {
+          const pct = Math.min(100, Math.round((bytesReceived / totalBytes) * 100))
+          setDownloadLabel(`Model: ${pct}% (${mb} MiB)`)
+        } else {
+          setDownloadLabel(`Model: ${mb} MiB`)
+        }
+        return
+      }
+      if (event.type === 'engine-download') {
+        const { part, bytesReceived, totalBytes } = event.payload
+        const partNb: Record<TranscriptionEngineDownloadPart, string> = {
+          'windows-zip': 'Windows Package',
+          'whisper-cpp': 'whisper-cpp',
+          ggml: 'ggml',
+          libomp: 'libomp',
+        }
+        const mb = (bytesReceived / (1024 * 1024)).toFixed(1)
+        if (totalBytes) {
+          const pct = Math.min(100, Math.round((bytesReceived / totalBytes) * 100))
+          setDownloadLabel(`Engine (${partNb[part]}): ${pct}% (${mb} MiB)`)
+        } else {
+          setDownloadLabel(`Engine (${partNb[part]}): ${mb} MiB`)
+        }
+        return
+      }
+      if (event.type === 'ffmpeg-download') {
+        const { bytesReceived, totalBytes } = event.payload
+        const mb = (bytesReceived / (1024 * 1024)).toFixed(1)
+        if (totalBytes) {
+          const pct = Math.min(100, Math.round((bytesReceived / totalBytes) * 100))
+          setDownloadLabel(`FFmpeg: ${pct}% (${mb} MiB)`)
+        } else {
+          setDownloadLabel(`FFmpeg: ${mb} MiB`)
+        }
+      }
+    })
+    return dispose
+  }, [])
+
+  useEffect(() => {
+    setModelId(settings.transcription.modelId)
+    setLanguage(settings.transcription.language)
+    setTimestampInterval(settings.transcription.timestampInterval)
+  }, [settings.transcription])
+
+  const downloadBusy = downloadingEngine || downloadingFfmpeg || downloadingId !== null
+
+  const downloadEngine = async () => {
+    setDownloadingEngine(true)
+    setDownloadLabel('Starting engine download…')
+    try {
+      await window.narralab.transcription.downloadEngine()
+      await refreshSetup()
+    } catch (error) {
+      setDownloadError(error instanceof Error ? error.message : 'Engine download failed')
+    } finally {
+      setDownloadingEngine(false)
+      setDownloadLabel(null)
+    }
+  }
+
+  const downloadFfmpeg = async () => {
+    setDownloadingFfmpeg(true)
+    setDownloadLabel('Starting FFmpeg download…')
+    try {
+      await window.narralab.transcription.downloadFfmpeg()
+      await refreshSetup()
+    } catch (error) {
+      setDownloadError(error instanceof Error ? error.message : 'FFmpeg download failed')
+    } finally {
+      setDownloadingFfmpeg(false)
+      setDownloadLabel(null)
+    }
+  }
+
+  const downloadModel = async (id: TranscriptionModelId) => {
+    setDownloadingId(id)
+    setDownloadLabel('Starting model download…')
+    try {
+      await window.narralab.transcription.downloadModel(id)
+      await refreshSetup()
+    } catch (error) {
+      setDownloadError(error instanceof Error ? error.message : 'Model download failed')
+    } finally {
+      setDownloadingId(null)
+      setDownloadLabel(null)
+    }
+  }
+
+  const deleteModel = async (id: TranscriptionModelId) => {
+    if (!window.confirm('Delete this model? It will be removed from your disk.')) return
+    try {
+      await window.narralab.transcription.deleteModel(id)
+      await refreshSetup()
+    } catch (error) {
+      setDownloadError(error instanceof Error ? error.message : 'Could not delete model')
+    }
+  }
+
+  const ffmpegOk = setup?.ffmpegPath
+  const ffprobeOk = setup?.ffprobePath
+  const whisperOk = setup?.whisperPath
+  const engineAuto = setup?.engineAutoDownloadSupported ?? false
+  const ffmpegAutoDl = setup?.ffmpegAutoDownloadSupported ?? false
+  const catalogRows =
+    setup?.catalog ??
+    TRANSCRIPTION_MODEL_CATALOG.map((entry) => ({
+      ...entry,
+      downloaded: false,
+    }))
+  const usesCustomTimestampInterval = !presetTimestampIntervals.some((entry) => entry === timestampInterval)
+
+  return (
+    <Panel className="min-h-0 overflow-y-auto overscroll-contain p-5">
+      <Header
+        title="Local Transcription"
+        subtitle="Everything runs locally. Models and tools are stored securely in the app's user data directory."
+      >
+        <Button
+          variant={saveFeedback ? 'ghost' : 'accent'}
+          size="sm"
+          disabled={busy || saveFeedback}
+          onClick={async () => {
+            await onSave({
+              transcriptionModelId: modelId,
+              transcriptionLanguage: language,
+              transcriptionTimestampInterval: timestampInterval,
+            })
+            setSaveFeedback(true)
+            setTimeout(() => setSaveFeedback(false), 2000)
+          }}
+        >
+          {saveFeedback ? (
+            <span className="text-emerald-400">Saved!</span>
+          ) : (
+            <>
+              <Save className="h-4 w-4" />
+              Save Defaults
+            </>
+          )}
+        </Button>
+      </Header>
+
+      {downloadError ? <div className="mt-4 text-sm text-red-300">{downloadError}</div> : null}
+
+      <div className="mt-8 border-t border-border/60 pt-6">
+        <div className="text-sm font-semibold text-foreground">Downloads (Rarely needed)</div>
+        <p className="mt-1 max-w-2xl text-xs text-muted">
+          Download FFmpeg, transcription engine and language models here. The Transcribe workspace uses your local installations without requiring an internet connection.
+        </p>
+
+        <div className="mt-4 flex flex-wrap gap-4 text-sm">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-muted">FFmpeg / ffprobe</span>
+            <span className={(ffmpegOk && ffprobeOk) ? 'text-emerald-300' : 'text-amber-300'}>
+              {ffmpegOk && ffprobeOk ? 'Ready' : !ffmpegOk ? 'FFmpeg Missing' : 'ffprobe Missing'}
+            </span>
+            {(!ffmpegOk || !ffprobeOk) && ffmpegAutoDl ? (
+              <Button variant="accent" size="sm" type="button" disabled={downloadBusy} onClick={() => void downloadFfmpeg()}>
+                {downloadingFfmpeg ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                {ffmpegOk ? 'Install ffprobe' : 'Download'}
+              </Button>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-muted">Engine</span>
+            <span className={whisperOk ? 'text-emerald-300' : 'text-amber-300'}>{whisperOk ? 'Ready' : 'Missing'}</span>
+            {!whisperOk && engineAuto ? (
+              <Button variant="accent" size="sm" type="button" disabled={downloadBusy} onClick={() => void downloadEngine()}>
+                {downloadingEngine ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                Download
+              </Button>
+            ) : null}
+          </div>
+        </div>
+
+        {downloadLabel ? <div className="mt-2 text-xs text-muted">{downloadLabel}</div> : null}
+
+        <div className="mt-6 space-y-2">
+          <div className="text-xs font-semibold uppercase tracking-wide text-muted">Whisper Models</div>
+          {catalogRows.map((entry) => (
+            <div
+              key={entry.id}
+              className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/80 bg-panelMuted/40 px-3 py-2"
+            >
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-foreground">{entry.label}</div>
+                <div className="text-xs text-muted">{entry.description}</div>
+                <div className="text-xs text-muted">~{entry.sizeMiB} MiB</div>
+              </div>
+              {entry.downloaded ? (
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-medium text-emerald-300">Downloaded</span>
+                  <button
+                    className="flex h-7 w-7 items-center justify-center rounded-lg text-red-300 transition hover:bg-red-300/10 hover:text-red-200 disabled:opacity-40"
+                    title="Delete model"
+                    type="button"
+                    disabled={downloadBusy}
+                    onClick={() => void deleteModel(entry.id)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              ) : (
+                <Button
+                  variant="accent"
+                  size="sm"
+                  type="button"
+                  disabled={downloadBusy}
+                  onClick={() => void downloadModel(entry.id)}
+                >
+                  {downloadingId === entry.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                  Download
+                </Button>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-10 border-t border-border/60 pt-6">
+        <div className="text-sm font-semibold text-foreground">Workspace Defaults</div>
+        <div className="mt-4 grid max-w-xl gap-4">
+          <Field label="Default Model">
+            <select
+              className={selectClassName}
+              value={modelId}
+              onChange={(event) => setModelId(event.target.value as TranscriptionModelId)}
+            >
+              {catalogRows.map((entry) => (
+                <option key={entry.id} value={entry.id} disabled={!entry.downloaded && entry.id !== modelId}>
+                  {entry.label}
+                  {!entry.downloaded ? ' (not downloaded)' : ''}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Default Language">
+            <select
+              className={selectClassName}
+              value={language}
+              onChange={(event) => setLanguage(event.target.value as TranscriptionLanguage)}
+            >
+              <option value="auto">Auto-detect</option>
+              <option value="nb">Norwegian Bokmål</option>
+              <option value="nn">Norwegian Nynorsk</option>
+              <option value="en">English</option>
+              <option value="sv">Swedish</option>
+              <option value="da">Danish</option>
+              <option value="de">German</option>
+              <option value="fr">French</option>
+              <option value="es">Spanish</option>
+            </select>
+          </Field>
+          <Field label="Default Timestamps">
+            <div className="flex gap-2">
+              <select
+                className={selectClassName}
+                value={usesCustomTimestampInterval ? 'custom' : String(timestampInterval)}
+                onChange={(event) => {
+                  const v = event.target.value
+                  if (v === 'none' || v === 'segment') {
+                    setTimestampInterval(v)
+                  } else if (v === 'custom') {
+                    setTimestampInterval(typeof timestampInterval === 'number' ? timestampInterval : 60)
+                  } else {
+                    setTimestampInterval(Number(v))
+                  }
+                }}
+              >
+                <option value="none">None</option>
+                <option value="segment">Each segment</option>
+                <option value="30">30 seconds</option>
+                <option value="60">1 minute</option>
+                <option value="120">2 minutes</option>
+                <option value="300">5 minutes</option>
+                <option value="600">10 minutes</option>
+                <option value="1800">30 minutes</option>
+                <option value="custom">Custom...</option>
+              </select>
+              {usesCustomTimestampInterval && (
+                <div className="relative w-24 shrink-0">
+                  <Input
+                    type="number"
+                    min="1"
+                    className="h-10 pr-6"
+                    value={typeof timestampInterval === 'number' ? timestampInterval : ''}
+                    onChange={(e) => setTimestampInterval(Number(e.target.value) || 1)}
+                  />
+                  <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted">
+                    s
+                  </span>
+                </div>
+              )}
+            </div>
+          </Field>
+        </div>
       </div>
     </Panel>
   )
@@ -524,4 +902,4 @@ function swap<T>(items: T[], fromIndex: number, toIndex: number) {
 }
 
 const selectClassName =
-  'h-10 w-full rounded-xl border border-border bg-panel px-3 text-sm text-foreground outline-none transition focus:border-accent/50 focus:ring-2 focus:ring-accent/20'
+  'h-10 w-full appearance-none rounded-xl border border-border bg-panel pl-3 pr-10 text-sm text-foreground outline-none transition focus:border-accent/50 focus:ring-2 focus:ring-accent/20 bg-[url("data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20fill%3D%27none%27%20viewBox%3D%270%200%2020%2020%27%3E%3Cpath%20stroke%3D%27%236b7280%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%20stroke-width%3D%271.5%27%20d%3D%27m6%208%204%204%204-4%27%2F%3E%3C%2Fsvg%3E")] bg-[position:right_0.5rem_center] bg-[length:1.25rem_1.25rem] bg-no-repeat'

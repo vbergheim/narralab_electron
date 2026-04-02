@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3'
 
-const SCHEMA_VERSION = 12
+const SCHEMA_VERSION = 14
 
 export function runMigrations(db: Database.Database) {
   db.exec(`
@@ -26,6 +26,9 @@ export function runMigrations(db: Database.Database) {
       characters TEXT NOT NULL DEFAULT '[]',
       function TEXT NOT NULL DEFAULT '',
       source_reference TEXT NOT NULL DEFAULT '',
+      quote_moment TEXT NOT NULL DEFAULT '',
+      quality TEXT NOT NULL DEFAULT '',
+      source_paths TEXT NOT NULL DEFAULT '[]',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -101,11 +104,39 @@ export function runMigrations(db: Database.Database) {
       block_kind_order TEXT NOT NULL DEFAULT '["chapter","voiceover","narration","text-card","note"]',
       updated_at TEXT NOT NULL DEFAULT ''
     );
+ 
+    CREATE TABLE IF NOT EXISTS transcription_folders (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      parent_id TEXT,
+      color TEXT NOT NULL DEFAULT 'slate',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (parent_id) REFERENCES transcription_folders(id) ON DELETE SET NULL
+    );
+ 
+    CREATE TABLE IF NOT EXISTS transcription_items (
+      id TEXT PRIMARY KEY,
+      folder_id TEXT,
+      scene_id TEXT,
+      name TEXT NOT NULL,
+      content TEXT NOT NULL,
+      source_file_path TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (folder_id) REFERENCES transcription_folders(id) ON DELETE SET NULL,
+      FOREIGN KEY (scene_id) REFERENCES scenes(id) ON DELETE SET NULL
+    );
   `)
 
   ensureColumn(db, 'scenes', 'is_key_scene', 'INTEGER NOT NULL DEFAULT 0')
   ensureColumn(db, 'scenes', 'sort_order', 'INTEGER NOT NULL DEFAULT 0')
   ensureColumn(db, 'scenes', 'folder', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn(db, 'scenes', 'quote_moment', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn(db, 'scenes', 'quality', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn(db, 'scenes', 'source_paths', `TEXT NOT NULL DEFAULT '[]'`)
+  backfillSceneSourcePaths(db)
   ensureColumn(db, 'boards', 'description', "TEXT NOT NULL DEFAULT ''")
   ensureColumn(db, 'boards', 'color', "TEXT NOT NULL DEFAULT 'charcoal'")
   ensureColumn(db, 'boards', 'folder', "TEXT NOT NULL DEFAULT ''")
@@ -120,6 +151,7 @@ export function runMigrations(db: Database.Database) {
   ensureBoardItemsTable(db)
   ensureArchiveIndexes(db)
   ensureProjectSettingsRow(db)
+  migrateTranscriptionLibraryToPathModel(db)
 
   db.prepare(
     `INSERT OR REPLACE INTO app_meta (key, value) VALUES ('schema_version', ?)`,
@@ -375,6 +407,136 @@ function ensureArchiveItemsForeignKey(db: Database.Database) {
   `)
 }
 
+const TRANSCRIPTION_PATH_MIGRATION_META_KEY = 'transcription_library_path_model_v1'
+
+function normalizeTranscriptionPathSegments(value: string): string {
+  return value
+    .split('/')
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+    .join('/')
+}
+
+/** Move transcription library from SQL folder IDs to path strings + app_meta (Scene Bank model). */
+function migrateTranscriptionLibraryToPathModel(db: Database.Database) {
+  ensureColumn(db, 'transcription_items', 'folder', "TEXT NOT NULL DEFAULT ''")
+
+  const flag = db.prepare(`SELECT value FROM app_meta WHERE key = ?`).get(TRANSCRIPTION_PATH_MIGRATION_META_KEY) as
+    | { value: string }
+    | undefined
+  if (flag) return
+
+  type FolderRow = { id: string; name: string; parent_id: string | null }
+  let folderRows: FolderRow[] = []
+  try {
+    folderRows = db.prepare(`SELECT id, name, parent_id FROM transcription_folders`).all() as FolderRow[]
+  } catch {
+    folderRows = []
+  }
+
+  const memo = new Map<string, string>()
+
+  function pathForFolderId(id: string): string {
+    if (memo.has(id)) return memo.get(id)!
+    const row = folderRows.find((r) => r.id === id)
+    if (!row) {
+      memo.set(id, '')
+      return ''
+    }
+    const seg = normalizeTranscriptionPathSegments(row.name)
+    if (!row.parent_id) {
+      memo.set(id, seg)
+      return seg
+    }
+    const parentPath = pathForFolderId(row.parent_id)
+    const full = parentPath ? `${parentPath}/${seg}` : seg
+    memo.set(id, full)
+    return full
+  }
+
+  folderRows.forEach((r) => pathForFolderId(r.id))
+
+  const items = db
+    .prepare(`SELECT id, folder_id FROM transcription_items`)
+    .all() as Array<{ id: string; folder_id: string | null }>
+  const updateItemFolder = db.prepare(`UPDATE transcription_items SET folder = ? WHERE id = ?`)
+  for (const item of items) {
+    let folderPath = ''
+    if (item.folder_id) {
+      folderPath = normalizeTranscriptionPathSegments(pathForFolderId(item.folder_id))
+    }
+    updateItemFolder.run(folderPath, item.id)
+  }
+
+  try {
+    db.exec(`UPDATE transcription_items SET folder_id = NULL`)
+  } catch {
+    /* ignore if column missing */
+  }
+
+  const pathSet = new Set<string>()
+  for (const r of folderRows) {
+    const p = normalizeTranscriptionPathSegments(pathForFolderId(r.id))
+    if (p) pathSet.add(p)
+  }
+
+  const readMeta = db.prepare(`SELECT value FROM app_meta WHERE key = ?`)
+  const metaRow = readMeta.get('transcription_folders') as { value: string } | undefined
+  const merged: Array<{
+    path: string
+    name: string
+    parentPath: string | null
+    color: string
+    sortOrder: number
+  }> = []
+  if (metaRow?.value) {
+    try {
+      const parsed = JSON.parse(metaRow.value)
+      if (Array.isArray(parsed)) {
+        for (const entry of parsed) {
+          if (!entry || typeof entry !== 'object') continue
+          const e = entry as Record<string, unknown>
+          const path =
+            typeof e.path === 'string'
+              ? normalizeTranscriptionPathSegments(e.path)
+              : typeof e.name === 'string'
+                ? normalizeTranscriptionPathSegments(e.name)
+                : ''
+          if (!path) continue
+          merged.push({
+            path,
+            name: typeof e.name === 'string' ? e.name : path.split('/').pop() ?? path,
+            parentPath:
+              typeof e.parentPath === 'string' && e.parentPath.trim()
+                ? normalizeTranscriptionPathSegments(e.parentPath)
+                : null,
+            color: typeof e.color === 'string' ? e.color : 'slate',
+            sortOrder: typeof e.sortOrder === 'number' ? e.sortOrder : merged.length,
+          })
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  for (const p of pathSet) {
+    if (!merged.some((f) => f.path.toLowerCase() === p.toLowerCase())) {
+      const segments = p.split('/').filter(Boolean)
+      const name = segments[segments.length - 1] ?? p
+      const parentPath = segments.length > 1 ? segments.slice(0, -1).join('/') : null
+      merged.push({ path: p, name, parentPath, color: 'slate', sortOrder: merged.length })
+    }
+  }
+
+  const upsertMeta = db.prepare(`
+    INSERT INTO app_meta (key, value) VALUES (?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+  `)
+  upsertMeta.run('transcription_folders', JSON.stringify(merged))
+  upsertMeta.run(TRANSCRIPTION_PATH_MIGRATION_META_KEY, '1')
+}
+
 function ensureColumn(
   db: Database.Database,
   tableName: string,
@@ -385,6 +547,25 @@ function ensureColumn(
   if (!columns.some((column) => column.name === columnName)) {
     db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`)
   }
+}
+
+function backfillSceneSourcePaths(db: Database.Database) {
+  db.exec(`
+    UPDATE scenes
+    SET source_paths = json_array(source_reference)
+    WHERE TRIM(source_reference) <> ''
+      AND (
+        source_paths IS NULL
+        OR TRIM(source_paths) = ''
+        OR TRIM(source_paths) = '[]'
+      )
+  `)
+
+  db.exec(`
+    UPDATE scenes
+    SET source_paths = '[]'
+    WHERE source_paths IS NULL OR TRIM(source_paths) = ''
+  `)
 }
 
 function ensureProjectSettingsRow(db: Database.Database) {

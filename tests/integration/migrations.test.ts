@@ -59,4 +59,71 @@ describe('runMigrations', () => {
       fs.rmSync(tempDir, { recursive: true, force: true })
     }
   })
+
+  it('adds new scene metadata columns and backfills source_paths from source_reference', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'narralab-migrations-'))
+    const filePath = path.join(tempDir, 'legacy-scenes.narralab')
+    const db = new Database(filePath)
+
+    try {
+      db.exec(`
+        CREATE TABLE scenes (
+          id TEXT PRIMARY KEY,
+          sort_order INTEGER NOT NULL DEFAULT 0,
+          title TEXT NOT NULL,
+          synopsis TEXT NOT NULL DEFAULT '',
+          notes TEXT NOT NULL DEFAULT '',
+          color TEXT NOT NULL DEFAULT 'charcoal',
+          status TEXT NOT NULL DEFAULT 'candidate',
+          is_key_scene INTEGER NOT NULL DEFAULT 0,
+          folder TEXT NOT NULL DEFAULT '',
+          category TEXT NOT NULL DEFAULT '',
+          estimated_duration INTEGER NOT NULL DEFAULT 0,
+          actual_duration INTEGER NOT NULL DEFAULT 0,
+          location TEXT NOT NULL DEFAULT '',
+          characters TEXT NOT NULL DEFAULT '[]',
+          function TEXT NOT NULL DEFAULT '',
+          source_reference TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        INSERT INTO scenes (
+          id, title, source_reference, created_at, updated_at
+        ) VALUES (
+          'scene_1', 'Legacy scene', 'legacy/source.mov', '2026-03-01T00:00:00.000Z', '2026-03-01T00:00:00.000Z'
+        );
+      `)
+
+      runMigrations(db)
+
+      const scene = db.prepare(`
+        SELECT
+          source_reference AS sourceReference,
+          quote_moment AS quoteMoment,
+          quality,
+          source_paths AS sourcePaths
+        FROM scenes
+        WHERE id = 'scene_1'
+      `).get() as {
+        sourceReference: string
+        quoteMoment: string
+        quality: string
+        sourcePaths: string
+      }
+
+      expect(scene.sourceReference).toBe('legacy/source.mov')
+      expect(scene.quoteMoment).toBe('')
+      expect(scene.quality).toBe('')
+      expect(scene.sourcePaths).toBe('["legacy/source.mov"]')
+
+      runMigrations(db)
+      const rerun = db.prepare(`SELECT source_paths AS sourcePaths FROM scenes WHERE id = 'scene_1'`).get() as {
+        sourcePaths: string
+      }
+      expect(rerun.sourcePaths).toBe('["legacy/source.mov"]')
+    } finally {
+      db.close()
+      fs.rmSync(tempDir, { recursive: true, force: true })
+    }
+  })
 })

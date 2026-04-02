@@ -22,7 +22,15 @@ import { emptyNotebookDocument } from '@/lib/notebook-document'
 import type { Scene, SceneBeat, SceneBeatUpdateInput, SceneFolder, SceneUpdateInput } from '@/types/scene'
 import type { Tag, TagType } from '@/types/tag'
 
-type WorkspaceMode = 'outline' | 'bank' | 'notebook' | 'archive' | 'consultant' | 'settings'
+type WorkspaceMode =
+  | 'outline'
+  | 'bank'
+  | 'notebook'
+  | 'archive'
+  | 'consultant'
+  | 'settings'
+  | 'board-manager'
+  | 'transcribe'
 
 type SceneDraftInput = Omit<Scene, 'tagIds' | 'createdAt' | 'updatedAt' | 'beats'> & {
   tagNames: string[]
@@ -133,13 +141,16 @@ type AppStore = {
   moveBoard(boardId: string, folder: string, beforeBoardId?: string | null): Promise<void>
   addSceneToBoard(boardId: string, sceneId: string, afterItemId?: string | null, boardPosition?: BoardDropPosition | null): Promise<AddSceneToBoardResult | null>
   addSceneToActiveBoard(sceneId: string, afterItemId?: string | null, boardPosition?: BoardDropPosition | null): Promise<AddSceneToBoardResult | null>
+  addBlockToBoard(boardId: string, kind: BoardTextItemKind, afterItemId?: string | null): Promise<void>
   addBlockToActiveBoard(kind: BoardTextItemKind, afterItemId?: string | null): Promise<void>
+  addBlockTemplateToBoard(boardId: string, templateId: string, afterItemId?: string | null): Promise<void>
   addBlockTemplateToActiveBoard(templateId: string, afterItemId?: string | null): Promise<void>
   saveBlockTemplate(input: { kind: BoardTextItemKind; name: string; title: string; body: string }): Promise<void>
   deleteBlockTemplate(templateId: string): Promise<void>
   copyBlockToBoard(itemId: string, boardId: string): Promise<void>
   duplicateBoardItem(itemId: string): Promise<void>
   removeBoardItem(itemId: string): Promise<void>
+  reorderBoard(boardId: string, itemIds: string[]): Promise<void>
   reorderActiveBoard(itemIds: string[]): Promise<void>
   cloneActiveBoard(): Promise<void>
   dismissError(): void
@@ -174,6 +185,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
       lastProjectPath: null,
       lastLayoutByProject: {},
       savedLayouts: [],
+    },
+    transcription: {
+      modelId: 'small',
+      language: 'auto',
+      timestampInterval: 'segment',
     },
   },
   notebook: emptyNotebookDocument(),
@@ -785,6 +801,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
         characters: input.characters,
         function: input.function,
         sourceReference: input.sourceReference,
+        quoteMoment: input.quoteMoment,
+        quality: input.quality,
+        sourcePaths: input.sourcePaths,
         tagIds,
       } satisfies SceneUpdateInput)
 
@@ -862,6 +881,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
         characters: source.characters,
         function: source.function,
         sourceReference: source.sourceReference,
+        quoteMoment: source.quoteMoment,
+        quality: source.quality,
+        sourcePaths: source.sourcePaths,
         tagIds: source.tagIds,
       } satisfies SceneUpdateInput)
 
@@ -1093,18 +1115,55 @@ export const useAppStore = create<AppStore>((set, get) => ({
     return get().addSceneToBoard(activeBoardId, sceneId, afterItemId, boardPosition)
   },
 
+  async addBlockToBoard(boardId, kind, afterItemId = null) {
+    await runProjectAction(set, async () => {
+      const item = await window.narralab.boards.addBlock(boardId, kind, afterItemId)
+      set((state) => ({
+        boards: state.boards.map((board) =>
+          board.id === boardId
+            ? {
+                ...board,
+                items: [...board.items, item]
+                  .sort((left, right) => left.position - right.position)
+                  .map((entry, index) => ({ ...entry, position: index }) as BoardItem),
+              }
+            : board,
+        ),
+        selectedBoardId: null,
+        selectedSceneId: null,
+        selectedBoardItemId: item.id,
+      }))
+    })
+  },
+
   async addBlockToActiveBoard(kind, afterItemId = null) {
     const activeBoardId = get().activeBoardId
     if (!activeBoardId) return
 
+    await get().addBlockToBoard(activeBoardId, kind, afterItemId)
+  },
+
+  async addBlockTemplateToBoard(boardId, templateId, afterItemId = null) {
     await runProjectAction(set, async () => {
-      const item = await window.narralab.boards.addBlock(activeBoardId, kind, afterItemId)
+      const template = get().blockTemplates.find((entry) => entry.id === templateId)
+      if (!template) {
+        throw new Error('Template not found')
+      }
+
+      const created = await window.narralab.boards.addBlock(boardId, template.kind, afterItemId)
+      const item = await window.narralab.boards.updateItem({
+        id: created.id,
+        kind: template.kind,
+        title: template.title,
+        body: template.body,
+      })
+
       set((state) => ({
         boards: state.boards.map((board) =>
-          board.id === activeBoardId
+          board.id === boardId
             ? {
                 ...board,
-                items: [...board.items, item]
+                items: [...board.items.filter((entry) => entry.id !== created.id), item]
                   .sort((left, right) => left.position - right.position)
                   .map((entry, index) => ({ ...entry, position: index }) as BoardItem),
               }
@@ -1121,36 +1180,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const activeBoardId = get().activeBoardId
     if (!activeBoardId) return
 
-    await runProjectAction(set, async () => {
-      const template = get().blockTemplates.find((entry) => entry.id === templateId)
-      if (!template) {
-        throw new Error('Template not found')
-      }
-
-      const created = await window.narralab.boards.addBlock(activeBoardId, template.kind, afterItemId)
-      const item = await window.narralab.boards.updateItem({
-        id: created.id,
-        kind: template.kind,
-        title: template.title,
-        body: template.body,
-      })
-
-      set((state) => ({
-        boards: state.boards.map((board) =>
-          board.id === activeBoardId
-            ? {
-                ...board,
-                items: [...board.items.filter((entry) => entry.id !== created.id), item]
-                  .sort((left, right) => left.position - right.position)
-                  .map((entry, index) => ({ ...entry, position: index }) as BoardItem),
-              }
-            : board,
-        ),
-        selectedBoardId: null,
-        selectedSceneId: null,
-        selectedBoardItemId: item.id,
-      }))
-    })
+    await get().addBlockTemplateToBoard(activeBoardId, templateId, afterItemId)
   },
 
   async saveBlockTemplate(input) {
@@ -1235,15 +1265,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
     })
   },
 
-  async reorderActiveBoard(itemIds) {
-    const activeBoardId = get().activeBoardId
-    if (!activeBoardId) return
-
+  async reorderBoard(boardId, itemIds) {
     await runProjectAction(set, async () => {
-      const items = await window.narralab.boards.reorder(activeBoardId, itemIds)
+      const items = await window.narralab.boards.reorder(boardId, itemIds)
       set((state) => ({
         boards: state.boards.map((board) =>
-          board.id === activeBoardId
+          board.id === boardId
             ? {
                 ...board,
                 items,
@@ -1252,6 +1279,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
         ),
       }))
     })
+  },
+
+  async reorderActiveBoard(itemIds) {
+    const activeBoardId = get().activeBoardId
+    if (!activeBoardId) return
+
+    await get().reorderBoard(activeBoardId, itemIds)
   },
 
   async cloneActiveBoard() {

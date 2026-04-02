@@ -29,6 +29,15 @@ const config: Config = {
         xl: '1rem',
         '2xl': '1.25rem',
       },
+      keyframes: {
+        'transcribe-indeterminate': {
+          '0%': { transform: 'translateX(-100%)' },
+          '100%': { transform: 'translateX(350%)' },
+        },
+      },
+      animation: {
+        'transcribe-indeterminate': 'transcribe-indeterminate 1.4s ease-in-out infinite',
+      },
     },
   },
   plugins: [],

@@ -33,7 +33,15 @@ function createMainWindow() {
 
 function createBrowserWindow(input: {
   title: string
-  workspace: 'main' | 'outline' | 'bank' | 'inspector' | 'notebook' | 'archive'
+  workspace:
+    | 'main'
+    | 'outline'
+    | 'bank'
+    | 'inspector'
+    | 'notebook'
+    | 'archive'
+    | 'board-manager'
+    | 'transcribe'
   bounds?: { x: number; y: number; width: number; height: number }
 }) {
   const iconPath = resolveRuntimeIconPath()
@@ -58,8 +66,17 @@ function createBrowserWindow(input: {
       preload: preloadPath,
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
     },
+  })
+
+  browserWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  browserWindow.webContents.on('will-navigate', (event, navigationUrl) => {
+    if (!isAllowedAppNavigation(navigationUrl)) {
+      event.preventDefault()
+    }
   })
 
   if (process.env.VITE_DEV_SERVER_URL) {
@@ -70,6 +87,18 @@ function createBrowserWindow(input: {
   }
 
   return browserWindow
+}
+
+function isAllowedAppNavigation(navigationUrl: string) {
+  if (process.env.VITE_DEV_SERVER_URL) {
+    try {
+      return new URL(navigationUrl).origin === new URL(process.env.VITE_DEV_SERVER_URL).origin
+    } catch {
+      return false
+    }
+  }
+
+  return navigationUrl.startsWith('file://')
 }
 
 app.on('open-file', (event, filePath) => {

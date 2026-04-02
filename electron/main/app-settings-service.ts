@@ -11,6 +11,7 @@ import type {
   SavedWindowLayout,
   WindowWorkspace,
 } from '@/types/ai'
+import type { TranscriptionLanguage, TranscriptionModelId, TranscriptionTimestampInterval } from '@/types/transcription'
 import type { BoardViewMode } from '@/types/board'
 import type { SceneDensity } from '@/types/view'
 
@@ -39,6 +40,11 @@ type SettingsFile = {
     lastProjectPath?: string | null
     lastLayoutByProject?: Record<string, string>
     savedLayouts?: SavedWindowLayout[]
+  }
+  transcription?: {
+    modelId?: TranscriptionModelId
+    language?: TranscriptionLanguage
+    timestampInterval?: TranscriptionTimestampInterval
   }
 }
 
@@ -70,6 +76,11 @@ const DEFAULT_SETTINGS: AppSettings = {
     lastLayoutByProject: {},
     savedLayouts: [],
   },
+  transcription: {
+    modelId: 'small',
+    language: 'auto',
+    timestampInterval: 'segment' as TranscriptionTimestampInterval,
+  },
 }
 
 export class AppSettingsService {
@@ -97,6 +108,11 @@ export class AppSettingsService {
         lastProjectPath: file.ui?.lastProjectPath ?? DEFAULT_SETTINGS.ui.lastProjectPath,
         lastLayoutByProject: file.ui?.lastLayoutByProject ?? DEFAULT_SETTINGS.ui.lastLayoutByProject,
         savedLayouts: normalizeLayouts(file.ui?.savedLayouts),
+      },
+      transcription: {
+        modelId: normalizeTranscriptionModelId(file.transcription?.modelId),
+        language: normalizeTranscriptionLanguage(file.transcription?.language),
+        timestampInterval: normalizeTranscriptionTimestampInterval(file.transcription?.timestampInterval),
       },
     }
   }
@@ -139,6 +155,20 @@ export class AppSettingsService {
           input.lastLayoutByProject ?? current.file.ui?.lastLayoutByProject ?? DEFAULT_SETTINGS.ui.lastLayoutByProject,
         savedLayouts: normalizeLayouts(input.savedLayouts ?? current.file.ui?.savedLayouts),
       },
+      transcription: {
+        modelId:
+          input.transcriptionModelId !== undefined
+            ? normalizeTranscriptionModelId(input.transcriptionModelId)
+            : normalizeTranscriptionModelId(current.file.transcription?.modelId),
+        language:
+          input.transcriptionLanguage !== undefined
+            ? normalizeTranscriptionLanguage(input.transcriptionLanguage)
+            : normalizeTranscriptionLanguage(current.file.transcription?.language),
+        timestampInterval:
+          input.transcriptionTimestampInterval !== undefined
+            ? normalizeTranscriptionTimestampInterval(input.transcriptionTimestampInterval)
+            : normalizeTranscriptionTimestampInterval(current.file.transcription?.timestampInterval),
+      },
     }
 
     if (input.clearOpenAiApiKey) {
@@ -178,19 +208,41 @@ export class AppSettingsService {
     try {
       const raw = fs.readFileSync(filePath, 'utf8')
       return { file: JSON.parse(raw) as SettingsFile }
-    } catch {
+    } catch (error) {
+      const backupPath = this.quarantineCorruptedFile(filePath)
+      const message = error instanceof Error ? error.message : String(error)
+      console.error(`Failed to read settings file at ${filePath}. Backed up corrupted contents to ${backupPath}.`, message)
       return { file: {} }
     }
   }
 
   private writeFile(file: SettingsFile) {
     const filePath = this.getFilePath()
-    fs.mkdirSync(path.dirname(filePath), { recursive: true })
-    fs.writeFileSync(filePath, JSON.stringify(file, null, 2), 'utf8')
+    const dir = path.dirname(filePath)
+    const tempPath = path.join(dir, `${path.basename(filePath)}.${process.pid}.${Date.now()}.tmp`)
+    fs.mkdirSync(dir, { recursive: true })
+    try {
+      fs.writeFileSync(tempPath, JSON.stringify(file, null, 2), 'utf8')
+      fs.renameSync(tempPath, filePath)
+    } catch (error) {
+      fs.rmSync(tempPath, { force: true })
+      throw error
+    }
   }
 
   private getFilePath() {
     return path.join(app.getPath('userData'), 'settings.json')
+  }
+
+  private quarantineCorruptedFile(filePath: string) {
+    const backupPath = `${filePath}.corrupt-${Date.now()}`
+    try {
+      fs.renameSync(filePath, backupPath)
+      return backupPath
+    } catch (error) {
+      console.error(`Failed to move corrupted settings file ${filePath} out of the way.`, error)
+      return filePath
+    }
   }
 
   private encryptSecret(value: string): StoredSecret {
@@ -256,4 +308,62 @@ function normalizeDefaultBoardView(value?: BoardViewMode | string | null): Board
 
 function resolveSecretStorageMode(): 'safe' | 'plain' {
   return safeStorage.isEncryptionAvailable() ? 'safe' : 'plain'
+}
+
+const transcriptionModelIds = new Set<TranscriptionModelId>([
+  'base',
+  'small',
+  'medium',
+  'large-v3-turbo',
+  'nb-whisper-medium',
+  'nb-whisper-large',
+])
+const transcriptionLanguages = new Set<TranscriptionLanguage>([
+  'auto',
+  'en',
+  'nb',
+  'nn',
+  'sv',
+  'da',
+  'de',
+  'fr',
+  'es',
+  'it',
+  'pt',
+  'nl',
+  'pl',
+  'ru',
+  'uk',
+  'ja',
+  'zh',
+])
+
+function normalizeTranscriptionModelId(value?: TranscriptionModelId | string | null): TranscriptionModelId {
+  if (typeof value === 'string' && transcriptionModelIds.has(value as TranscriptionModelId)) {
+    return value as TranscriptionModelId
+  }
+  return DEFAULT_SETTINGS.transcription.modelId
+}
+
+function normalizeTranscriptionLanguage(value?: TranscriptionLanguage | string | null): TranscriptionLanguage {
+  if (typeof value === 'string' && transcriptionLanguages.has(value as TranscriptionLanguage)) {
+    return value as TranscriptionLanguage
+  }
+  return DEFAULT_SETTINGS.transcription.language
+}
+
+function normalizeTranscriptionTimestampInterval(
+  value?: TranscriptionTimestampInterval | string | number | null,
+): TranscriptionTimestampInterval {
+  if (value === 'none' || value === 'segment') {
+    return value
+  }
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+    return value
+  }
+  // Backwards compatibility for '1min', '5min' strings
+  if (value === '1min') return 60
+  if (value === '5min') return 300
+
+  return DEFAULT_SETTINGS.transcription.timestampInterval
 }

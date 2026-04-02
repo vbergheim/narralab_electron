@@ -31,12 +31,14 @@ import type {
 } from '@/types/project'
 import type { Scene, SceneBeat, SceneBeatUpdateInput, SceneFolder, SceneUpdateInput } from '@/types/scene'
 import type { Tag, TagType } from '@/types/tag'
+import type { TranscriptionFolder, TranscriptionItem, TranscriptionItemUpdateInput } from '@/types/transcription'
 
 import { openProjectDatabase, type ProjectDatabase } from './db/connection'
 import { ArchiveRepository } from './db/repositories/archive-repository'
 import { BoardRepository } from './db/repositories/board-repository'
 import { SceneRepository } from './db/repositories/scene-repository'
 import { TagRepository } from './db/repositories/tag-repository'
+import { TranscriptionLibraryRepository } from './db/repositories/transcription-library-repository'
 import { importShootLogWorkbook } from './shoot-log-import'
 
 const NOTEBOOK_META_KEY = 'project_notebooks_v1'
@@ -122,6 +124,7 @@ type Repositories = {
   scenes: SceneRepository
   boards: BoardRepository
   tags: TagRepository
+  transcriptionLibrary: TranscriptionLibraryRepository
 }
 
 export class ProjectService {
@@ -421,10 +424,218 @@ export class ProjectService {
     }
   }
 
+  async saveTranscriptionToArchive(name: string, content: string): Promise<ArchiveItem | null> {
+    const meta = this.getMeta()
+    const fileName = `${sanitizeFileName(name || 'transcript')}.md`
+    const defaultPath = meta?.path ? path.join(path.dirname(meta.path), fileName) : fileName
+
+    const res = await dialog.showSaveDialog({
+      title: 'Save Transcript to Archive',
+      defaultPath,
+      filters: [{ name: 'Markdown', extensions: ['md'] }],
+    })
+
+    if (res.canceled || !res.filePath) {
+      return null
+    }
+
+    const filePath = res.filePath
+    await fs.promises.writeFile(filePath, content, 'utf8')
+
+    const added = this.ensureRepositories().archive.addFiles([filePath])
+    return added[0] ?? null
+  }
+
   revealArchiveItem(itemId: string): void {
     const item = this.listArchiveItems().find((entry) => entry.id === itemId)
     if (!item) throw new Error('Archive item not found')
     shell.showItemInFolder(item.filePath)
+  }
+
+  listTranscriptionFolders(): TranscriptionFolder[] {
+    const db = this.ensureDatabase()
+    const readMeta = db.prepare('SELECT value FROM app_meta WHERE key = ?')
+    const storedValue = (readMeta.get('transcription_folders') as { value: string } | undefined)?.value
+    const storedFolders = parseTranscriptionFolders(storedValue)
+    const itemFolderPaths = Array.from(
+      new Set(
+        this.listTranscriptionItems()
+          .map((item) => item.folder.trim())
+          .filter(Boolean),
+      ),
+    )
+
+    const merged = [...storedFolders]
+    itemFolderPaths.forEach((folderPath) => {
+      const normalizedPath = normalizeFolderPath(folderPath)
+      if (!normalizedPath) return
+      if (!merged.some((folder) => folder.path.toLowerCase() === normalizedPath.toLowerCase())) {
+        merged.push(makeFolderRecord(normalizedPath, 'slate', merged.length))
+      }
+    })
+
+    return normalizeSceneFolders(merged)
+  }
+
+  createTranscriptionFolder(name: string, parentPath?: string | null): TranscriptionFolder[] {
+    const nextName = name.trim()
+    if (!nextName) {
+      throw new Error('Folder name cannot be empty')
+    }
+
+    const folders = this.listTranscriptionFolders()
+    const normalizedParentPath = normalizeNullableFolderPath(parentPath)
+    if (normalizedParentPath && !folders.some((folder) => folder.path.toLowerCase() === normalizedParentPath.toLowerCase())) {
+      throw new Error('Parent folder not found')
+    }
+
+    const nextPath = buildFolderPath(nextName, normalizedParentPath)
+    if (folders.some((folder) => folder.path.toLowerCase() === nextPath.toLowerCase())) {
+      return folders
+    }
+
+    const nextFolders = normalizeSceneFolders([...folders, makeFolderRecord(nextPath, 'slate', folders.length)])
+    this.setTranscriptionFolders(nextFolders)
+    return nextFolders
+  }
+
+  updateTranscriptionFolder(
+    currentPath: string,
+    input: { name?: string; color?: Scene['color']; parentPath?: string | null },
+  ): TranscriptionFolder[] {
+    const previousPath = normalizeFolderPath(currentPath)
+    const requestedName = input.name?.trim()
+    if (!previousPath) {
+      throw new Error('Folder name cannot be empty')
+    }
+
+    const folders = this.listTranscriptionFolders()
+    const current = folders.find((folder) => folder.path.toLowerCase() === previousPath.toLowerCase())
+    if (!current) {
+      throw new Error('Folder not found')
+    }
+
+    const nextName = requestedName || current.name
+    if (!nextName) {
+      throw new Error('Folder name cannot be empty')
+    }
+
+    const normalizedParentPath =
+      input.parentPath === undefined ? current.parentPath : normalizeNullableFolderPath(input.parentPath)
+
+    if (
+      normalizedParentPath &&
+      (normalizedParentPath.toLowerCase() === previousPath.toLowerCase() ||
+        normalizedParentPath.toLowerCase().startsWith(`${previousPath.toLowerCase()}/`))
+    ) {
+      throw new Error('Cannot move a folder into itself')
+    }
+
+    if (
+      normalizedParentPath &&
+      !folders.some(
+        (folder) =>
+          folder.path.toLowerCase() === normalizedParentPath.toLowerCase() &&
+          folder.path.toLowerCase() !== previousPath.toLowerCase(),
+      )
+    ) {
+      throw new Error('Parent folder not found')
+    }
+
+    const nextPath = buildFolderPath(nextName, normalizedParentPath)
+    if (
+      previousPath.toLowerCase() !== nextPath.toLowerCase() &&
+      folders.some((folder) => folder.path.toLowerCase() === nextPath.toLowerCase())
+    ) {
+      throw new Error('A folder with that name already exists')
+    }
+
+    const nextFolders = normalizeSceneFolders(
+      folders.map((folder) =>
+        isFolderWithinPath(folder.path, previousPath)
+          ? {
+              ...folder,
+              path: replaceFolderPathPrefix(folder.path, previousPath, nextPath),
+              parentPath: folder.parentPath
+                ? replaceFolderPathPrefix(folder.parentPath, previousPath, nextPath)
+                : null,
+              name: getFolderNameFromPath(replaceFolderPathPrefix(folder.path, previousPath, nextPath)),
+              color: folder.path.toLowerCase() === previousPath.toLowerCase() ? input.color ?? current.color : folder.color,
+            }
+          : folder,
+      ),
+    )
+
+    const items = this.listTranscriptionItems().filter((item) => isFolderWithinPath(item.folder, previousPath))
+    items.forEach((item) => {
+      this.ensureRepositories().transcriptionLibrary.updateItem({
+        id: item.id,
+        folder: replaceFolderPathPrefix(item.folder, previousPath, nextPath),
+      })
+    })
+
+    this.setTranscriptionFolders(nextFolders)
+    return nextFolders
+  }
+
+  deleteTranscriptionFolder(currentPath: string): TranscriptionFolder[] {
+    const previousPath = normalizeFolderPath(currentPath)
+    if (!previousPath) {
+      throw new Error('Folder name cannot be empty')
+    }
+
+    const folders = this.listTranscriptionFolders()
+    const current = folders.find((folder) => folder.path.toLowerCase() === previousPath.toLowerCase())
+    if (!current) {
+      throw new Error('Folder not found')
+    }
+
+    const nextFolders = normalizeSceneFolders(
+      folders.filter((folder) => !isFolderWithinPath(folder.path, previousPath)),
+    )
+
+    const items = this.listTranscriptionItems().filter((item) => isFolderWithinPath(item.folder, previousPath))
+    items.forEach((item) => {
+      this.ensureRepositories().transcriptionLibrary.updateItem({ id: item.id, folder: '' })
+    })
+
+    this.setTranscriptionFolders(nextFolders)
+    return nextFolders
+  }
+
+  listTranscriptionItems(): TranscriptionItem[] {
+    return this.ensureRepositories().transcriptionLibrary.listItems()
+  }
+
+  createTranscriptionItem(input: {
+    name: string
+    content: string
+    folder?: string
+    sourceFilePath?: string | null
+  }): TranscriptionItem {
+    const folder = normalizeFolderPath(input.folder)
+    if (folder) {
+      this.ensureTranscriptionFolder(folder)
+    }
+    return this.ensureRepositories().transcriptionLibrary.createItem({
+      ...input,
+      folder,
+    })
+  }
+
+  updateTranscriptionItem(input: TranscriptionItemUpdateInput): TranscriptionItem {
+    if (input.folder !== undefined) {
+      const next = normalizeFolderPath(input.folder)
+      if (next) {
+        this.ensureTranscriptionFolder(next)
+      }
+      return this.ensureRepositories().transcriptionLibrary.updateItem({ ...input, folder: next })
+    }
+    return this.ensureRepositories().transcriptionLibrary.updateItem(input)
+  }
+
+  deleteTranscriptionItem(itemId: string): void {
+    this.ensureRepositories().transcriptionLibrary.deleteItem(itemId)
   }
 
   createScene(): Scene {
@@ -942,6 +1153,7 @@ export class ProjectService {
       scenes: new SceneRepository(this.db),
       boards: new BoardRepository(this.db),
       tags: new TagRepository(this.db),
+      transcriptionLibrary: new TranscriptionLibraryRepository(this.db),
     }
   }
 
@@ -963,11 +1175,11 @@ export class ProjectService {
         INSERT INTO scenes (
           id, sort_order, title, synopsis, notes, color, status, is_key_scene, folder, category,
           estimated_duration, actual_duration, location, characters,
-          function, source_reference, created_at, updated_at
+          function, source_reference, quote_moment, quality, source_paths, created_at, updated_at
         ) VALUES (
           @id, @sortOrder, @title, @synopsis, @notes, @color, @status, @keyRating, @folder, @category,
           @estimatedDuration, @actualDuration, @location, @characters,
-          @function, @sourceReference, @createdAt, @updatedAt
+          @function, @sourceReference, @quoteMoment, @quality, @sourcePaths, @createdAt, @updatedAt
         )
       `)
 
@@ -991,13 +1203,20 @@ export class ProjectService {
         )
       `)
 
+      snapshot.tags.forEach((tag) => insertTag.run(tag))
+
       snapshot.scenes.forEach((scene, index) => {
+        const sourcePaths = normalizeStringList(scene.sourcePaths)
         insertScene.run({
           ...scene,
           sortOrder: scene.sortOrder ?? index,
           folder: scene.folder ?? '',
           keyRating: normalizeSceneKeyRating(scene),
           characters: JSON.stringify(scene.characters),
+          sourceReference: sourcePaths[0] ?? scene.sourceReference ?? '',
+          quoteMoment: scene.quoteMoment ?? '',
+          quality: scene.quality ?? '',
+          sourcePaths: JSON.stringify(sourcePaths),
         })
         scene.tagIds.forEach((tagId) => {
           insertSceneTag.run(scene.id, tagId)
@@ -1013,8 +1232,6 @@ export class ProjectService {
           })
         })
       })
-
-      snapshot.tags.forEach((tag) => insertTag.run(tag))
       snapshot.boards.forEach((board) => {
         insertBoard.run(board)
         board.items.forEach((item) => {
@@ -1065,6 +1282,33 @@ export class ProjectService {
 
   updateNotebook(document: NotebookDocument): NotebookDocument {
     return this.setNotebookDocument(sanitizeNotebookDocument(document))
+  }
+
+  appendNotebookPlainText(text: string): NotebookDocument {
+    const trimmed = text.trim()
+    if (!trimmed) {
+      return this.getNotebook()
+    }
+
+    const doc = this.getNotebook()
+    const activeId = doc.activeTabId ?? doc.tabs[0]?.id
+    if (!activeId) {
+      return doc
+    }
+
+    const now = new Date().toISOString()
+    const activeTab = doc.tabs.find((tab) => tab.id === activeId)
+    const hasBody =
+      !!activeTab &&
+      activeTab.contentHtml.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim().length > 0
+    const prefix = hasBody ? '\n\n' : ''
+    const addition = plainTextToHtml(prefix + trimmed)
+
+    const nextTabs = doc.tabs.map((tab) =>
+      tab.id === activeId ? { ...tab, contentHtml: `${tab.contentHtml}${addition}`, updatedAt: now } : tab,
+    )
+
+    return this.updateNotebook({ ...doc, tabs: nextTabs, activeTabId: activeId })
   }
 
   private setNotebookDocument(document: NotebookDocument): NotebookDocument {
@@ -1127,6 +1371,28 @@ export class ProjectService {
       ON CONFLICT(key) DO UPDATE SET value = excluded.value
     `)
     upsertMeta.run('scene_folders', JSON.stringify(normalizeSceneFolders(folders)))
+  }
+
+  private ensureTranscriptionFolder(path: string) {
+    const nextPath = normalizeFolderPath(path)
+    if (!nextPath) return
+
+    const folders = this.listTranscriptionFolders()
+    if (folders.some((folder) => folder.path.toLowerCase() === nextPath.toLowerCase())) {
+      return
+    }
+
+    this.setTranscriptionFolders([...folders, makeFolderRecord(nextPath, 'slate', folders.length)])
+  }
+
+  private setTranscriptionFolders(folders: TranscriptionFolder[]) {
+    const db = this.ensureDatabase()
+    const upsertMeta = db.prepare(`
+      INSERT INTO app_meta (key, value)
+      VALUES (?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    `)
+    upsertMeta.run('transcription_folders', JSON.stringify(normalizeSceneFolders(folders)))
   }
 
   private setBlockTemplates(templates: BlockTemplate[]) {
@@ -1327,8 +1593,20 @@ function normalizeSnapshot(snapshot: ProjectSnapshot): ProjectSnapshotV7 {
 }
 
 function normalizeSnapshotScene(scene: Scene) {
+  const sourcePaths = normalizeStringList(
+    Array.isArray(scene.sourcePaths)
+      ? scene.sourcePaths
+      : typeof scene.sourceReference === 'string' && scene.sourceReference.trim().length > 0
+        ? [scene.sourceReference]
+        : [],
+  )
+
   return {
     ...scene,
+    sourceReference: sourcePaths[0] ?? (typeof scene.sourceReference === 'string' ? scene.sourceReference : ''),
+    quoteMoment: typeof scene.quoteMoment === 'string' ? scene.quoteMoment : '',
+    quality: typeof scene.quality === 'string' ? scene.quality : '',
+    sourcePaths,
     beats: Array.isArray(scene.beats)
       ? scene.beats.map((beat, index) => ({
           id: typeof beat.id === 'string' ? beat.id : `beat_${Math.random().toString(36).slice(2, 10)}`,
@@ -1358,6 +1636,23 @@ function normalizeBoardSnapshot(board: Board): Board {
 function normalizeSceneKeyRating(scene: Scene | (Scene & { isKeyScene?: boolean })) {
   const legacyScene = scene as Scene & { isKeyScene?: boolean }
   return clampKeyRating(legacyScene.keyRating ?? legacyScene.isKeyScene)
+}
+
+function normalizeStringList(values: string[]) {
+  const normalized: string[] = []
+  const seen = new Set<string>()
+
+  values.forEach((value) => {
+    const trimmed = value.trim()
+    if (!trimmed) return
+    const display = trimmed.replace(/\\/g, '/')
+    const key = display.toLowerCase()
+    if (seen.has(key)) return
+    seen.add(key)
+    normalized.push(display)
+  })
+
+  return normalized
 }
 
 function parseBoardFolders(value?: string | null): BoardFolder[] {
@@ -1418,6 +1713,37 @@ function normalizeBoardFolders(folders: BoardFolder[]) {
 }
 
 function parseSceneFolders(value?: string | null): SceneFolder[] {
+  if (!value) return []
+
+  try {
+    const parsed = JSON.parse(value)
+    if (!Array.isArray(parsed)) return []
+    return normalizeSceneFolders(
+      parsed
+        .filter((entry): entry is { name?: unknown; color?: unknown; sortOrder?: unknown } => typeof entry === 'object' && entry !== null)
+        .map((entry) => ({
+          path:
+            'path' in entry && typeof entry.path === 'string'
+              ? entry.path.trim()
+              : typeof entry.name === 'string'
+                ? entry.name.trim()
+                : '',
+          name: typeof entry.name === 'string' ? entry.name.trim() : '',
+          parentPath:
+            'parentPath' in entry && typeof entry.parentPath === 'string' && entry.parentPath.trim().length > 0
+              ? entry.parentPath.trim()
+              : null,
+          color: isSceneColor(entry.color) ? entry.color : 'slate',
+          sortOrder: typeof entry.sortOrder === 'number' ? entry.sortOrder : 0,
+        }))
+        .filter((entry) => entry.path.length > 0 || entry.name.length > 0),
+    )
+  } catch {
+    return []
+  }
+}
+
+function parseTranscriptionFolders(value?: string | null): TranscriptionFolder[] {
   if (!value) return []
 
   try {

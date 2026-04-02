@@ -256,7 +256,7 @@ export function ProjectsToolbar({
               setScriptMenuOpen(false)
               setFileMenuOpen(false)
             }}
-            disabled={busy || !projectMeta}
+            disabled={busy}
           >
             <MonitorUp className="h-4 w-4" />
             Window
@@ -264,18 +264,22 @@ export function ProjectsToolbar({
           </Button>
           {windowMenuOpen ? (
             <div className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-64 rounded-2xl border border-border/90 bg-panel p-2 shadow-panel">
-              {([
-                ['outline', 'Open Outline'],
-                ['bank', 'Open Scene Bank'],
-                ['board-manager', 'Open Board Manager'],
-                ['inspector', 'Open Inspector'],
-                ['notebook', 'Open Notebook'],
-                ['archive', 'Open Archive'],
-              ] as Array<[WindowWorkspace, string]>).map(([workspace, label]) => (
+              {(
+                [
+                  ['outline', 'Open Outline', true],
+                  ['bank', 'Open Scene Bank', true],
+                  ['board-manager', 'Open Board Manager', true],
+                  ['inspector', 'Open Inspector', true],
+                  ['notebook', 'Open Notebook', true],
+                  ['archive', 'Open Archive', true],
+                  ['transcribe', 'Open Transcribe', false],
+                ] as Array<[WindowWorkspace, string, boolean]>
+              ).map(([workspace, label, needsProject]) => (
                 <ToolbarMenuButton
                   key={workspace}
                   icon={<MonitorUp className="h-4 w-4" />}
                   label={label}
+                  disabled={needsProject && !projectMeta}
                   onClick={() => {
                     onOpenWorkspaceWindow(workspace)
                     setWindowMenuOpen(false)
@@ -286,6 +290,7 @@ export function ProjectsToolbar({
               <ToolbarMenuButton
                 icon={<LayoutTemplate className="h-4 w-4" />}
                 label="Save Current Layout"
+                disabled={!projectMeta}
                 onClick={() => {
                   onSaveLayout()
                   setWindowMenuOpen(false)
@@ -336,18 +341,22 @@ function ToolbarMenuButton({
   icon,
   label,
   description,
+  disabled,
   onClick,
 }: {
   icon: ReactNode
   label: string
   description?: string
+  disabled?: boolean
   onClick(): void
 }) {
   return (
     <button
       type="button"
+      disabled={disabled}
       className={cn(
         'flex w-full items-start gap-3 rounded-xl px-3 py-2 text-left transition hover:bg-panelMuted',
+        disabled ? 'cursor-not-allowed opacity-40 hover:bg-transparent' : '',
       )}
       onClick={onClick}
     >
