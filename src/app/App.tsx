@@ -5,7 +5,6 @@ import {
   AlignJustify,
   Archive as ArchiveIcon,
   ChevronDown,
-  Film,
   GripVertical,
   LayoutGrid,
   Loader2,
@@ -19,19 +18,14 @@ import {
   X,
 } from 'lucide-react'
 
-import { ArchiveWorkspace } from '@/features/archive/archive-workspace'
-import { OutlineWorkspace } from '@/features/boards/outline-workspace'
-import { ConsultantWorkspace } from '@/features/consultant/consultant-workspace'
 import { BoardInspector } from '@/features/inspector/board-inspector'
 import { BoardItemInspector } from '@/features/inspector/board-item-inspector'
 import { BulkSceneInspector } from '@/features/inspector/bulk-scene-inspector'
 import { SceneInspector } from '@/features/inspector/scene-inspector'
-import { NotebookEditor } from '@/features/notebook/notebook-editor'
 import { ProjectsToolbar } from '@/features/projects/projects-toolbar'
-import { SceneBankView } from '@/features/scenes/scene-bank-view'
-import { SettingsWorkspace, type SettingsTab } from '@/features/settings/settings-workspace'
-import { TranscribeWorkspace } from '@/features/transcribe/transcribe-workspace'
-import { BoardManagerDialog } from '@/components/board-selector/board-manager-dialog'
+import { ConsultantWorkspace } from '@/features/consultant/consultant-workspace'
+import type { SettingsTab } from '@/features/settings/settings-workspace'
+import { DetachedWorkspacePanel, MainWorkspacePanel } from '@/app/app-workspace-panels'
 import { Button } from '@/components/ui/button'
 import { ContextMenu, type ContextMenuItem } from '@/components/ui/context-menu'
 import { Panel } from '@/components/ui/panel'
@@ -588,149 +582,94 @@ export function App() {
           </div>
         ) : null}
         <div className={cn('min-h-0 flex-1 overflow-hidden', outlineImmersive ? 'p-0' : 'p-4')}>
-          {!projectMeta ? (
-            <WelcomePanel onCreate={() => void createProject()} onOpen={() => void openProject()} />
-          ) : detachedWorkspace === 'outline' && activeBoard ? (
-            <OutlineWorkspace
-              board={activeBoard}
-              allBoards={boards}
-              boardFolders={boardFolders}
-              scenes={scenes}
-              sceneFolders={sceneFolders}
-              blockTemplates={blockTemplates}
-              filteredSceneIds={filteredSceneIds}
-              tags={tags}
-              density={sceneDensity}
-              viewMode={effectiveBoardViewMode}
-              availableBlockKinds={boardBlockKindsForProject}
-              immersive={outlineImmersive}
-              defaultBankCollapsed
-              sceneBankWidthStorageKey={
-                projectMeta ? `narralab:outline-scene-bank-width:${encodeURIComponent(projectMeta.path)}` : null
-              }
-              onToggleImmersive={() => void toggleOutlineImmersive()}
-              onChangeViewMode={(mode) => setBoardViewMode(normalizeBoardViewMode(mode))}
-              onSelectBoard={setBoardForCurrentWindow}
-              onOpenBoardInspector={openBoardDetailsForCurrentWindow}
-              onInlineUpdateBoard={(boardId, input) => void updateBoardDraft({ id: boardId, ...input })}
-              onDuplicateBoard={(boardId) => void cloneBoard(boardId)}
-              onCreateBoard={(folder) => void createBoard('New Board', folder)}
-              onCreateBoardFolder={(name, parentPath) => void createBoardFolder(name, parentPath)}
-              onUpdateBoardFolder={(currentPath, input) => void updateBoardFolder(currentPath, input)}
-              onDeleteBoardFolder={(currentPath) => void deleteBoardFolder(currentPath)}
-              onDeleteBoard={(boardId) => void deleteBoard(boardId)}
-              onMoveBoard={(boardId, folder, beforeBoardId) => void moveBoard(boardId, folder, beforeBoardId)}
-              onReorderBoards={(boardIds) => void reorderBoards(boardIds)}
-              selectedSceneId={selectedSceneId}
-              selectedSceneIds={selectedSceneIds}
-              selectedBoardItemId={selectedBoardItemId}
-              onSelect={(sceneId, boardItemId) => selectScene(sceneId, boardItemId)}
-              onOpenInspector={openInspector}
-              onCreateScene={() => void createScene()}
-              onToggleSceneSelection={toggleSceneSelection}
-              onSetSceneSelection={setSceneSelection}
-              onClearSceneSelection={clearSceneSelection}
-              onCreateSceneFolder={(name, parentPath) => void createSceneFolder(name, parentPath)}
-              onUpdateSceneFolder={(currentPath, input) => void updateSceneFolder(currentPath, input)}
-              onDeleteSceneFolder={(currentPath) => void deleteSceneFolder(currentPath)}
-              onMoveScenesToFolder={(sceneIds, folder) => void moveScenesToFolder(sceneIds, folder)}
-              onToggleKeyScene={toggleKeyScene}
-              onDuplicateScene={(sceneId, afterItemId) =>
-                void duplicateScene(sceneId, { addToBoardAfterItemId: afterItemId ?? null })}
-              onDeleteScene={(sceneId) => void deleteScene(sceneId)}
-              onDeleteSelectedScenes={() => void deleteScenes(selectedSceneIds)}
-              onAddScene={(sceneId, afterItemId, boardPosition) => void addSceneToCurrentBoard(sceneId, afterItemId, boardPosition)}
-              onAddBlock={(kind, afterItemId) => void addBlockToCurrentBoard(kind, afterItemId)}
-              onAddTemplate={(templateId, afterItemId) => void addBlockTemplateToCurrentBoard(templateId, afterItemId)}
-              onSaveTemplate={(input) => void saveBlockTemplate(input)}
-              onDeleteTemplate={(templateId) => void deleteBlockTemplate(templateId)}
-              onCopyBlockToBoard={(itemId, boardId) => void copyBlockToBoard(itemId, boardId)}
-              onDuplicateBlock={(itemId) => void duplicateBoardItem(itemId)}
-              onRemoveBoardItem={(itemId) => void removeBoardItem(itemId)}
-              onReorder={(itemIds) => void reorderCurrentBoard(itemIds)}
-              onUpdateItemPosition={(itemId, boardX, boardY) => void persistBoardItemDraft({ id: itemId, boardX, boardY })}
-              onInlineUpdateScene={inlineUpdateScene}
-              onInlineUpdateBlock={inlineUpdateBlock}
-              onCreateBeat={(sceneId, afterBeatId) => void createSceneBeat(sceneId, afterBeatId)}
-              onUpdateBeat={(input) => void updateSceneBeat(input)}
-              onDeleteBeat={(beatId) => void deleteSceneBeat(beatId)}
-              onReorderBeats={(sceneId, beatIds) => void reorderSceneBeats(sceneId, beatIds)}
-            />
-          ) : detachedWorkspace === 'bank' && activeBoard ? (
-            <SceneBankView
-              scenes={filteredScenes}
-              folders={sceneFolders}
-              tags={tags}
-              board={activeBoard}
-              density={sceneDensity}
-              selectedSceneId={selectedSceneId}
-              selectedSceneIds={selectedSceneIds}
-              onSelect={(sceneId) => selectScene(sceneId)}
-              onToggleSelection={toggleSceneSelection}
-              onSelectAllVisible={setSceneSelection}
-              onClearSelection={clearSceneSelection}
-              onOpenInspector={openInspector}
-              onInlineUpdateScene={inlineUpdateScene}
-              onToggleKeyScene={toggleKeyScene}
-              onCreateScene={() => void createScene()}
-              onCreateFolder={(name, parentPath) => void createSceneFolder(name, parentPath)}
-              onUpdateFolder={(currentPath, input) => void updateSceneFolder(currentPath, input)}
-              onDeleteFolder={(currentPath) => void deleteSceneFolder(currentPath)}
-              onMoveToFolder={(sceneIds, folder) => void moveScenesToFolder(sceneIds, folder)}
-              onDuplicate={(sceneId) => void duplicateScene(sceneId)}
-              onDelete={(sceneId) => void deleteScene(sceneId)}
-              onDeleteSelected={() => void deleteScenes(selectedSceneIds)}
-              onAdd={(sceneId) => void addSceneToCurrentBoard(sceneId, selectedBoardItemId)}
-              onSendToOpenOutline={(sceneIds) => void sendScenesToOpenOutline(sceneIds)}
-            />
-          ) : detachedWorkspace === 'notebook' ? (
-            <NotebookEditor notebook={notebook} onChange={updateNotebookDraft} onSave={(content) => void persistNotebook(content)} />
-          ) : detachedWorkspace === 'archive' ? (
-            <ArchiveWorkspace
-              folders={archiveFolders}
-              items={archiveItems}
-              selectedFolderId={selectedArchiveFolderId}
-              onSelectFolder={setSelectedArchiveFolder}
-              onCreateFolder={(name, parentId) => void createArchiveFolder(name, parentId)}
-              onUpdateFolder={(folderId, input) => void updateArchiveFolder(folderId, input)}
-              onDeleteFolder={(folderId) => void deleteArchiveFolder(folderId)}
-              onAddFiles={(filePaths, folderId) => void addArchiveFiles(filePaths, folderId)}
-              onMoveItem={(itemId, folderId) => void moveArchiveItem(itemId, folderId)}
-              onOpenItem={(itemId) => void openArchiveItem(itemId)}
-              onRevealItem={(itemId) => void revealArchiveItem(itemId)}
-              onDeleteItem={(itemId) => void deleteArchiveItem(itemId)}
-            />
-          ) : detachedWorkspace === 'inspector' ? (
-            <Panel className="h-full overflow-y-auto overscroll-contain">{inspectorContent}</Panel>
-          ) : detachedWorkspace === 'board-manager' && projectMeta ? (
-            <BoardManagerDialog
-              boards={boards}
-              folders={boardFolders}
-              activeBoardId={activeBoardId}
-              open={true}
-              embedded={true}
-              onClose={() => void window.close()}
-              onSelectBoard={setBoardForCurrentWindow}
-              onOpenBoardInspector={openBoardDetailsForCurrentWindow}
-              onInlineUpdateBoard={(boardId, input) => void updateBoardDraft({ id: boardId, ...input })}
-              onDuplicateBoard={(boardId) => void cloneBoard(boardId)}
-              onCreateBoard={(folder) => void createBoard('New Board', folder)}
-              onCreateFolder={(name, parentPath) => void createBoardFolder(name, parentPath)}
-              onUpdateFolder={(currentPath, input) => void updateBoardFolder(currentPath, input)}
-              onDeleteFolder={(currentPath) => void deleteBoardFolder(currentPath)}
-              onDeleteBoard={(boardId) => void deleteBoard(boardId)}
-              onMoveBoard={(boardId, folder, beforeBoardId) => void moveBoard(boardId, folder, beforeBoardId)}
-              onReorderBoards={(boardIds) => void reorderBoards(boardIds)}
-            />
-          ) : detachedWorkspace === 'transcribe' ? (
-            <TranscribeWorkspace
-              projectMeta={projectMeta}
-              settings={appSettings}
-              onSaveAppSettings={updateAppSettings}
-              onNotebookSynced={updateNotebookDraft}
-              onOpenTranscribeSettings={openAppSettingsTranscribe}
-            />
-          ) : null}
+          <DetachedWorkspacePanel
+            projectMeta={projectMeta}
+            projectSettings={projectSettings}
+            appSettings={appSettings}
+            notebook={notebook}
+            archiveFolders={archiveFolders}
+            archiveItems={archiveItems}
+            scenes={scenes}
+            sceneFolders={sceneFolders}
+            boards={boards}
+            boardFolders={boardFolders}
+            blockTemplates={blockTemplates}
+            tags={tags}
+            activeBoardId={activeBoardId}
+            activeBoard={activeBoard}
+            selectedSceneId={selectedSceneId}
+            selectedSceneIds={selectedSceneIds}
+            selectedBoardItemId={selectedBoardItemId}
+            selectedArchiveFolderId={selectedArchiveFolderId}
+            filteredScenes={filteredScenes}
+            filteredSceneIds={filteredSceneIds}
+            sceneDensity={sceneDensity}
+            boardViewMode={effectiveBoardViewMode}
+            boardBlockKindsForProject={boardBlockKindsForProject}
+            inspectorContent={inspectorContent}
+            detachedWorkspace={detachedWorkspace}
+            outlineImmersive={outlineImmersive}
+            onCreateProject={() => void createProject()}
+            onOpenProject={() => void openProject()}
+            onUpdateAppSettings={updateAppSettings}
+            onUpdateProjectSettings={updateProjectSettings}
+            onUpdateNotebookDraft={updateNotebookDraft}
+            onPersistNotebook={persistNotebook}
+            onSetSelectedArchiveFolder={setSelectedArchiveFolder}
+            onCreateArchiveFolder={createArchiveFolder}
+            onUpdateArchiveFolder={updateArchiveFolder}
+            onDeleteArchiveFolder={deleteArchiveFolder}
+            onAddArchiveFiles={addArchiveFiles}
+            onMoveArchiveItem={moveArchiveItem}
+            onOpenArchiveItem={openArchiveItem}
+            onRevealArchiveItem={revealArchiveItem}
+            onDeleteArchiveItem={deleteArchiveItem}
+            onSelectBoardForWindow={setBoardForCurrentWindow}
+            onOpenBoardDetailsForWindow={openBoardDetailsForCurrentWindow}
+            onUpdateBoardDraft={updateBoardDraft}
+            onCloneBoard={cloneBoard}
+            onCreateBoard={createBoard}
+            onCreateBoardFolder={createBoardFolder}
+            onUpdateBoardFolder={updateBoardFolder}
+            onDeleteBoardFolder={deleteBoardFolder}
+            onDeleteBoard={deleteBoard}
+            onMoveBoard={moveBoard}
+            onReorderBoards={reorderBoards}
+            onSelectScene={selectScene}
+            onOpenInspector={openInspector}
+            onCreateScene={createScene}
+            onToggleSceneSelection={toggleSceneSelection}
+            onSetSceneSelection={setSceneSelection}
+            onClearSceneSelection={clearSceneSelection}
+            onCreateSceneFolder={createSceneFolder}
+            onUpdateSceneFolder={updateSceneFolder}
+            onDeleteSceneFolder={deleteSceneFolder}
+            onMoveScenesToFolder={moveScenesToFolder}
+            onToggleKeyScene={toggleKeyScene}
+            onDuplicateScene={(sceneId, afterItemId) => duplicateScene(sceneId, { addToBoardAfterItemId: afterItemId ?? null })}
+            onDeleteScene={deleteScene}
+            onDeleteSelectedScenes={() => deleteScenes(selectedSceneIds)}
+            onAddSceneToCurrentBoard={addSceneToCurrentBoard}
+            onAddBlockToCurrentBoard={addBlockToCurrentBoard}
+            onAddBlockTemplateToCurrentBoard={addBlockTemplateToCurrentBoard}
+            onSaveBlockTemplate={saveBlockTemplate}
+            onDeleteBlockTemplate={deleteBlockTemplate}
+            onCopyBlockToBoard={copyBlockToBoard}
+            onDuplicateBoardItem={duplicateBoardItem}
+            onRemoveBoardItem={removeBoardItem}
+            onReorderCurrentBoard={reorderCurrentBoard}
+            onPersistBoardItemDraft={persistBoardItemDraft}
+            onInlineUpdateScene={inlineUpdateScene}
+            onInlineUpdateBlock={inlineUpdateBlock}
+            onCreateSceneBeat={createSceneBeat}
+            onUpdateSceneBeat={updateSceneBeat}
+            onDeleteSceneBeat={deleteSceneBeat}
+            onReorderSceneBeats={reorderSceneBeats}
+            onSendScenesToOpenOutline={sendScenesToOpenOutline}
+            onOpenTranscribeSettings={openAppSettingsTranscribe}
+            onToggleOutlineImmersive={toggleOutlineImmersive}
+            onChangeBoardViewMode={(mode) => setBoardViewMode(normalizeBoardViewMode(mode))}
+          />
         </div>
         <ContextMenu
           open={viewMenuOpen}
@@ -833,173 +772,102 @@ export function App() {
 
         <div className="flex min-h-0 flex-1 gap-4">
           <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4">
-            {workspaceMode === 'settings' ? (
-              <SettingsWorkspace
-                settings={appSettings}
-                projectSettings={projectSettings}
-                busy={busy}
-                onSaveApp={(input) => void updateAppSettings(input)}
-                onSaveProject={(input) => void updateProjectSettings(input)}
-                navigateToTab={settingsNavigate ?? undefined}
-              />
-            ) : workspaceMode === 'consultant' ? (
-              <ConsultantWorkspace
-                settings={appSettings}
-                messages={consultantMessages}
-                busy={consultantBusy}
-                activeBoardName={activeBoard?.name ?? null}
-                contextMode={consultantContextMode}
-                onChangeContextMode={setConsultantContextMode}
-                onSend={(content) => void sendConsultantMessage(content)}
-                onClear={clearConsultantConversation}
-                onOpenSettings={openAppSettings}
-              />
-            ) : workspaceMode === 'transcribe' ? (
-              <TranscribeWorkspace
-                projectMeta={projectMeta}
-                settings={appSettings}
-                onSaveAppSettings={updateAppSettings}
-                onNotebookSynced={updateNotebookDraft}
-                onOpenTranscribeSettings={openAppSettingsTranscribe}
-              />
-            ) : workspaceMode === 'archive' && projectMeta ? (
-              <ArchiveWorkspace
-                folders={archiveFolders}
-                items={archiveItems}
-                selectedFolderId={selectedArchiveFolderId}
-                onSelectFolder={setSelectedArchiveFolder}
-                onCreateFolder={(name, parentId) => void createArchiveFolder(name, parentId)}
-                onUpdateFolder={(folderId, input) => void updateArchiveFolder(folderId, input)}
-                onDeleteFolder={(folderId) => void deleteArchiveFolder(folderId)}
-                onAddFiles={(filePaths, folderId) => void addArchiveFiles(filePaths, folderId)}
-                onMoveItem={(itemId, folderId) => void moveArchiveItem(itemId, folderId)}
-                onOpenItem={(itemId) => void openArchiveItem(itemId)}
-                onRevealItem={(itemId) => void revealArchiveItem(itemId)}
-                onDeleteItem={(itemId) => void deleteArchiveItem(itemId)}
-              />
-            ) : workspaceMode === 'board-manager' && projectMeta ? (
-              <BoardManagerDialog
-                boards={boards}
-                folders={boardFolders}
-                activeBoardId={activeBoardId}
-                open={true}
-                embedded={true}
-                onClose={() => setWorkspaceMode('outline')}
-                onSelectBoard={setActiveBoard}
-                onOpenBoardInspector={openBoardDetails}
-                onInlineUpdateBoard={(boardId, input) => void updateBoardDraft({ id: boardId, ...input })}
-                onDuplicateBoard={(boardId) => void cloneBoard(boardId)}
-                onCreateBoard={(folder) => void createBoard('New Board', folder)}
-                onCreateFolder={(name, parentPath) => void createBoardFolder(name, parentPath)}
-                onUpdateFolder={(currentPath, input) => void updateBoardFolder(currentPath, input)}
-                onDeleteFolder={(currentPath) => void deleteBoardFolder(currentPath)}
-                onDeleteBoard={(boardId) => void deleteBoard(boardId)}
-                onMoveBoard={(boardId, folder, beforeBoardId) => void moveBoard(boardId, folder, beforeBoardId)}
-                onReorderBoards={(boardIds) => void reorderBoards(boardIds)}
-              />
-            ) : projectMeta && activeBoard ? (
-              workspaceMode === 'outline' ? (
-                <OutlineWorkspace
-                  board={activeBoard}
-                  allBoards={boards}
-                  boardFolders={boardFolders}
-                  scenes={scenes}
-                  sceneFolders={sceneFolders}
-                  blockTemplates={blockTemplates}
-                  filteredSceneIds={filteredSceneIds}
-                  tags={tags}
-                  density={sceneDensity}
-                  viewMode={effectiveBoardViewMode}
-                  availableBlockKinds={boardBlockKindsForProject}
-                  sceneBankWidthStorageKey={
-                    projectMeta ? `narralab:outline-scene-bank-width:${encodeURIComponent(projectMeta.path)}` : null
-                  }
-                  onChangeViewMode={(mode) => setBoardViewMode(normalizeBoardViewMode(mode))}
-                  onSelectBoard={setBoardForCurrentWindow}
-                  onOpenBoardInspector={openBoardDetailsForCurrentWindow}
-                  onInlineUpdateBoard={(boardId, input) => void updateBoardDraft({ id: boardId, ...input })}
-                  onDuplicateBoard={(boardId) => void cloneBoard(boardId)}
-                  onCreateBoard={(folder) => void createBoard('New Board', folder)}
-                  onCreateBoardFolder={(name, parentPath) => void createBoardFolder(name, parentPath)}
-                  onUpdateBoardFolder={(currentPath, input) => void updateBoardFolder(currentPath, input)}
-                  onDeleteBoardFolder={(currentPath) => void deleteBoardFolder(currentPath)}
-                  onDeleteBoard={(boardId) => void deleteBoard(boardId)}
-                  onMoveBoard={(boardId, folder, beforeBoardId) => void moveBoard(boardId, folder, beforeBoardId)}
-                  onReorderBoards={(boardIds) => void reorderBoards(boardIds)}
-                  selectedSceneId={selectedSceneId}
-                  selectedSceneIds={selectedSceneIds}
-                  selectedBoardItemId={selectedBoardItemId}
-                  onSelect={(sceneId, boardItemId) => selectScene(sceneId, boardItemId)}
-                  onOpenInspector={openInspector}
-                  onCreateScene={() => void createScene()}
-                  onToggleSceneSelection={toggleSceneSelection}
-                  onSetSceneSelection={setSceneSelection}
-                  onClearSceneSelection={clearSceneSelection}
-                  onCreateSceneFolder={(name, parentPath) => void createSceneFolder(name, parentPath)}
-                  onUpdateSceneFolder={(currentPath, input) => void updateSceneFolder(currentPath, input)}
-                  onDeleteSceneFolder={(currentPath) => void deleteSceneFolder(currentPath)}
-                  onMoveScenesToFolder={(sceneIds, folder) => void moveScenesToFolder(sceneIds, folder)}
-                  onToggleKeyScene={toggleKeyScene}
-                  onDuplicateScene={(sceneId, afterItemId) => void duplicateScene(sceneId, { addToBoardAfterItemId: afterItemId ?? null })}
-                  onDeleteScene={(sceneId) => void deleteScene(sceneId)}
-                  onDeleteSelectedScenes={() => void deleteScenes(selectedSceneIds)}
-                  onAddScene={(sceneId, afterItemId, boardPosition) => void addSceneToCurrentBoard(sceneId, afterItemId, boardPosition)}
-                  onAddBlock={(kind, afterItemId) => void addBlockToCurrentBoard(kind, afterItemId)}
-                  onAddTemplate={(templateId, afterItemId) => void addBlockTemplateToCurrentBoard(templateId, afterItemId)}
-                  onSaveTemplate={(input) => void saveBlockTemplate(input)}
-                  onDeleteTemplate={(templateId) => void deleteBlockTemplate(templateId)}
-                  onCopyBlockToBoard={(itemId, boardId) => void copyBlockToBoard(itemId, boardId)}
-                  onDuplicateBlock={(itemId) => void duplicateBoardItem(itemId)}
-                  onRemoveBoardItem={(itemId) => void removeBoardItem(itemId)}
-                  onReorder={(itemIds) => void reorderCurrentBoard(itemIds)}
-                  onUpdateItemPosition={(itemId, boardX, boardY) => void persistBoardItemDraft({ id: itemId, boardX, boardY })}
-                  onInlineUpdateScene={inlineUpdateScene}
-                  onInlineUpdateBlock={inlineUpdateBlock}
-                  onCreateBeat={(sceneId, afterBeatId) => void createSceneBeat(sceneId, afterBeatId)}
-                  onUpdateBeat={(input) => void updateSceneBeat(input)}
-                  onDeleteBeat={(beatId) => void deleteSceneBeat(beatId)}
-                  onReorderBeats={(sceneId, beatIds) => void reorderSceneBeats(sceneId, beatIds)}
-                />
-              ) : workspaceMode === 'notebook' ? (
-                <NotebookEditor
-                  notebook={notebook}
-                  onChange={updateNotebookDraft}
-                  onSave={(content) => void persistNotebook(content)}
-                />
-              ) : (
-                <SceneBankView
-                  scenes={filteredScenes}
-                  folders={sceneFolders}
-                  tags={tags}
-                  board={activeBoard}
-                  density={sceneDensity}
-                  selectedSceneId={selectedSceneId}
-                  selectedSceneIds={selectedSceneIds}
-                  onSelect={(sceneId) => selectScene(sceneId)}
-                  onToggleSelection={toggleSceneSelection}
-                  onSelectAllVisible={setSceneSelection}
-                  onClearSelection={clearSceneSelection}
-                  onOpenInspector={openInspector}
-                  onInlineUpdateScene={inlineUpdateScene}
-                  onToggleKeyScene={toggleKeyScene}
-                  onCreateScene={() => void createScene()}
-                  onCreateFolder={(name, parentPath) => void createSceneFolder(name, parentPath)}
-                  onUpdateFolder={(currentPath, input) => void updateSceneFolder(currentPath, input)}
-                  onDeleteFolder={(currentPath) => void deleteSceneFolder(currentPath)}
-                  onMoveToFolder={(sceneIds, folder) => void moveScenesToFolder(sceneIds, folder)}
-                  onDuplicate={(sceneId) => void duplicateScene(sceneId)}
-                  onDelete={(sceneId) => void deleteScene(sceneId)}
-                  onDeleteSelected={() => void deleteScenes(selectedSceneIds)}
-                  onAdd={(sceneId) => void addSceneToCurrentBoard(sceneId, selectedBoardItemId)}
-                  onSendToOpenOutline={(sceneIds) => void sendScenesToOpenOutline(sceneIds)}
-                />
-              )
-            ) : (
-              <WelcomePanel
-                onCreate={() => void createProject()}
-                onOpen={() => void openProject()}
-              />
-            )}
+            <MainWorkspacePanel
+              workspaceMode={workspaceMode}
+              projectMeta={projectMeta}
+              projectSettings={projectSettings}
+              appSettings={appSettings}
+              notebook={notebook}
+              archiveFolders={archiveFolders}
+              archiveItems={archiveItems}
+              scenes={scenes}
+              sceneFolders={sceneFolders}
+              boards={boards}
+              boardFolders={boardFolders}
+              blockTemplates={blockTemplates}
+              tags={tags}
+              activeBoardId={activeBoardId}
+              activeBoard={activeBoard}
+              selectedSceneId={selectedSceneId}
+              selectedSceneIds={selectedSceneIds}
+              selectedBoardItemId={selectedBoardItemId}
+              selectedArchiveFolderId={selectedArchiveFolderId}
+              consultantBusy={consultantBusy}
+              consultantMessages={consultantMessages}
+              consultantContextMode={consultantContextMode}
+              filteredScenes={filteredScenes}
+              filteredSceneIds={filteredSceneIds}
+              sceneDensity={sceneDensity}
+              boardViewMode={effectiveBoardViewMode}
+              boardBlockKindsForProject={boardBlockKindsForProject}
+              busy={busy}
+              settingsNavigate={settingsNavigate}
+              inspectorContent={inspectorContent}
+              onCreateProject={() => void createProject()}
+              onOpenProject={() => void openProject()}
+              onUpdateAppSettings={updateAppSettings}
+              onUpdateProjectSettings={updateProjectSettings}
+              onUpdateNotebookDraft={updateNotebookDraft}
+              onPersistNotebook={persistNotebook}
+              onSetSelectedArchiveFolder={setSelectedArchiveFolder}
+              onCreateArchiveFolder={createArchiveFolder}
+              onUpdateArchiveFolder={updateArchiveFolder}
+              onDeleteArchiveFolder={deleteArchiveFolder}
+              onAddArchiveFiles={addArchiveFiles}
+              onMoveArchiveItem={moveArchiveItem}
+              onOpenArchiveItem={openArchiveItem}
+              onRevealArchiveItem={revealArchiveItem}
+              onDeleteArchiveItem={deleteArchiveItem}
+              onSelectBoardForWindow={setBoardForCurrentWindow}
+              onOpenBoardDetailsForWindow={openBoardDetailsForCurrentWindow}
+              onUpdateBoardDraft={updateBoardDraft}
+              onCloneBoard={cloneBoard}
+              onCreateBoard={createBoard}
+              onCreateBoardFolder={createBoardFolder}
+              onUpdateBoardFolder={updateBoardFolder}
+              onDeleteBoardFolder={deleteBoardFolder}
+              onDeleteBoard={deleteBoard}
+              onMoveBoard={moveBoard}
+              onReorderBoards={reorderBoards}
+              onSelectScene={selectScene}
+              onOpenInspector={openInspector}
+              onCreateScene={createScene}
+              onToggleSceneSelection={toggleSceneSelection}
+              onSetSceneSelection={setSceneSelection}
+              onClearSceneSelection={clearSceneSelection}
+              onCreateSceneFolder={createSceneFolder}
+              onUpdateSceneFolder={updateSceneFolder}
+              onDeleteSceneFolder={deleteSceneFolder}
+              onMoveScenesToFolder={moveScenesToFolder}
+              onToggleKeyScene={toggleKeyScene}
+              onDuplicateScene={(sceneId, afterItemId) => duplicateScene(sceneId, { addToBoardAfterItemId: afterItemId ?? null })}
+              onDeleteScene={deleteScene}
+              onDeleteSelectedScenes={() => deleteScenes(selectedSceneIds)}
+              onAddSceneToCurrentBoard={addSceneToCurrentBoard}
+              onAddBlockToCurrentBoard={addBlockToCurrentBoard}
+              onAddBlockTemplateToCurrentBoard={addBlockTemplateToCurrentBoard}
+              onSaveBlockTemplate={saveBlockTemplate}
+              onDeleteBlockTemplate={deleteBlockTemplate}
+              onCopyBlockToBoard={copyBlockToBoard}
+              onDuplicateBoardItem={duplicateBoardItem}
+              onRemoveBoardItem={removeBoardItem}
+              onReorderCurrentBoard={reorderCurrentBoard}
+              onPersistBoardItemDraft={persistBoardItemDraft}
+              onInlineUpdateScene={inlineUpdateScene}
+              onInlineUpdateBlock={inlineUpdateBlock}
+              onCreateSceneBeat={createSceneBeat}
+              onUpdateSceneBeat={updateSceneBeat}
+              onDeleteSceneBeat={deleteSceneBeat}
+              onReorderSceneBeats={reorderSceneBeats}
+              onSendScenesToOpenOutline={sendScenesToOpenOutline}
+              onOpenTranscribeSettings={openAppSettingsTranscribe}
+              onSetWorkspaceMode={setWorkspaceMode}
+              onSetConsultantContextMode={setConsultantContextMode}
+              onSendConsultantMessage={sendConsultantMessage}
+              onClearConsultantConversation={clearConsultantConversation}
+              onOpenAppSettings={openAppSettings}
+              onChangeBoardViewMode={(mode) => setBoardViewMode(normalizeBoardViewMode(mode))}
+            />
           </div>
 
           {showInspector && !rightCollapsed ? (
@@ -1111,30 +979,6 @@ function matchesFilters(scene: Scene, filters: ReturnType<typeof useFilterStore.
   }
 
   return true
-}
-
-function WelcomePanel({ onCreate, onOpen }: { onCreate(): void; onOpen(): void }) {
-  return (
-    <Panel className="flex h-full items-center justify-center px-8">
-      <div className="max-w-xl text-center">
-        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border border-accent/30 bg-accent/10">
-          <Film className="h-8 w-8 text-accent" />
-        </div>
-        <div className="mt-6 font-display text-3xl font-semibold text-foreground">
-          Structure your documentary scene by scene
-        </div>
-        <div className="mt-3 text-base leading-7 text-muted">
-          Create a local project file, build your scene bank, and drag scenes into the outline as you shape the film.
-        </div>
-        <div className="mt-6 flex items-center justify-center gap-3">
-          <Button variant="accent" onClick={onCreate}>
-            Create Project
-          </Button>
-          <Button onClick={onOpen}>Open Project</Button>
-        </div>
-      </div>
-    </Panel>
-  )
 }
 
 function CollapsedRail({
