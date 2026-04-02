@@ -3,6 +3,14 @@ import { create } from 'zustand'
 import type { ArchiveFolder, ArchiveItem } from '@/types/archive'
 import { defaultBoardCloneName } from '@/lib/constants'
 import { beginProjectAction, finishProjectAction } from '@/stores/project-action-state'
+import {
+  buildStateFromFullSnapshot,
+  loadFullProjectSnapshot,
+  loadProjectChangeData,
+  mergeProjectChangeResult,
+  normalizeProjectChangeScopes,
+  resetProjectState,
+} from '@/stores/project-sync'
 import type {
   AppSettings,
   AppSettingsUpdateInput,
@@ -235,177 +243,37 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   async refreshAll() {
-    const meta = await window.narralab.project.getMeta()
-    if (!meta) {
+    const snapshot = await loadFullProjectSnapshot(window.narralab)
+    if (!snapshot) {
       set(resetProjectState())
       return
     }
 
-    const [projectSettings, notebook, archiveFolders, archiveItems, scenes, sceneFolders, boards, boardFolders, blockTemplates, tags] = await Promise.all([
-      window.narralab.project.getSettings(),
-      window.narralab.notebook.get(),
-      window.narralab.archive.folders.list(),
-      window.narralab.archive.items.list(),
-      window.narralab.scenes.list(),
-      window.narralab.sceneFolders.list(),
-      window.narralab.boards.list(),
-      window.narralab.boardFolders.list(),
-      window.narralab.blockTemplates.list(),
-      window.narralab.tags.list(),
-    ])
-
-    set((state) => ({
-      projectMeta: meta,
-      projectSettings,
-      notebook,
-      archiveFolders,
-      archiveItems,
-      scenes,
-      sceneFolders,
-      boards,
-      boardFolders,
-      blockTemplates,
-      tags,
-      consultantMessages: state.projectMeta?.path === meta.path ? state.consultantMessages : [],
-      activeBoardId:
-        state.activeBoardId && boards.some((board) => board.id === state.activeBoardId)
-          ? state.activeBoardId
-          : boards[0]?.id ?? null,
-      selectedBoardId:
-        state.selectedBoardId && boards.some((board) => board.id === state.selectedBoardId)
-          ? state.selectedBoardId
-          : null,
-      selectedArchiveFolderId:
-        state.selectedArchiveFolderId &&
-        archiveFolders.some((folder) => folder.id === state.selectedArchiveFolderId)
-          ? state.selectedArchiveFolderId
-          : null,
-      }))
+    set((state) => buildStateFromFullSnapshot(state, snapshot))
   },
 
   async syncProjectChanges(scopes) {
     try {
       const normalizedScopes = normalizeProjectChangeScopes(scopes)
-      if (normalizedScopes.includes('all')) {
-        await get().refreshAll()
+      const result = await loadProjectChangeData(window.narralab, get().projectMeta, normalizedScopes)
+
+      if (result.kind === 'reset') {
+        set(resetProjectState())
         return
       }
 
-      let currentMeta = get().projectMeta
-      if (normalizedScopes.includes('meta') || !currentMeta) {
-        currentMeta = await window.narralab.project.getMeta()
-        if (!currentMeta) {
+      if (result.kind === 'full') {
+        const snapshot = result.snapshot
+        if (!snapshot) {
           set(resetProjectState())
           return
         }
-        const syncedMeta = currentMeta
 
-        set((state) => ({
-          projectMeta: syncedMeta,
-          consultantMessages: state.projectMeta?.path === syncedMeta.path ? state.consultantMessages : [],
-        }))
-      }
-
-      if (!currentMeta) {
+        set((state) => buildStateFromFullSnapshot(state, snapshot))
         return
       }
 
-      const loaders = {
-        appSettings: normalizedScopes.includes('app-settings') ? window.narralab.settings.get() : null,
-        projectSettings: normalizedScopes.includes('project-settings') ? window.narralab.project.getSettings() : null,
-        notebook: normalizedScopes.includes('notebook') ? window.narralab.notebook.get() : null,
-        archiveFolders: normalizedScopes.includes('archive') ? window.narralab.archive.folders.list() : null,
-        archiveItems: normalizedScopes.includes('archive') ? window.narralab.archive.items.list() : null,
-        scenes: normalizedScopes.includes('scenes') ? window.narralab.scenes.list() : null,
-        sceneFolders: normalizedScopes.includes('scene-folders') ? window.narralab.sceneFolders.list() : null,
-        boards: normalizedScopes.includes('boards') ? window.narralab.boards.list() : null,
-        boardFolders: normalizedScopes.includes('board-folders') ? window.narralab.boardFolders.list() : null,
-        blockTemplates: normalizedScopes.includes('block-templates') ? window.narralab.blockTemplates.list() : null,
-        tags: normalizedScopes.includes('tags') ? window.narralab.tags.list() : null,
-      }
-
-      const [
-        appSettings,
-        projectSettings,
-        notebook,
-        archiveFolders,
-        archiveItems,
-        scenes,
-        sceneFolders,
-        boards,
-        boardFolders,
-        blockTemplates,
-        tags,
-      ] = await Promise.all([
-        loaders.appSettings,
-        loaders.projectSettings,
-        loaders.notebook,
-        loaders.archiveFolders,
-        loaders.archiveItems,
-        loaders.scenes,
-        loaders.sceneFolders,
-        loaders.boards,
-        loaders.boardFolders,
-        loaders.blockTemplates,
-        loaders.tags,
-      ])
-
-      set((state) => {
-        const nextBoards = boards ?? state.boards
-        const nextArchiveFolders = archiveFolders ?? state.archiveFolders
-        const nextScenes = scenes ?? state.scenes
-        const nextSelectedSceneIds = scenes
-          ? state.selectedSceneIds.filter((sceneId) => nextScenes.some((scene) => scene.id === sceneId))
-          : state.selectedSceneIds
-
-        return {
-          ...(appSettings ? { appSettings } : {}),
-          ...(projectSettings ? { projectSettings } : {}),
-          ...(notebook ? { notebook } : {}),
-          ...(archiveFolders ? { archiveFolders } : {}),
-          ...(archiveItems ? { archiveItems } : {}),
-          ...(scenes ? { scenes, selectedSceneIds: nextSelectedSceneIds } : {}),
-          ...(sceneFolders ? { sceneFolders } : {}),
-          ...(boards
-            ? {
-                boards,
-                activeBoardId:
-                  state.activeBoardId && nextBoards.some((board) => board.id === state.activeBoardId)
-                    ? state.activeBoardId
-                    : nextBoards[0]?.id ?? null,
-                selectedBoardId:
-                  state.selectedBoardId && nextBoards.some((board) => board.id === state.selectedBoardId)
-                    ? state.selectedBoardId
-                    : null,
-                selectedBoardItemId:
-                  state.selectedBoardItemId &&
-                  nextBoards.some((board) => board.items.some((item) => item.id === state.selectedBoardItemId))
-                    ? state.selectedBoardItemId
-                    : null,
-              }
-            : {}),
-          ...(boardFolders ? { boardFolders } : {}),
-          ...(blockTemplates ? { blockTemplates } : {}),
-          ...(tags ? { tags } : {}),
-          ...(archiveFolders
-            ? {
-                selectedArchiveFolderId:
-                  state.selectedArchiveFolderId &&
-                  nextArchiveFolders.some((folder) => folder.id === state.selectedArchiveFolderId)
-                    ? state.selectedArchiveFolderId
-                    : null,
-              }
-            : {}),
-          ...(scenes
-            ? {
-                selectedSceneId:
-                  state.selectedSceneId && nextScenes.some((scene) => scene.id === state.selectedSceneId)
-                    ? state.selectedSceneId
-                    : null,
-              }
-            : {}),
-        }
-      })
+      set((state) => mergeProjectChangeResult(state, result))
     } catch (error) {
       set({ error: toMessage(error) })
     }
@@ -1441,36 +1309,6 @@ function findLastIndex<T>(items: T[], predicate: (item: T) => boolean) {
 
 function sortBeats(beats: SceneBeat[]) {
   return [...beats].sort((left, right) => left.sortOrder - right.sortOrder || left.createdAt.localeCompare(right.createdAt))
-}
-
-function normalizeProjectChangeScopes(scopes: ProjectChangeScope[]) {
-  if (scopes.length === 0) {
-    return ['all'] satisfies ProjectChangeScope[]
-  }
-
-  return [...new Set(scopes)]
-}
-
-function resetProjectState() {
-  return {
-    projectMeta: null,
-    projectSettings: null,
-    notebook: emptyNotebookDocument(),
-    archiveFolders: [],
-    archiveItems: [],
-    scenes: [],
-    sceneFolders: [],
-    boards: [],
-    boardFolders: [],
-    blockTemplates: [],
-    tags: [],
-    activeBoardId: null,
-    selectedBoardId: null,
-    selectedSceneId: null,
-    selectedSceneIds: [],
-    selectedBoardItemId: null,
-    selectedArchiveFolderId: null,
-  }
 }
 
 async function runProjectAction(
