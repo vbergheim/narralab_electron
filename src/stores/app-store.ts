@@ -2,6 +2,7 @@ import { create } from 'zustand'
 
 import type { ArchiveFolder, ArchiveItem } from '@/types/archive'
 import { defaultBoardCloneName } from '@/lib/constants'
+import { beginProjectAction, finishProjectAction } from '@/stores/project-action-state'
 import type {
   AppSettings,
   AppSettingsUpdateInput,
@@ -57,6 +58,7 @@ type SceneBulkUpdateInput = {
 type AppStore = {
   ready: boolean
   busy: boolean
+  pendingProjectActionCount: number
   consultantBusy: boolean
   error: string | null
   projectMeta: ProjectMeta | null
@@ -161,6 +163,7 @@ type AppStore = {
 export const useAppStore = create<AppStore>((set, get) => ({
   ready: false,
   busy: false,
+  pendingProjectActionCount: 0,
   consultantBusy: false,
   error: null,
   projectMeta: null,
@@ -1473,14 +1476,14 @@ async function runProjectAction(
   set: (partial: Partial<AppStore> | ((state: AppStore) => Partial<AppStore>)) => void,
   action: () => Promise<void>,
 ) {
-  set({ busy: true, error: null })
+  set((state) => beginProjectAction(state))
 
   try {
     await action()
   } catch (error) {
     set({ error: toMessage(error) })
   } finally {
-    set({ busy: false })
+    set((state) => finishProjectAction(state))
   }
 }
 
