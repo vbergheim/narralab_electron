@@ -1,10 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 
-import { BoardInspector } from '@/features/inspector/board-inspector'
-import { BoardItemInspector } from '@/features/inspector/board-item-inspector'
-import { BulkSceneInspector } from '@/features/inspector/bulk-scene-inspector'
-import { SceneInspector } from '@/features/inspector/scene-inspector'
 import { ProjectsToolbar } from '@/features/projects/projects-toolbar'
 import type { SettingsTab } from '@/features/settings/settings-workspace'
 import {
@@ -14,6 +10,13 @@ import {
   InspectorSidebar,
   WorkspaceTabsBar,
 } from '@/app/app-shell-sections'
+import {
+  buildInspectorContent,
+  deriveSelectionState,
+  getBoardBlockKindsForProject,
+  getWorkspaceSummary,
+  matchesSceneFilters,
+} from '@/app/app-view-model'
 import { DetachedWorkspacePanel, MainWorkspacePanel } from '@/app/app-workspace-panels'
 import { densityOptions, isTextInputTarget } from '@/app/app-shell-utils'
 import { ContextMenu, type ContextMenuItem } from '@/components/ui/context-menu'
@@ -23,7 +26,6 @@ import { nextKeyRating } from '@/lib/scene-rating'
 import { normalizeBoardViewMode, useWindowRuntime } from '@/app/use-window-runtime'
 import { useAppStore } from '@/stores/app-store'
 import { useFilterStore } from '@/stores/filter-store'
-import { isTextBoardItem } from '@/types/board'
 import type { WindowWorkspace } from '@/types/ai'
 import type { Scene } from '@/types/scene'
 
@@ -242,9 +244,6 @@ export function App() {
     selectScene,
   ])
 
-  const activeBoard = boards.find((board) => board.id === boardIdForWindow) ?? null
-  const selectedBoard = boards.find((board) => board.id === selectedBoardId) ?? null
-
   const openInspector = (sceneId: string | null, boardItemId?: string | null) => {
     selectScene(sceneId, boardItemId ?? null)
     setRightCollapsed(false)
@@ -313,40 +312,35 @@ export function App() {
   }
 
   const filteredScenes = useMemo(() => {
-    return scenes.filter((scene) => matchesFilters(scene, filters))
+    return scenes.filter((scene) => matchesSceneFilters(scene, filters))
   }, [filters, scenes])
 
   const filteredSceneIds = useMemo(() => filteredScenes.map((scene) => scene.id), [filteredScenes])
-
-  const selectedBoardItem =
-    activeBoard?.items.find((item) => item.id === selectedBoardItemId) ?? null
-
-  const selectedScene =
-    scenes.find((scene) => scene.id === selectedSceneId) ??
-    (activeBoard && activeBoard.items[0] && activeBoard.items[0].kind === 'scene'
-      ? scenes.find((scene) => scene.id === activeBoard.items[0].sceneId) ?? null
-      : null)
-
-  const selectedBlock = selectedBoardItem && isTextBoardItem(selectedBoardItem) ? selectedBoardItem : null
-  const multiSelectedSceneCount = workspaceMode === 'bank' ? selectedSceneIds.length : 0
-  const workspaceSummary =
-    workspaceMode === 'settings'
-      ? 'App, project and AI preferences'
-      : workspaceMode === 'consultant'
-        ? `${consultantMessages.length} messages in current conversation`
-      : workspaceMode === 'archive'
-        ? `${archiveItems.length} files in archive`
-      : workspaceMode === 'board-manager'
-        ? `${boards.length} boards, ${boardFolders.length} folders`
-      : workspaceMode === 'transcribe'
-        ? 'Local Whisper transcription'
-      : workspaceMode === 'notebook'
-      ? notebook.updatedAt
-        ? `Notebook saved ${new Date(notebook.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
-        : 'Project notebook'
-      : activeBoard
-        ? `${activeBoard.items.length} rows in active outline`
-        : 'No board selected'
+  const {
+    activeBoard,
+    selectedBoard,
+    selectedScene,
+    selectedBlock,
+    multiSelectedSceneCount,
+  } = deriveSelectionState({
+    boards,
+    boardIdForWindow,
+    selectedBoardId,
+    selectedSceneId,
+    selectedSceneIds,
+    selectedBoardItemId,
+    scenes,
+    workspaceMode,
+  })
+  const workspaceSummary = getWorkspaceSummary({
+    workspaceMode,
+    consultantMessagesCount: consultantMessages.length,
+    archiveItemsCount: archiveItems.length,
+    boardsCount: boards.length,
+    boardFoldersCount: boardFolders.length,
+    notebookUpdatedAt: notebook.updatedAt,
+    activeBoard,
+  })
   const showDensityControl = workspaceMode === 'outline' || workspaceMode === 'bank'
   const showInspector =
     workspaceMode !== 'consultant' &&
@@ -474,56 +468,38 @@ export function App() {
 
     await document.documentElement.requestFullscreen()
   }
-  const inspectorContent = selectedBlock ? (
-    <BoardItemInspector
-      key={selectedBlock.id}
-      item={selectedBlock}
-      onCollapse={() => setRightCollapsed(true)}
-      onSave={(item) => void persistBoardItemDraft(item)}
-      onSaveTemplate={(input) => void saveBlockTemplate(input)}
-      onDelete={(itemId) => void removeBoardItem(itemId)}
-    />
-  ) : selectedBoard ? (
-    <BoardInspector
-      key={selectedBoard.id}
-      board={selectedBoard}
-      onCollapse={() => setRightCollapsed(true)}
-      onSave={(board) => void updateBoardDraft(board)}
-    />
-  ) : multiSelectedSceneCount > 1 ? (
-    <BulkSceneInspector
-      key={`bulk-${selectedSceneIds.join('-')}`}
-      count={multiSelectedSceneCount}
-      onCollapse={() => setRightCollapsed(true)}
-      onApply={(input) =>
-        void bulkUpdateScenes({
-          sceneIds: selectedSceneIds,
-          ...input,
-        })
-      }
-      onDelete={() => void deleteScenes(selectedSceneIds)}
-      onClear={clearSceneSelection}
-    />
-  ) : (
-    <SceneInspector
-      key={selectedSceneId ?? 'empty'}
-      scene={selectedSceneId ? selectedScene ?? null : null}
-      tags={tags}
-      onCollapse={() => setRightCollapsed(true)}
-      onSave={(scene) => void persistSceneDraft(scene)}
-      onCreateBeat={(sceneId, afterBeatId) => void createSceneBeat(sceneId, afterBeatId)}
-      onUpdateBeat={(input) => void updateSceneBeat(input)}
-      onDeleteBeat={(beatId) => void deleteSceneBeat(beatId)}
-      onReorderBeats={(sceneId, beatIds) => void reorderSceneBeats(sceneId, beatIds)}
-      onDelete={(sceneId) => void deleteScene(sceneId)}
-    />
-  )
+  const inspectorContent = buildInspectorContent({
+    selectedBlock,
+    selectedBoard,
+    selectedScene,
+    selectedSceneId,
+    selectedSceneIds,
+    multiSelectedSceneCount,
+    tags,
+    onCollapse: () => setRightCollapsed(true),
+    onSaveBoardItem: (item) => void persistBoardItemDraft(item),
+    onSaveBlockTemplate: (input) => void saveBlockTemplate(input),
+    onDeleteBoardItem: (itemId) => void removeBoardItem(itemId),
+    onSaveBoard: (board) => void updateBoardDraft(board),
+    onBulkUpdateScenes: (input) =>
+      void bulkUpdateScenes({
+        sceneIds: selectedSceneIds,
+        ...input,
+      }),
+    onDeleteScenes: (sceneIds) => void deleteScenes(sceneIds),
+    onClearSceneSelection: clearSceneSelection,
+    onSaveScene: (scene) => void persistSceneDraft(scene),
+    onCreateSceneBeat: (sceneId, afterBeatId) => void createSceneBeat(sceneId, afterBeatId),
+    onUpdateSceneBeat: (input) => void updateSceneBeat(input),
+    onDeleteSceneBeat: (beatId) => void deleteSceneBeat(beatId),
+    onReorderSceneBeats: (sceneId, beatIds) => void reorderSceneBeats(sceneId, beatIds),
+    onDeleteScene: (sceneId) => void deleteScene(sceneId),
+  })
 
-  const boardBlockKindsForProject = useMemo(() => {
-    const enabled = projectSettings?.enabledBlockKinds ?? ['chapter', 'voiceover', 'narration', 'text-card', 'note']
-    const order = projectSettings?.blockKindOrder ?? enabled
-    return order.filter((kind) => enabled.includes(kind))
-  }, [projectSettings])
+  const boardBlockKindsForProject = useMemo(
+    () => getBoardBlockKindsForProject(projectSettings),
+    [projectSettings],
+  )
 
   const sharedWorkspaceProps = {
     projectMeta,
@@ -739,34 +715,4 @@ export function App() {
       />
     </div>
   )
-}
-
-function matchesFilters(scene: Scene, filters: ReturnType<typeof useFilterStore.getState>) {
-  const query = filters.search.trim().toLowerCase()
-  const haystack = [
-    scene.title,
-    scene.synopsis,
-    scene.notes,
-    scene.location,
-    scene.category,
-    scene.function,
-    scene.sourceReference,
-    scene.quoteMoment,
-    scene.quality,
-    scene.sourcePaths.join(' '),
-    scene.characters.join(' '),
-  ]
-    .join(' ')
-    .toLowerCase()
-
-  if (query && !haystack.includes(query)) return false
-  if (filters.onlyKeyScenes && scene.keyRating <= 0) return false
-  if (filters.selectedStatuses.length > 0 && !filters.selectedStatuses.includes(scene.status)) return false
-  if (filters.selectedColors.length > 0 && !filters.selectedColors.includes(scene.color)) return false
-  if (filters.selectedCategories.length > 0 && !filters.selectedCategories.includes(scene.category)) return false
-  if (filters.selectedTagIds.length > 0 && !filters.selectedTagIds.every((tagId) => scene.tagIds.includes(tagId))) {
-    return false
-  }
-
-  return true
 }

@@ -2,7 +2,7 @@ import { create } from 'zustand'
 
 import type { SceneColor, SceneStatus } from '@/types/scene'
 
-type FilterState = {
+export type FilterState = {
   search: string
   onlyKeyScenes: boolean
   selectedTagIds: string[]
