@@ -1,6 +1,6 @@
 import type { AppSettingsUpdateInput, ConsultantChatInput, WindowWorkspace } from '@/types/ai'
 import type { BoardItemKind, BoardItemUpdateInput, BoardTextItemKind, BoardUpdateInput } from '@/types/board'
-import type { BoardScriptExportFormat } from '@/types/project'
+import type { BoardScriptExportFormat, ProjectChangeScope } from '@/types/project'
 import type { SceneColor, SceneUpdateInput } from '@/types/scene'
 import type { ArchiveFolderUpdateInput, ArchiveItemUpdateInput } from '@/types/archive'
 import type { TagType } from '@/types/tag'
@@ -24,6 +24,7 @@ import {
   parseBoardUpdateInput,
   parseConsultantChatInput,
   parseFolderUpdateInput,
+  parseProjectChangeScopes,
   parseProjectSettingsUpdateInput,
   parseSceneBeatUpdateInput,
   parseSceneUpdateInput,
@@ -48,20 +49,21 @@ export function registerIpc(
   windowManager: WindowManager,
 ) {
   const transcriptionService = new TranscriptionService(settingsService, projectService)
+  const notifyChange = (...scopes: ProjectChangeScope[]) => windowManager.notifyProjectChanged(scopes)
 
   ipcMain.handle('project:create', async (_, requestedPath?: string | null) => {
     const result = await projectService.createProject(requestedPath)
-    windowManager.notifyProjectChanged()
+    notifyChange('all', 'layouts')
     return result
   })
   ipcMain.handle('project:open', async (_, requestedPath?: string | null) => {
     const result = await projectService.openProject(requestedPath)
-    windowManager.notifyProjectChanged()
+    notifyChange('all', 'layouts')
     return result
   })
   ipcMain.handle('project:saveAs', async (_, requestedPath?: string | null) => {
     const result = await projectService.saveProjectAs(requestedPath)
-    windowManager.notifyProjectChanged()
+    notifyChange('all', 'layouts')
     return result
   })
   ipcMain.handle('project:exportJson', (_, requestedPath?: string | null) =>
@@ -74,13 +76,13 @@ export function registerIpc(
   )
   ipcMain.handle('project:importJson', async (_, requestedPath?: string | null) => {
     const result = await projectService.importJson(requestedPath)
-    windowManager.notifyProjectChanged()
+    notifyChange('all')
     return result
   })
   ipcMain.handle('project:importShootLog', async (_, requestedPath?: string | null) => {
     const result = await projectService.importShootLog(requestedPath)
     if (result && result.errors.length === 0 && (result.addedSceneCount > 0 || result.addedBeatCount > 0)) {
-      windowManager.notifyProjectChanged()
+      notifyChange('scenes', 'tags')
     }
     return result
   })
@@ -88,14 +90,14 @@ export function registerIpc(
   ipcMain.handle('project:getSettings', () => projectService.getProjectSettings())
   ipcMain.handle('project:updateSettings', (_, input) => {
     const result = projectService.updateProjectSettings(parseProjectSettingsUpdateInput(input))
-    windowManager.notifyProjectChanged()
+    notifyChange('project-settings')
     return result
   })
 
   ipcMain.handle('notebook:get', () => projectService.getNotebook())
   ipcMain.handle('notebook:update', (_, payload: unknown) => {
     const result = projectService.updateNotebook(parseNotebookDocument(payload))
-    windowManager.notifyProjectChanged()
+    notifyChange('notebook')
     return result
   })
 
@@ -105,7 +107,7 @@ export function registerIpc(
       requireString(name, 'Archive folder name'),
       nullableString(parentId, 'Archive parent folder id'),
     )
-    windowManager.notifyProjectChanged()
+    notifyChange('archive')
     return result
   })
   ipcMain.handle('archive:folders:rename', (_, folderId: string, name: string) => {
@@ -113,17 +115,17 @@ export function registerIpc(
       requireString(folderId, 'Archive folder id'),
       requireString(name, 'Archive folder name'),
     )
-    windowManager.notifyProjectChanged()
+    notifyChange('archive')
     return result
   })
   ipcMain.handle('archive:folders:update', (_, input: ArchiveFolderUpdateInput) => {
     const result = projectService.updateArchiveFolder(parseArchiveFolderUpdateInput(input))
-    windowManager.notifyProjectChanged()
+    notifyChange('archive')
     return result
   })
   ipcMain.handle('archive:folders:delete', (_, folderId: string) => {
     const result = projectService.deleteArchiveFolder(requireString(folderId, 'Archive folder id'))
-    windowManager.notifyProjectChanged()
+    notifyChange('archive')
     return result
   })
   ipcMain.handle('archive:items:list', () => projectService.listArchiveItems())
@@ -132,17 +134,17 @@ export function registerIpc(
       filePaths == null ? filePaths : requireStringArray(filePaths, 'Archive file paths'),
       nullableString(folderId, 'Archive folder id'),
     )
-    windowManager.notifyProjectChanged()
+    notifyChange('archive')
     return result
   })
   ipcMain.handle('archive:items:update', (_, input: ArchiveItemUpdateInput) => {
     const result = projectService.updateArchiveItem(parseArchiveItemUpdateInput(input))
-    windowManager.notifyProjectChanged()
+    notifyChange('archive')
     return result
   })
   ipcMain.handle('archive:items:delete', (_, itemId: string) => {
     projectService.deleteArchiveItem(requireString(itemId, 'Archive item id'))
-    windowManager.notifyProjectChanged()
+    notifyChange('archive')
   })
   ipcMain.handle('archive:items:open', (_, itemId: string) =>
     projectService.openArchiveItem(requireString(itemId, 'Archive item id')),
@@ -154,21 +156,21 @@ export function registerIpc(
   ipcMain.handle('scenes:list', () => projectService.listScenes())
   ipcMain.handle('scenes:create', () => {
     const result = projectService.createScene()
-    windowManager.notifyProjectChanged()
+    notifyChange('scenes')
     return result
   })
   ipcMain.handle('scenes:update', (_, input: SceneUpdateInput) => {
     const result = projectService.updateScene(parseSceneUpdateInput(input))
-    windowManager.notifyProjectChanged()
+    notifyChange('scenes')
     return result
   })
   ipcMain.handle('scenes:delete', (_, id: string) => {
     projectService.deleteScene(requireString(id, 'Scene id'))
-    windowManager.notifyProjectChanged()
+    notifyChange('scenes')
   })
   ipcMain.handle('scenes:reorder', (_, sceneIds: string[]) => {
     const result = projectService.reorderScenes(requireStringArray(sceneIds, 'Scene ids'))
-    windowManager.notifyProjectChanged()
+    notifyChange('scenes')
     return result
   })
   ipcMain.handle('sceneBeats:create', (_, sceneId: string, afterBeatId?: string | null) => {
@@ -176,24 +178,24 @@ export function registerIpc(
       requireString(sceneId, 'Scene id'),
       nullableString(afterBeatId, 'After beat id'),
     )
-    windowManager.notifyProjectChanged()
+    notifyChange('scenes')
     return result
   })
   ipcMain.handle('sceneBeats:update', (_, input) => {
     const result = projectService.updateSceneBeat(parseSceneBeatUpdateInput(input))
-    windowManager.notifyProjectChanged()
+    notifyChange('scenes')
     return result
   })
   ipcMain.handle('sceneBeats:delete', (_, id: string) => {
     projectService.deleteSceneBeat(requireString(id, 'Beat id'))
-    windowManager.notifyProjectChanged()
+    notifyChange('scenes')
   })
   ipcMain.handle('sceneBeats:reorder', (_, sceneId: string, beatIds: string[]) => {
     const result = projectService.reorderSceneBeats(
       requireString(sceneId, 'Scene id'),
       requireStringArray(beatIds, 'Beat ids'),
     )
-    windowManager.notifyProjectChanged()
+    notifyChange('scenes')
     return result
   })
 
@@ -203,7 +205,7 @@ export function registerIpc(
       requireString(name, 'Scene folder name'),
       nullableString(parentPath, 'Scene folder parent path'),
     )
-    windowManager.notifyProjectChanged()
+    notifyChange('scene-folders')
     return result
   })
   ipcMain.handle(
@@ -213,13 +215,13 @@ export function registerIpc(
         requireString(currentPath, 'Scene folder path'),
         parseFolderUpdateInput(input),
       )
-      windowManager.notifyProjectChanged()
+      notifyChange('scene-folders', 'scenes')
       return result
     },
   )
   ipcMain.handle('sceneFolders:delete', (_, currentPath: string) => {
     const result = projectService.deleteSceneFolder(requireString(currentPath, 'Scene folder path'))
-    windowManager.notifyProjectChanged()
+    notifyChange('scene-folders', 'scenes')
     return result
   })
 
@@ -229,12 +231,12 @@ export function registerIpc(
       requireString(name, 'Board name'),
       nullableString(folder, 'Board folder'),
     )
-    windowManager.notifyProjectChanged()
+    notifyChange('boards')
     return result
   })
   ipcMain.handle('boards:delete', (_, boardId: string) => {
     const result = projectService.deleteBoard(requireString(boardId, 'Board id'))
-    windowManager.notifyProjectChanged()
+    notifyChange('boards')
     return result
   })
   ipcMain.handle('boards:createClone', (_, sourceBoardId: string, name?: string) => {
@@ -242,17 +244,17 @@ export function registerIpc(
       requireString(sourceBoardId, 'Source board id'),
       optionalString(name, 'Cloned board name'),
     )
-    windowManager.notifyProjectChanged()
+    notifyChange('boards')
     return result
   })
   ipcMain.handle('boards:updateBoard', (_, input: BoardUpdateInput) => {
     const result = projectService.updateBoard(parseBoardUpdateInput(input))
-    windowManager.notifyProjectChanged()
+    notifyChange('boards')
     return result
   })
   ipcMain.handle('boards:reorderBoards', (_, boardIds: string[]) => {
     const result = projectService.reorderBoards(requireStringArray(boardIds, 'Board ids'))
-    windowManager.notifyProjectChanged()
+    notifyChange('boards')
     return result
   })
   ipcMain.handle(
@@ -264,7 +266,7 @@ export function registerIpc(
         nullableString(afterItemId, 'After item id'),
         parseBoardPosition(boardPosition),
       )
-      windowManager.notifyProjectChanged()
+      notifyChange('boards')
       return result
     },
   )
@@ -274,29 +276,29 @@ export function registerIpc(
       parseBoardTextKind(kind),
       nullableString(afterItemId, 'After item id'),
     )
-    windowManager.notifyProjectChanged()
+    notifyChange('boards')
     return result
   })
   ipcMain.handle('boards:duplicateItem', (_, itemId: string) => {
     const result = projectService.duplicateBoardItem(requireString(itemId, 'Board item id'))
-    windowManager.notifyProjectChanged()
+    notifyChange('boards')
     return result
   })
   ipcMain.handle('boards:removeItem', (_, itemId: string) => {
     projectService.removeBoardItem(requireString(itemId, 'Board item id'))
-    windowManager.notifyProjectChanged()
+    notifyChange('boards')
   })
   ipcMain.handle('boards:reorder', (_, boardId: string, itemIds: string[]) => {
     const result = projectService.reorderBoard(
       requireString(boardId, 'Board id'),
       requireStringArray(itemIds, 'Board item ids'),
     )
-    windowManager.notifyProjectChanged()
+    notifyChange('boards')
     return result
   })
   ipcMain.handle('boards:updateItem', (_, input: BoardItemUpdateInput) => {
     const result = projectService.updateBoardItem(parseBoardItemUpdateInput(input))
-    windowManager.notifyProjectChanged()
+    notifyChange('boards')
     return result
   })
 
@@ -307,7 +309,7 @@ export function registerIpc(
       requireString(name, 'Board folder name'),
       nullableString(parentPath, 'Board folder parent path'),
     )
-    windowManager.notifyProjectChanged()
+    notifyChange('board-folders')
     return result
   })
   ipcMain.handle('boardFolders:rename', (_, oldPath: string, newName: string) => {
@@ -315,7 +317,7 @@ export function registerIpc(
       requireString(oldPath, 'Board folder path'),
       requireString(newName, 'Board folder name'),
     )
-    windowManager.notifyProjectChanged()
+    notifyChange('board-folders', 'boards')
     return result
   })
   ipcMain.handle(
@@ -325,13 +327,13 @@ export function registerIpc(
         requireString(currentPath, 'Board folder path'),
         parseFolderUpdateInput(input),
       )
-      windowManager.notifyProjectChanged()
+      notifyChange('board-folders', 'boards')
       return result
     },
   )
   ipcMain.handle('boardFolders:delete', (_, currentPath: string) => {
     const result = projectService.deleteBoardFolder(requireString(currentPath, 'Board folder path'))
-    windowManager.notifyProjectChanged()
+    notifyChange('board-folders', 'boards')
     return result
   })
 
@@ -340,20 +342,22 @@ export function registerIpc(
     'blockTemplates:create',
     (_, input: { kind: Exclude<BoardItemKind, 'scene'>; name: string; title: string; body: string }) => {
       const result = projectService.createBlockTemplate(parseBlockTemplateInput(input))
-      windowManager.notifyProjectChanged()
+      notifyChange('block-templates')
       return result
     },
   )
   ipcMain.handle('blockTemplates:delete', (_, id: string) => {
     const result = projectService.deleteBlockTemplate(requireString(id, 'Block template id'))
-    windowManager.notifyProjectChanged()
+    notifyChange('block-templates')
     return result
   })
 
   ipcMain.handle('settings:get', () => settingsService.getSettings())
-  ipcMain.handle('settings:update', (_, input: AppSettingsUpdateInput) =>
-    settingsService.updateSettings(parseAppSettingsUpdateInput(input)),
-  )
+  ipcMain.handle('settings:update', (_, input: AppSettingsUpdateInput) => {
+    const result = settingsService.updateSettings(parseAppSettingsUpdateInput(input))
+    notifyChange('app-settings')
+    return result
+  })
 
   ipcMain.handle('windows:getContext', (event) => windowManager.getContext(event.sender.id))
   ipcMain.handle('windows:listContexts', () => windowManager.listContexts())
@@ -363,7 +367,7 @@ export function registerIpc(
   ipcMain.handle('windows:updateContext', (event, input) =>
     windowManager.updateContext(event.sender.id, parseWindowContextUpdate(input)),
   )
-  ipcMain.handle('windows:refreshProject', () => windowManager.refreshProject())
+  ipcMain.handle('windows:refreshProject', (_, scopes: unknown) => windowManager.refreshProject(parseProjectChangeScopes(scopes)))
   ipcMain.handle('windows:getDragSession', () => windowManager.getDragSession())
   ipcMain.handle('windows:consumeDragSession', () => windowManager.consumeDragSession())
   ipcMain.handle('windows:setDragSession', (_, session) =>
@@ -374,9 +378,21 @@ export function registerIpc(
     windowManager.updateGlobalUiState(parseGlobalUiStatePatch(input)),
   )
   ipcMain.handle('windows:listLayouts', () => windowManager.listLayouts())
-  ipcMain.handle('windows:saveLayout', (_, name: string) => windowManager.saveLayout(requireString(name, 'Layout name')))
-  ipcMain.handle('windows:applyLayout', (_, layoutId: string) => windowManager.applyLayout(requireString(layoutId, 'Layout id')))
-  ipcMain.handle('windows:deleteLayout', (_, layoutId: string) => windowManager.deleteLayout(requireString(layoutId, 'Layout id')))
+  ipcMain.handle('windows:saveLayout', (_, name: string) => {
+    const result = windowManager.saveLayout(requireString(name, 'Layout name'))
+    notifyChange('layouts')
+    return result
+  })
+  ipcMain.handle('windows:applyLayout', async (_, layoutId: string) => {
+    const result = await windowManager.applyLayout(requireString(layoutId, 'Layout id'))
+    notifyChange('layouts')
+    return result
+  })
+  ipcMain.handle('windows:deleteLayout', (_, layoutId: string) => {
+    const result = windowManager.deleteLayout(requireString(layoutId, 'Layout id'))
+    notifyChange('layouts')
+    return result
+  })
 
   ipcMain.handle('consultant:chat', (_, input: ConsultantChatInput) =>
     consultantService.chat(parseConsultantChatInput(input)),
@@ -384,12 +400,12 @@ export function registerIpc(
 
   ipcMain.handle('tags:upsert', (_, input: { id?: string; name: string; type?: TagType }) => {
     const result = projectService.upsertTag(parseTagUpsertInput(input))
-    windowManager.notifyProjectChanged()
+    notifyChange('tags')
     return result
   })
   ipcMain.handle('tags:delete', (_, id: string) => {
     projectService.deleteTag(requireString(id, 'Tag id'))
-    windowManager.notifyProjectChanged()
+    notifyChange('tags')
   })
 
   ipcMain.handle('transcription:pickFile', () => transcriptionService.pickMediaFile())
@@ -432,7 +448,7 @@ export function registerIpc(
       throw new Error('Open a project first')
     }
     const doc = projectService.appendNotebookPlainText(value)
-    windowManager.notifyProjectChanged()
+    notifyChange('notebook')
     return doc
   })
   ipcMain.handle('transcription:saveAs', (_, text: unknown) =>
@@ -442,7 +458,7 @@ export function registerIpc(
     const name = requireString(input.name, 'Transcript name')
     const content = requireString(input.content, 'Transcript content')
     const result = projectService.saveTranscriptionToArchive(name, content)
-    windowManager.notifyProjectChanged()
+    notifyChange('archive')
     return result
   })
 
@@ -455,7 +471,7 @@ export function registerIpc(
       requireString(name, 'Transcription folder name'),
       nullableString(parentPath, 'Transcription folder parent path'),
     )
-    windowManager.notifyProjectChanged()
+    notifyChange('transcription-library')
     return result
   })
   ipcMain.handle(
@@ -465,13 +481,13 @@ export function registerIpc(
         requireString(currentPath, 'Transcription folder path'),
         parseFolderUpdateInput(input),
       )
-      windowManager.notifyProjectChanged()
+      notifyChange('transcription-library')
       return result
     },
   )
   ipcMain.handle('transcription:library:folders:delete', (_, currentPath: string) => {
     const result = projectService.deleteTranscriptionFolder(requireString(currentPath, 'Transcription folder path'))
-    windowManager.notifyProjectChanged()
+    notifyChange('transcription-library')
     return result
   })
 
@@ -486,17 +502,17 @@ export function registerIpc(
       sourceFilePath: nullableString(input.sourceFilePath, 'Source file path'),
     }
     const result = projectService.createTranscriptionItem(payload)
-    windowManager.notifyProjectChanged()
+    notifyChange('transcription-library')
     return result
   })
   ipcMain.handle('transcription:library:items:update', (_, input: unknown) => {
     const payload = requireTranscriptionItemUpdateInput(input)
     const result = projectService.updateTranscriptionItem(payload)
-    windowManager.notifyProjectChanged()
+    notifyChange('transcription-library')
     return result
   })
   ipcMain.handle('transcription:library:items:delete', (_, id: string) => {
     projectService.deleteTranscriptionItem(requireString(id, 'Item id'))
-    windowManager.notifyProjectChanged()
+    notifyChange('transcription-library')
   })
 }

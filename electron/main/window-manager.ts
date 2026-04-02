@@ -4,7 +4,7 @@ import type { AppSettingsService } from './app-settings-service'
 import type { ProjectService } from './project-service'
 import type { AppSettings, SavedWindowLayout, WindowWorkspace } from '@/types/ai'
 import type { BoardViewMode } from '@/types/board'
-import type { GlobalUiState, WindowContext, WindowDragSession } from '@/types/project'
+import type { GlobalUiState, ProjectChangeScope, WindowContext, WindowDragSession } from '@/types/project'
 
 type WindowRecord = {
   browserWindow: BrowserWindow
@@ -33,6 +33,7 @@ export class WindowManager {
   private readonly windows = new Map<number, WindowRecord>()
   private globalUiState: GlobalUiState = DEFAULT_GLOBAL_UI_STATE
   private dragSession: WindowDragSession = null
+  private projectRevision = 0
   private readonly settingsService: AppSettingsService
   private readonly projectService: ProjectService
   private readonly browserFactory: BrowserFactory
@@ -150,19 +151,34 @@ export class WindowManager {
     return this.globalUiState
   }
 
-  notifyProjectChanged() {
+  notifyProjectChanged(scopes: ProjectChangeScope[] = ['all']) {
+    const normalizedScopes = normalizeProjectChangeScopes(scopes)
     const meta = this.projectService.getMeta()
-    if (meta) {
+    if (meta && (normalizedScopes.includes('all') || normalizedScopes.includes('meta'))) {
       this.settingsService.updateSettings({ lastProjectPath: meta.path })
     }
 
     this.dragSession = null
+    this.projectRevision += 1
 
-    this.broadcast({ type: 'project-changed' })
+    this.broadcast({
+      type: 'project-changed',
+      payload: {
+        revision: this.projectRevision,
+        scopes: normalizedScopes,
+      },
+    })
   }
 
-  refreshProject() {
-    this.broadcast({ type: 'project-changed' })
+  refreshProject(scopes: ProjectChangeScope[] = ['all']) {
+    this.projectRevision += 1
+    this.broadcast({
+      type: 'project-changed',
+      payload: {
+        revision: this.projectRevision,
+        scopes: normalizeProjectChangeScopes(scopes),
+      },
+    })
   }
 
   listLayouts() {
@@ -350,7 +366,7 @@ export class WindowManager {
 
   private broadcast(
     event:
-      | { type: 'project-changed' }
+      | { type: 'project-changed'; payload: { revision: number; scopes: ProjectChangeScope[] } }
       | { type: 'window-context'; payload: WindowContext }
       | { type: 'global-ui-state'; payload: GlobalUiState }
       | { type: 'drag-session'; payload: WindowDragSession },
@@ -420,4 +436,12 @@ function normalizeDragSession(session: WindowDragSession): WindowDragSession {
   }
 
   return null
+}
+
+function normalizeProjectChangeScopes(scopes: ProjectChangeScope[]): ProjectChangeScope[] {
+  if (scopes.length === 0) {
+    return ['all']
+  }
+
+  return [...new Set(scopes)]
 }

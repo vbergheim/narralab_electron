@@ -79,6 +79,30 @@ export type GlobalUiState = {
   selectedTranscriptionItemId: string | null
 }
 
+export type ProjectChangeScope =
+  | 'all'
+  | 'meta'
+  | 'project-settings'
+  | 'app-settings'
+  | 'notebook'
+  | 'archive'
+  | 'scenes'
+  | 'scene-folders'
+  | 'boards'
+  | 'board-folders'
+  | 'block-templates'
+  | 'tags'
+  | 'transcription-library'
+  | 'layouts'
+
+export type ProjectChangedEvent = {
+  type: 'project-changed'
+  payload: {
+    revision: number
+    scopes: ProjectChangeScope[]
+  }
+}
+
 export type WindowContext = {
   windowId: number
   role: 'main' | 'detached'
@@ -304,7 +328,7 @@ export interface NarraLabApi {
     listContexts(): Promise<WindowContext[]>
     openWorkspace(workspace: WindowWorkspace, options?: Partial<WindowContext>): Promise<WindowContext>
     updateContext(input: Partial<Pick<WindowContext, 'boardId' | 'viewMode' | 'sceneDensity'>>): Promise<WindowContext>
-    refreshProject(): Promise<void>
+    refreshProject(scopes?: ProjectChangeScope[]): Promise<void>
     getDragSession(): WindowDragSession
     readDragSession(): Promise<WindowDragSession>
     consumeDragSession(): Promise<WindowDragSession>
@@ -316,11 +340,13 @@ export interface NarraLabApi {
     applyLayout(layoutId: string): Promise<SavedWindowLayout | null>
     deleteLayout(layoutId: string): Promise<SavedWindowLayout[]>
     subscribe(
-      listener: (event:
-        | { type: 'project-changed' }
-        | { type: 'window-context'; payload: WindowContext }
-        | { type: 'global-ui-state'; payload: GlobalUiState }
-        | { type: 'drag-session'; payload: WindowDragSession }) => void,
+      listener: (
+        event:
+          | ProjectChangedEvent
+          | { type: 'window-context'; payload: WindowContext }
+          | { type: 'global-ui-state'; payload: GlobalUiState }
+          | { type: 'drag-session'; payload: WindowDragSession },
+      ) => void,
     ): () => void
   }
   consultant: {

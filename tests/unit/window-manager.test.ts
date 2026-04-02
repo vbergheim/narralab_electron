@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { WindowManager } from '../../electron/main/window-manager'
 import type { AppSettings } from '@/types/ai'
-import type { WindowDragSession } from '@/types/project'
+import type { ProjectChangedEvent, WindowDragSession } from '@/types/project'
 
 vi.mock('electron', () => ({
   BrowserWindow: class BrowserWindow {},
@@ -42,6 +42,11 @@ function buildSettings(): AppSettings {
       lastLayoutByProject: {},
       savedLayouts: [],
     },
+    transcription: {
+      modelId: 'small',
+      language: 'auto',
+      timestampInterval: 'segment',
+    },
   }
 }
 
@@ -56,6 +61,28 @@ describe('WindowManager drag sessions', () => {
   }
 
   let windowManager: WindowManager
+
+  function attachFakeWindow(windowId = 101) {
+    const listeners = new Map<string, Array<() => void>>()
+    const sentEvents: Array<ProjectChangedEvent | { type: 'drag-session'; payload: WindowDragSession }> = []
+    const browserWindow = {
+      webContents: {
+        id: windowId,
+        isDestroyed: () => false,
+        send: (_channel: string, event: ProjectChangedEvent | { type: 'drag-session'; payload: WindowDragSession }) => {
+          sentEvents.push(event)
+        },
+      },
+      on: (event: string, handler: () => void) => {
+        listeners.set(event, [...(listeners.get(event) ?? []), handler])
+      },
+      isDestroyed: () => false,
+      getBounds: () => ({ x: 0, y: 0, width: 800, height: 600 }),
+    }
+
+    windowManager.registerMainWindow(browserWindow as never)
+    return { sentEvents }
+  }
 
   beforeEach(() => {
     settingsService.getSettings.mockClear()
@@ -86,5 +113,28 @@ describe('WindowManager drag sessions', () => {
     windowManager.notifyProjectChanged()
 
     expect(windowManager.getDragSession()).toBeNull()
+  })
+
+  it('broadcasts scoped project changes with monotonic revision numbers', () => {
+    const { sentEvents } = attachFakeWindow()
+
+    windowManager.notifyProjectChanged(['boards', 'tags'])
+    windowManager.refreshProject(['layouts'])
+
+    expect(sentEvents).toHaveLength(2)
+    expect(sentEvents[0]).toEqual({
+      type: 'project-changed',
+      payload: {
+        revision: 1,
+        scopes: ['boards', 'tags'],
+      },
+    })
+    expect(sentEvents[1]).toEqual({
+      type: 'project-changed',
+      payload: {
+        revision: 2,
+        scopes: ['layouts'],
+      },
+    })
   })
 })

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { parseGlobalUiStatePatch, parseWindowDragSession } from '../../electron/main/ipc-validators'
+import { parseGlobalUiStatePatch, parseProjectChangeScopes, parseWindowDragSession } from '../../electron/main/ipc-validators'
 
 describe('parseGlobalUiStatePatch', () => {
   it('returns empty patch for empty object', () => {
@@ -42,5 +42,20 @@ describe('parseWindowDragSession', () => {
   it('returns null when no valid scene ids', () => {
     expect(parseWindowDragSession({ kind: 'scene', sceneIds: [] })).toBe(null)
     expect(parseWindowDragSession({ kind: 'scene', sceneIds: ['', '  '] })).toBe(null)
+  })
+})
+
+describe('parseProjectChangeScopes', () => {
+  it('defaults to all when omitted', () => {
+    expect(parseProjectChangeScopes(undefined)).toEqual(['all'])
+  })
+
+  it('deduplicates scopes while preserving explicit non-all scopes', () => {
+    expect(parseProjectChangeScopes(['boards', 'tags', 'boards'])).toEqual(['boards', 'tags'])
+    expect(parseProjectChangeScopes(['all', 'layouts'])).toEqual(['all', 'layouts'])
+  })
+
+  it('rejects invalid scopes', () => {
+    expect(() => parseProjectChangeScopes(['boards', 'nope'])).toThrow(/Project change scope 2/)
   })
 })

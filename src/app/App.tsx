@@ -43,7 +43,7 @@ import { useFilterStore } from '@/stores/filter-store'
 import { isTextBoardItem } from '@/types/board'
 import type { BoardViewMode } from '@/types/board'
 import type { SavedWindowLayout, WindowWorkspace } from '@/types/ai'
-import type { WindowContext } from '@/types/project'
+import type { ProjectChangeScope, WindowContext } from '@/types/project'
 import type { Scene } from '@/types/scene'
 import type { SceneDensity } from '@/types/view'
 
@@ -104,6 +104,7 @@ export function App() {
     setConsultantContextMode,
     clearConsultantConversation,
     initialize,
+    syncProjectChanges,
     createArchiveFolder,
     updateArchiveFolder,
     deleteArchiveFolder,
@@ -176,10 +177,21 @@ export function App() {
   }, [setWorkspaceMode])
 
   const filters = useFilterStore()
+  const lastProjectRevisionRef = useRef<number>(0)
 
   useEffect(() => {
     void initialize()
   }, [initialize])
+
+  const syncProjectChangeEvent = useCallback(
+    async (scopes: ProjectChangeScope[]) => {
+      await syncProjectChanges(scopes)
+      if (scopes.includes('all') || scopes.includes('layouts')) {
+        setSavedLayouts(await window.narralab.windows.listLayouts())
+      }
+    },
+    [syncProjectChanges],
+  )
 
   useEffect(() => {
     if (!window.narralab) {
@@ -204,8 +216,11 @@ export function App() {
 
     const dispose = window.narralab.windows.subscribe((event) => {
       if (event.type === 'project-changed') {
-        void initialize()
-        void window.narralab.windows.listLayouts().then(setSavedLayouts)
+        if (event.payload.revision <= lastProjectRevisionRef.current) {
+          return
+        }
+        lastProjectRevisionRef.current = event.payload.revision
+        void syncProjectChangeEvent(event.payload.scopes)
         return
       }
 
@@ -226,7 +241,7 @@ export function App() {
     })
 
     return dispose
-  }, [applyGlobalUiState, initialize, windowContext?.windowId])
+  }, [applyGlobalUiState, syncProjectChangeEvent, windowContext?.windowId])
 
   useEffect(() => {
     if (!ready || windowContext === null) return
@@ -523,7 +538,6 @@ export function App() {
       await addSceneToBoard(target.boardId, sceneId)
     }
 
-    await window.narralab.windows.refreshProject()
   }, [addSceneToBoard, windowContext?.windowId])
 
   const addBlockToCurrentBoard = useCallback((kind: import('@/types/board').BoardTextItemKind, afterItemId?: string | null) => {

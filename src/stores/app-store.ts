@@ -13,6 +13,7 @@ import type {
   BoardScriptExportFormat,
   GlobalUiState,
   NotebookDocument,
+  ProjectChangeScope,
   ProjectMeta,
   ProjectSettings,
   ProjectSettingsUpdateInput,
@@ -86,6 +87,7 @@ type AppStore = {
   clearConsultantConversation(): void
   initialize(): Promise<void>
   refreshAll(): Promise<void>
+  syncProjectChanges(scopes: ProjectChangeScope[]): Promise<void>
   createArchiveFolder(name: string, parentId?: string | null): Promise<void>
   renameArchiveFolder(folderId: string, name: string): Promise<void>
   updateArchiveFolder(folderId: string, input: { name?: string; color?: ArchiveFolder['color'] }): Promise<void>
@@ -231,20 +233,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   async refreshAll() {
     const meta = await window.narralab.project.getMeta()
     if (!meta) {
-      set({
-        projectMeta: null,
-        projectSettings: null,
-        notebook: emptyNotebookDocument(),
-        archiveFolders: [],
-        archiveItems: [],
-        scenes: [],
-        sceneFolders: [],
-        boards: [],
-        boardFolders: [],
-        blockTemplates: [],
-        tags: [],
-        activeBoardId: null,
-      })
+      set(resetProjectState())
       return
     }
 
@@ -287,7 +276,135 @@ export const useAppStore = create<AppStore>((set, get) => ({
         archiveFolders.some((folder) => folder.id === state.selectedArchiveFolderId)
           ? state.selectedArchiveFolderId
           : null,
-    }))
+      }))
+  },
+
+  async syncProjectChanges(scopes) {
+    try {
+      const normalizedScopes = normalizeProjectChangeScopes(scopes)
+      if (normalizedScopes.includes('all')) {
+        await get().refreshAll()
+        return
+      }
+
+      let currentMeta = get().projectMeta
+      if (normalizedScopes.includes('meta') || !currentMeta) {
+        currentMeta = await window.narralab.project.getMeta()
+        if (!currentMeta) {
+          set(resetProjectState())
+          return
+        }
+        const syncedMeta = currentMeta
+
+        set((state) => ({
+          projectMeta: syncedMeta,
+          consultantMessages: state.projectMeta?.path === syncedMeta.path ? state.consultantMessages : [],
+        }))
+      }
+
+      if (!currentMeta) {
+        return
+      }
+
+      const loaders = {
+        appSettings: normalizedScopes.includes('app-settings') ? window.narralab.settings.get() : null,
+        projectSettings: normalizedScopes.includes('project-settings') ? window.narralab.project.getSettings() : null,
+        notebook: normalizedScopes.includes('notebook') ? window.narralab.notebook.get() : null,
+        archiveFolders: normalizedScopes.includes('archive') ? window.narralab.archive.folders.list() : null,
+        archiveItems: normalizedScopes.includes('archive') ? window.narralab.archive.items.list() : null,
+        scenes: normalizedScopes.includes('scenes') ? window.narralab.scenes.list() : null,
+        sceneFolders: normalizedScopes.includes('scene-folders') ? window.narralab.sceneFolders.list() : null,
+        boards: normalizedScopes.includes('boards') ? window.narralab.boards.list() : null,
+        boardFolders: normalizedScopes.includes('board-folders') ? window.narralab.boardFolders.list() : null,
+        blockTemplates: normalizedScopes.includes('block-templates') ? window.narralab.blockTemplates.list() : null,
+        tags: normalizedScopes.includes('tags') ? window.narralab.tags.list() : null,
+      }
+
+      const [
+        appSettings,
+        projectSettings,
+        notebook,
+        archiveFolders,
+        archiveItems,
+        scenes,
+        sceneFolders,
+        boards,
+        boardFolders,
+        blockTemplates,
+        tags,
+      ] = await Promise.all([
+        loaders.appSettings,
+        loaders.projectSettings,
+        loaders.notebook,
+        loaders.archiveFolders,
+        loaders.archiveItems,
+        loaders.scenes,
+        loaders.sceneFolders,
+        loaders.boards,
+        loaders.boardFolders,
+        loaders.blockTemplates,
+        loaders.tags,
+      ])
+
+      set((state) => {
+        const nextBoards = boards ?? state.boards
+        const nextArchiveFolders = archiveFolders ?? state.archiveFolders
+        const nextScenes = scenes ?? state.scenes
+        const nextSelectedSceneIds = scenes
+          ? state.selectedSceneIds.filter((sceneId) => nextScenes.some((scene) => scene.id === sceneId))
+          : state.selectedSceneIds
+
+        return {
+          ...(appSettings ? { appSettings } : {}),
+          ...(projectSettings ? { projectSettings } : {}),
+          ...(notebook ? { notebook } : {}),
+          ...(archiveFolders ? { archiveFolders } : {}),
+          ...(archiveItems ? { archiveItems } : {}),
+          ...(scenes ? { scenes, selectedSceneIds: nextSelectedSceneIds } : {}),
+          ...(sceneFolders ? { sceneFolders } : {}),
+          ...(boards
+            ? {
+                boards,
+                activeBoardId:
+                  state.activeBoardId && nextBoards.some((board) => board.id === state.activeBoardId)
+                    ? state.activeBoardId
+                    : nextBoards[0]?.id ?? null,
+                selectedBoardId:
+                  state.selectedBoardId && nextBoards.some((board) => board.id === state.selectedBoardId)
+                    ? state.selectedBoardId
+                    : null,
+                selectedBoardItemId:
+                  state.selectedBoardItemId &&
+                  nextBoards.some((board) => board.items.some((item) => item.id === state.selectedBoardItemId))
+                    ? state.selectedBoardItemId
+                    : null,
+              }
+            : {}),
+          ...(boardFolders ? { boardFolders } : {}),
+          ...(blockTemplates ? { blockTemplates } : {}),
+          ...(tags ? { tags } : {}),
+          ...(archiveFolders
+            ? {
+                selectedArchiveFolderId:
+                  state.selectedArchiveFolderId &&
+                  nextArchiveFolders.some((folder) => folder.id === state.selectedArchiveFolderId)
+                    ? state.selectedArchiveFolderId
+                    : null,
+              }
+            : {}),
+          ...(scenes
+            ? {
+                selectedSceneId:
+                  state.selectedSceneId && nextScenes.some((scene) => scene.id === state.selectedSceneId)
+                    ? state.selectedSceneId
+                    : null,
+              }
+            : {}),
+        }
+      })
+    } catch (error) {
+      set({ error: toMessage(error) })
+    }
   },
 
   async createArchiveFolder(name, parentId = null) {
@@ -1366,6 +1483,36 @@ function findLastIndex<T>(items: T[], predicate: (item: T) => boolean) {
 
 function sortBeats(beats: SceneBeat[]) {
   return [...beats].sort((left, right) => left.sortOrder - right.sortOrder || left.createdAt.localeCompare(right.createdAt))
+}
+
+function normalizeProjectChangeScopes(scopes: ProjectChangeScope[]) {
+  if (scopes.length === 0) {
+    return ['all'] satisfies ProjectChangeScope[]
+  }
+
+  return [...new Set(scopes)]
+}
+
+function resetProjectState() {
+  return {
+    projectMeta: null,
+    projectSettings: null,
+    notebook: emptyNotebookDocument(),
+    archiveFolders: [],
+    archiveItems: [],
+    scenes: [],
+    sceneFolders: [],
+    boards: [],
+    boardFolders: [],
+    blockTemplates: [],
+    tags: [],
+    activeBoardId: null,
+    selectedBoardId: null,
+    selectedSceneId: null,
+    selectedSceneIds: [],
+    selectedBoardItemId: null,
+    selectedArchiveFolderId: null,
+  }
 }
 
 async function runProjectAction(

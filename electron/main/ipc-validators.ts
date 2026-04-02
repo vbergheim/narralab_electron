@@ -7,6 +7,7 @@ import type {
   GlobalUiState,
   NotebookDocument,
   NotebookTab,
+  ProjectChangeScope,
   ProjectSettingsUpdateInput,
   WindowContext,
   WindowDragSession,
@@ -70,6 +71,22 @@ const transcriptionLanguages = new Set<TranscriptionLanguage>([
   'uk',
   'ja',
   'zh',
+])
+const projectChangeScopes = new Set<ProjectChangeScope>([
+  'all',
+  'meta',
+  'project-settings',
+  'app-settings',
+  'notebook',
+  'archive',
+  'scenes',
+  'scene-folders',
+  'boards',
+  'board-folders',
+  'block-templates',
+  'tags',
+  'transcription-library',
+  'layouts',
 ])
 const aiProviders = new Set(['openai', 'gemini'] as const)
 const responseStyles = new Set(['structured', 'concise', 'exploratory'] as const)
@@ -322,6 +339,25 @@ export function parseConsultantChatInput(value: unknown): ConsultantChatInput {
 
 export function parseWindowWorkspace(value: unknown) {
   return requireWindowWorkspace(value, 'Window workspace')
+}
+
+export function parseProjectChangeScopes(value: unknown): ProjectChangeScope[] {
+  if (value === undefined) {
+    return ['all']
+  }
+  if (!Array.isArray(value)) {
+    throw new Error('Project change scopes must be an array')
+  }
+
+  const scopes = value.map((entry, index) =>
+    requireEnum(entry, projectChangeScopes, `Project change scope ${index + 1}`),
+  )
+
+  if (scopes.length === 0) {
+    return ['all']
+  }
+
+  return [...new Set(scopes)]
 }
 
 export function parseWindowContextUpdate(

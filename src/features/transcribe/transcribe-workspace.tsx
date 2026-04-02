@@ -231,6 +231,16 @@ export function TranscribeWorkspace({
   // Sync from global selection
   useEffect(() => {
     const dispose = window.narralab.windows.subscribe((event) => {
+      if (event.type === 'project-changed') {
+        if (event.payload.scopes.includes('all') || event.payload.scopes.includes('transcription-library')) {
+          void refreshLibrary()
+        }
+        if (event.payload.scopes.includes('all') || event.payload.scopes.includes('scenes')) {
+          void refreshScenes()
+        }
+        return
+      }
+
       if (event.type === 'global-ui-state' && event.payload.selectedTranscriptionItemId) {
         handleSelectItem(event.payload.selectedTranscriptionItemId)
         // Clear it so it doesn't re-trigger on next sync if we select something else
@@ -238,7 +248,7 @@ export function TranscribeWorkspace({
       }
     })
     return dispose
-  }, [handleSelectItem])
+  }, [handleSelectItem, refreshLibrary, refreshScenes])
 
   const pickFile = async () => {
     const path = await window.narralab.transcription.pickFile()
