@@ -27,7 +27,12 @@ jobs:
         run: npm run lint
 
       - name: Typecheck
-        run: npx tsc -b
+        run: npm run typecheck
 
       - name: Test
         run: npm run test
+
+      - name: Package Smoke Test
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npm run build:dir
