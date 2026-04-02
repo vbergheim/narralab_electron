@@ -1,19 +1,14 @@
-import type { PointerEventHandler } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
-  AlignJustify,
   Archive as ArchiveIcon,
   ChevronDown,
-  GripVertical,
   LayoutGrid,
   Loader2,
   Maximize2,
   MessageCircle,
   Mic,
   NotebookText,
-  PanelLeftOpen,
-  PanelRightOpen,
   Rows3,
   X,
 } from 'lucide-react'
@@ -26,6 +21,8 @@ import { ProjectsToolbar } from '@/features/projects/projects-toolbar'
 import { ConsultantWorkspace } from '@/features/consultant/consultant-workspace'
 import type { SettingsTab } from '@/features/settings/settings-workspace'
 import { DetachedWorkspacePanel, MainWorkspacePanel } from '@/app/app-workspace-panels'
+import { CollapsedRail, ResizeHandle } from '@/app/app-shell-controls'
+import { densityOptions, detachedLabel, isTextInputTarget } from '@/app/app-shell-utils'
 import { Button } from '@/components/ui/button'
 import { ContextMenu, type ContextMenuItem } from '@/components/ui/context-menu'
 import { Panel } from '@/components/ui/panel'
@@ -38,7 +35,6 @@ import { useFilterStore } from '@/stores/filter-store'
 import { isTextBoardItem } from '@/types/board'
 import type { WindowWorkspace } from '@/types/ai'
 import type { Scene } from '@/types/scene'
-import type { SceneDensity } from '@/types/view'
 
 const workspaceTabs = [
   { value: 'outline', label: 'Outline', shortLabel: 'Outline', icon: Rows3 },
@@ -904,92 +900,3 @@ function matchesFilters(scene: Scene, filters: ReturnType<typeof useFilterStore.
 
   return true
 }
-
-function CollapsedRail({
-  side,
-  title,
-  onExpand,
-}: {
-  side: 'left' | 'right'
-  title: string
-  onExpand(): void
-}) {
-  return (
-    <Panel className="h-full overflow-hidden px-0 py-0">
-      <button
-        type="button"
-        onClick={onExpand}
-        title={`Open ${title}`}
-        aria-label={`Open ${title}`}
-        className="flex h-full w-full items-start justify-center rounded-[inherit] px-2 py-4 text-muted transition hover:bg-panelMuted hover:text-foreground"
-      >
-        <div className="flex flex-col items-center gap-3">
-          {side === 'left' ? <PanelLeftOpen className="h-4 w-4 shrink-0" /> : <PanelRightOpen className="h-4 w-4 shrink-0" />}
-          <span
-            className="text-xs font-semibold uppercase tracking-[0.18em]"
-            style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
-          >
-            {title}
-          </span>
-        </div>
-      </button>
-    </Panel>
-  )
-}
-
-function ResizeHandle({
-  label,
-  active,
-  onPointerDown,
-}: {
-  label: string
-  active?: boolean
-  onPointerDown: PointerEventHandler<HTMLButtonElement>
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      className="group relative flex w-3 shrink-0 cursor-col-resize items-center justify-center rounded-full text-muted outline-none transition hover:bg-panelMuted/70 hover:text-foreground"
-      onPointerDown={onPointerDown}
-    >
-      <span className={`h-full w-px rounded-full bg-border transition ${active ? 'bg-accent' : 'group-hover:bg-accent/70'}`} />
-      <GripVertical className="pointer-events-none absolute h-4 w-4 opacity-0 transition group-hover:opacity-100" />
-    </button>
-  )
-}
-
-function isTextInputTarget(target: EventTarget | null) {
-  if (!(target instanceof HTMLElement)) {
-    return false
-  }
-
-  const tagName = target.tagName
-  return (
-    tagName === 'INPUT' ||
-    tagName === 'TEXTAREA' ||
-    tagName === 'SELECT' ||
-    target.isContentEditable
-  )
-}
-
-function detachedLabel(workspace: WindowWorkspace) {
-  if (workspace === 'bank') return 'Scene Bank Window'
-  if (workspace === 'board-manager') return 'Board Manager Window'
-  if (workspace === 'inspector') return 'Inspector Window'
-  if (workspace === 'notebook') return 'Notebook Window'
-  if (workspace === 'archive') return 'Archive Window'
-  if (workspace === 'transcribe') return 'Transcribe Window'
-  return 'Outline Window'
-}
-
-const densityOptions: Array<{
-  value: SceneDensity
-  label: string
-  icon: typeof Rows3
-}> = [
-  { value: 'table', label: 'Table', icon: AlignJustify },
-  { value: 'compact', label: 'Compact', icon: Rows3 },
-  { value: 'detailed', label: 'Detailed', icon: LayoutGrid },
-]
