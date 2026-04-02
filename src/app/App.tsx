@@ -1,31 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import {
-  AlertTriangle,
-  Archive as ArchiveIcon,
-  ChevronDown,
-  LayoutGrid,
-  Loader2,
-  Maximize2,
-  MessageCircle,
-  Mic,
-  NotebookText,
-  Rows3,
-  X,
-} from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 
 import { BoardInspector } from '@/features/inspector/board-inspector'
 import { BoardItemInspector } from '@/features/inspector/board-item-inspector'
 import { BulkSceneInspector } from '@/features/inspector/bulk-scene-inspector'
 import { SceneInspector } from '@/features/inspector/scene-inspector'
 import { ProjectsToolbar } from '@/features/projects/projects-toolbar'
-import { ConsultantWorkspace } from '@/features/consultant/consultant-workspace'
 import type { SettingsTab } from '@/features/settings/settings-workspace'
+import {
+  ConsultantDock,
+  DetachedWindowHeader,
+  ErrorBanner,
+  InspectorSidebar,
+  WorkspaceTabsBar,
+} from '@/app/app-shell-sections'
 import { DetachedWorkspacePanel, MainWorkspacePanel } from '@/app/app-workspace-panels'
-import { CollapsedRail, ResizeHandle } from '@/app/app-shell-controls'
-import { densityOptions, detachedLabel, isTextInputTarget } from '@/app/app-shell-utils'
-import { Button } from '@/components/ui/button'
+import { densityOptions, isTextInputTarget } from '@/app/app-shell-utils'
 import { ContextMenu, type ContextMenuItem } from '@/components/ui/context-menu'
-import { Panel } from '@/components/ui/panel'
 import { usePanelResize } from '@/hooks/use-panel-resize'
 import { cn } from '@/lib/cn'
 import { nextKeyRating } from '@/lib/scene-rating'
@@ -35,14 +26,6 @@ import { useFilterStore } from '@/stores/filter-store'
 import { isTextBoardItem } from '@/types/board'
 import type { WindowWorkspace } from '@/types/ai'
 import type { Scene } from '@/types/scene'
-
-const workspaceTabs = [
-  { value: 'outline', label: 'Outline', shortLabel: 'Outline', icon: Rows3 },
-  { value: 'bank', label: 'Scene Bank', shortLabel: 'Bank', icon: LayoutGrid },
-  { value: 'notebook', label: 'Notebook', shortLabel: 'Notebook', icon: NotebookText },
-  { value: 'archive', label: 'Archive', shortLabel: 'Archive', icon: ArchiveIcon },
-  { value: 'transcribe', label: 'Transcribe', shortLabel: 'Transcribe', icon: Mic },
-] as const
 
 export function App() {
   const searchRef = useRef<HTMLInputElement | null>(null)
@@ -382,6 +365,15 @@ export function App() {
   )
   const effectiveBoardViewMode = normalizeBoardViewMode(boardViewMode)
   const projectTitle = projectSettings?.title?.trim() || projectMeta?.name || 'NarraLab'
+  const openViewMenu = useCallback(() => {
+    const rect = viewButtonRef.current?.getBoundingClientRect()
+    if (!rect) {
+      return
+    }
+
+    setViewMenuPosition({ x: rect.left, y: rect.bottom + 8 })
+    setViewMenuOpen(true)
+  }, [])
 
   const addSceneToCurrentBoard = async (
     sceneId: string,
@@ -631,37 +623,14 @@ export function App() {
     return (
       <div className="flex h-screen min-h-0 flex-col overflow-hidden bg-[radial-gradient(circle_at_top,#1a1f2d_0%,#10131c_32%,#0b0d12_100%)] text-foreground">
         {!outlineImmersive ? (
-          <div className="app-drag flex items-center justify-between border-b border-border/90 px-5 py-3 pl-24">
-            <div>
-              <div className="font-display text-lg font-semibold text-foreground">{projectTitle}</div>
-              <div className="text-sm text-muted">{detachedLabel(detachedWorkspace)}</div>
-            </div>
-            <div className="app-no-drag flex items-center gap-2">
-              {detachedWorkspace === 'outline' ? (
-                <Button variant="ghost" size="sm" onClick={() => void toggleOutlineImmersive()} title="Fullscreen focus" aria-label="Fullscreen focus">
-                  <Maximize2 className="h-4 w-4" />
-                  <span className="hidden lg:inline">Focus</span>
-                </Button>
-              ) : null}
-              {detachedWorkspace === 'outline' || detachedWorkspace === 'bank' ? (
-                <button
-                  ref={viewButtonRef}
-                  type="button"
-                  className="inline-flex h-9 shrink-0 items-center gap-2 rounded-xl border border-border bg-panel px-2.5 text-sm font-medium text-foreground transition hover:bg-panelMuted lg:px-3"
-                  onClick={() => {
-                    const rect = viewButtonRef.current?.getBoundingClientRect()
-                    if (!rect) return
-                    setViewMenuPosition({ x: rect.left, y: rect.bottom + 8 })
-                    setViewMenuOpen(true)
-                  }}
-                >
-                  <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">View</span>
-                  <densityOption.icon className="h-4 w-4" />
-                  <ChevronDown className="h-4 w-4 text-muted" />
-                </button>
-              ) : null}
-            </div>
-          </div>
+          <DetachedWindowHeader
+            projectTitle={projectTitle}
+            detachedWorkspace={detachedWorkspace}
+            densityOption={densityOption}
+            viewButtonRef={viewButtonRef}
+            onOpenViewMenu={openViewMenu}
+            onToggleOutlineImmersive={() => void toggleOutlineImmersive()}
+          />
         ) : null}
         <div className={cn('min-h-0 flex-1 overflow-hidden', outlineImmersive ? 'p-0' : 'p-4')}>
           <DetachedWorkspacePanel
@@ -706,70 +675,17 @@ export function App() {
       />
 
       <div className="flex h-[calc(100vh-81px)] flex-col gap-4 p-4">
-        {error ? (
-          <Panel className="flex items-center justify-between border-danger/50 bg-danger/10 px-4 py-3 text-sm">
-            <div className="flex items-center gap-2 text-red-100">
-              <AlertTriangle className="h-4 w-4" />
-              {error}
-            </div>
-            <Button variant="ghost" size="sm" onClick={dismissError}>
-              Dismiss
-            </Button>
-          </Panel>
-        ) : null}
+        {error ? <ErrorBanner error={error} onDismiss={dismissError} /> : null}
 
-        <Panel className="app-drag px-4 py-3">
-          <div className="flex min-w-0 items-center gap-3 overflow-hidden">
-            <div className="app-no-drag flex min-w-0 flex-1 items-center gap-2 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              {workspaceTabs.map((tab) => {
-                const Icon = tab.icon
-
-                return (
-                  <Button
-                    key={tab.value}
-                    variant={workspaceMode === tab.value ? 'accent' : 'ghost'}
-                    size="sm"
-                    onClick={() => setWorkspaceMode(tab.value)}
-                    className="shrink-0 whitespace-nowrap px-2.5 lg:px-3"
-                    title={tab.label}
-                    aria-label={tab.label}
-                  >
-                    <Icon className="h-4 w-4 shrink-0" />
-                    <span className="hidden min-[1280px]:inline">{tab.label}</span>
-                    <span className="hidden min-[1080px]:max-[1279px]:inline">{tab.shortLabel}</span>
-                  </Button>
-                )
-              })}
-              {showDensityControl ? (
-                <>
-                  <div className="h-6 w-px shrink-0 bg-border" />
-                  <button
-                    ref={viewButtonRef}
-                    type="button"
-                    className="inline-flex h-9 shrink-0 items-center gap-2 rounded-xl border border-border bg-panel px-2.5 text-sm font-medium text-foreground transition hover:bg-panelMuted lg:px-3"
-                    onClick={() => {
-                      const rect = viewButtonRef.current?.getBoundingClientRect()
-                      if (!rect) return
-                      setViewMenuPosition({ x: rect.left, y: rect.bottom + 8 })
-                      setViewMenuOpen(true)
-                    }}
-                    aria-label={`View: ${densityOption.label}`}
-                    title={`View: ${densityOption.label}`}
-                  >
-                    <span className="hidden text-[11px] font-semibold uppercase tracking-[0.16em] text-muted xl:inline">
-                      View
-                    </span>
-                    <densityOption.icon className="h-4 w-4" />
-                    <ChevronDown className="h-4 w-4 text-muted" />
-                  </button>
-                </>
-              ) : null}
-            </div>
-            <div className="min-w-0 shrink text-right text-sm text-muted">
-              <div className="truncate whitespace-nowrap">{workspaceSummary}</div>
-            </div>
-          </div>
-        </Panel>
+        <WorkspaceTabsBar
+          workspaceMode={workspaceMode}
+          workspaceSummary={workspaceSummary}
+          showDensityControl={showDensityControl}
+          densityOption={densityOption}
+          viewButtonRef={viewButtonRef}
+          onOpenViewMenu={openViewMenu}
+          onSetWorkspaceMode={setWorkspaceMode}
+        />
 
         <div className="flex min-h-0 flex-1 gap-4">
           <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4">
@@ -790,76 +706,30 @@ export function App() {
             />
           </div>
 
-          {showInspector && !rightCollapsed ? (
-            <ResizeHandle
-              label="Resize inspector"
-              active={inspectorResize.isResizing}
-              onPointerDown={inspectorResize.startResize(-1)}
-            />
-          ) : null}
-
-          {showInspector && rightCollapsed ? (
-            <CollapsedRail side="right" title="Inspector" onExpand={() => setRightCollapsed(false)} />
-          ) : null}
-
-          {showInspector && !rightCollapsed ? (
-            <div className="min-h-0 shrink-0 overflow-hidden" style={{ width: inspectorResize.size }}>
-              <Panel className="flex h-full flex-col overflow-hidden">
-                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-0">
-                  {inspectorContent}
-                </div>
-              </Panel>
-            </div>
-          ) : null}
+          <InspectorSidebar
+            showInspector={showInspector}
+            collapsed={rightCollapsed}
+            resize={inspectorResize}
+            inspectorContent={inspectorContent}
+            onExpand={() => setRightCollapsed(false)}
+          />
         </div>
       </div>
 
-      <div className="pointer-events-none fixed bottom-5 right-5 z-50 flex flex-col items-end gap-3">
-        {consultantDockOpen ? (
-          <div className="pointer-events-auto w-[min(440px,calc(100vw-2rem))]">
-            <Panel className="h-[min(72vh,680px)] overflow-hidden shadow-2xl shadow-black/40">
-              <div className="flex items-center justify-between border-b border-border/90 px-4 py-3">
-                <div className="text-sm font-semibold uppercase tracking-[0.16em] text-muted">
-                  Consultant
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button variant="ghost" size="sm" onClick={() => setWorkspaceMode('consultant')}>
-                    Full View
-                  </Button>
-                  <Button variant="ghost" size="sm" onClick={() => setConsultantDockOpen(false)}>
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-              <div className="h-[calc(100%-57px)] p-3">
-                <ConsultantWorkspace
-                  key="consultant-dock"
-                  settings={appSettings}
-                  messages={consultantMessages}
-                  busy={consultantBusy}
-                  activeBoardName={activeBoard?.name ?? null}
-                  contextMode={consultantContextMode}
-                  compact
-                  onChangeContextMode={setConsultantContextMode}
-                  onSend={(content) => void sendConsultantMessage(content)}
-                  onClear={clearConsultantConversation}
-                  onOpenSettings={openAppSettings}
-                />
-              </div>
-            </Panel>
-          </div>
-        ) : null}
-
-        <Button
-          className="pointer-events-auto h-12 rounded-full px-4 shadow-2xl shadow-black/35"
-          variant="accent"
-          size="md"
-          onClick={() => setConsultantDockOpen((current) => !current)}
-        >
-          <MessageCircle className="h-4 w-4" />
-          Consultant
-        </Button>
-      </div>
+      <ConsultantDock
+        open={consultantDockOpen}
+        settings={appSettings}
+        messages={consultantMessages}
+        busy={consultantBusy}
+        activeBoardName={activeBoard?.name ?? null}
+        contextMode={consultantContextMode}
+        onToggleOpen={() => setConsultantDockOpen((current) => !current)}
+        onOpenFullView={() => setWorkspaceMode('consultant')}
+        onChangeContextMode={setConsultantContextMode}
+        onSend={(content) => void sendConsultantMessage(content)}
+        onClear={clearConsultantConversation}
+        onOpenSettings={openAppSettings}
+      />
       <ContextMenu
         open={viewMenuOpen}
         x={viewMenuPosition.x}
