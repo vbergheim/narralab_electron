@@ -71,10 +71,6 @@ export type NotebookDocument = {
 
 export type GlobalUiState = {
   activeBoardId: string | null
-  selectedBoardId: string | null
-  selectedSceneId: string | null
-  selectedSceneIds: string[]
-  selectedBoardItemId: string | null
   selectedArchiveFolderId: string | null
   selectedTranscriptionItemId: string | null
 }

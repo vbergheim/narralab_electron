@@ -137,4 +137,31 @@ describe('WindowManager drag sessions', () => {
       },
     })
   })
+
+  it('uses shared active board state as the detached window default', async () => {
+    const browserFactory = vi.fn((input: { workspace: string }) => ({
+      webContents: {
+        id: 202,
+        isDestroyed: () => false,
+        send: vi.fn(),
+      },
+      on: vi.fn(),
+      isDestroyed: () => false,
+      getBounds: () => ({ x: 0, y: 0, width: 800, height: 600 }),
+      close: vi.fn(),
+      __workspace: input.workspace,
+    }))
+
+    windowManager = new WindowManager(
+      settingsService as never,
+      projectService as never,
+      browserFactory as never,
+    )
+
+    windowManager.updateGlobalUiState({ activeBoardId: 'board-42' })
+    const context = await windowManager.openWorkspace('outline')
+
+    expect(context.boardId).toBe('board-42')
+    expect(context.workspace).toBe('outline')
+  })
 })

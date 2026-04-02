@@ -21,10 +21,6 @@ type BrowserFactory = (input: BrowserFactoryInput) => BrowserWindow
 
 const DEFAULT_GLOBAL_UI_STATE: GlobalUiState = {
   activeBoardId: null,
-  selectedBoardId: null,
-  selectedSceneId: null,
-  selectedSceneIds: [],
-  selectedBoardItemId: null,
   selectedArchiveFolderId: null,
   selectedTranscriptionItemId: null,
 }

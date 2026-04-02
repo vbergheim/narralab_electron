@@ -393,18 +393,6 @@ export function parseGlobalUiStatePatch(value: unknown): Partial<GlobalUiState> 
   if (input.activeBoardId !== undefined) {
     next.activeBoardId = optionalNullableId(input.activeBoardId, 'Active board id') ?? null
   }
-  if (input.selectedBoardId !== undefined) {
-    next.selectedBoardId = optionalNullableId(input.selectedBoardId, 'Selected board id') ?? null
-  }
-  if (input.selectedSceneId !== undefined) {
-    next.selectedSceneId = optionalNullableId(input.selectedSceneId, 'Selected scene id') ?? null
-  }
-  if (input.selectedSceneIds !== undefined) {
-    next.selectedSceneIds = requireStringArray(input.selectedSceneIds, 'Selected scene ids')
-  }
-  if (input.selectedBoardItemId !== undefined) {
-    next.selectedBoardItemId = optionalNullableId(input.selectedBoardItemId, 'Selected board item id') ?? null
-  }
   if (input.selectedArchiveFolderId !== undefined) {
     next.selectedArchiveFolderId = optionalNullableId(input.selectedArchiveFolderId, 'Selected archive folder id') ?? null
   }

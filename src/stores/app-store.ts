@@ -772,13 +772,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         selectedSceneIds: [],
         selectedBoardItemId: null,
       }))
-      void window.narralab.windows.updateGlobalUiState({
-        activeBoardId: board.id,
-        selectedBoardId: board.id,
-        selectedSceneId: null,
-        selectedSceneIds: [],
-        selectedBoardItemId: null,
-      })
+      void window.narralab.windows.updateGlobalUiState({ activeBoardId: board.id })
     })
   },
 
@@ -834,10 +828,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         activeBoardId: nextActiveBoardId,
         selectedBoardId: state.selectedBoardId === boardId ? null : state.selectedBoardId,
       }))
-      void window.narralab.windows.updateGlobalUiState({
-        activeBoardId: nextActiveBoardId,
-        selectedBoardId: get().selectedBoardId === boardId ? null : get().selectedBoardId,
-      })
+      void window.narralab.windows.updateGlobalUiState({ activeBoardId: nextActiveBoardId })
     })
   },
 
@@ -1039,23 +1030,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
       selectedSceneIds: [],
       selectedBoardItemId: null,
     })
-    void window.narralab.windows.updateGlobalUiState({
-      activeBoardId: boardId,
-      selectedBoardId: boardId,
-      selectedSceneId: null,
-      selectedSceneIds: [],
-      selectedBoardItemId: null,
-    })
+    void window.narralab.windows.updateGlobalUiState({ activeBoardId: boardId })
   },
 
   selectScene(sceneId, boardItemId = null) {
     set({
-      selectedBoardId: null,
-      selectedSceneId: sceneId,
-      selectedSceneIds: sceneId ? [sceneId] : [],
-      selectedBoardItemId: boardItemId,
-    })
-    void window.narralab.windows.updateGlobalUiState({
       selectedBoardId: null,
       selectedSceneId: sceneId,
       selectedSceneIds: sceneId ? [sceneId] : [],
@@ -1077,13 +1056,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
         selectedBoardItemId: null,
       }
     })
-    const state = get()
-    void window.narralab.windows.updateGlobalUiState({
-      selectedBoardId: null,
-      selectedSceneId: state.selectedSceneId,
-      selectedSceneIds: state.selectedSceneIds,
-      selectedBoardItemId: null,
-    })
   },
 
   setSceneSelection(sceneIds) {
@@ -1091,12 +1063,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
       selectedBoardId: null,
       selectedSceneIds: sceneIds,
       selectedSceneId: sceneIds[0] ?? null,
-      selectedBoardItemId: null,
-    })
-    void window.narralab.windows.updateGlobalUiState({
-      selectedBoardId: null,
-      selectedSceneId: sceneIds[0] ?? null,
-      selectedSceneIds: sceneIds,
       selectedBoardItemId: null,
     })
   },
@@ -1107,12 +1073,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
       selectedSceneIds: [],
       selectedSceneId: null,
     })
-    void window.narralab.windows.updateGlobalUiState({
-      selectedBoardId: null,
-      selectedSceneIds: [],
-      selectedSceneId: null,
-      selectedBoardItemId: null,
-    })
   },
 
   setWorkspaceMode(workspaceMode) {
@@ -1121,19 +1081,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   setActiveBoard(activeBoardId) {
     set({ activeBoardId, selectedBoardId: null })
-    void window.narralab.windows.updateGlobalUiState({
-      activeBoardId,
-      selectedBoardId: null,
-    })
+    void window.narralab.windows.updateGlobalUiState({ activeBoardId })
   },
 
   applyGlobalUiState(input) {
     set((state) => ({
       activeBoardId: input.activeBoardId ?? state.activeBoardId,
-      selectedBoardId: input.selectedBoardId ?? state.selectedBoardId,
-      selectedSceneId: input.selectedSceneId ?? state.selectedSceneId,
-      selectedSceneIds: input.selectedSceneIds ?? state.selectedSceneIds,
-      selectedBoardItemId: input.selectedBoardItemId ?? state.selectedBoardItemId,
       selectedArchiveFolderId: input.selectedArchiveFolderId ?? state.selectedArchiveFolderId,
     }))
   },
@@ -1192,6 +1145,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         activeBoardId: board.id,
         selectedBoardId: null,
       }))
+      void window.narralab.windows.updateGlobalUiState({ activeBoardId: board.id })
     })
   },
 

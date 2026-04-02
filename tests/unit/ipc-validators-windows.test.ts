@@ -11,13 +11,11 @@ describe('parseGlobalUiStatePatch', () => {
     expect(
       parseGlobalUiStatePatch({
         activeBoardId: 'b1',
-        selectedSceneId: null,
-        selectedSceneIds: ['a', 'b'],
+        selectedArchiveFolderId: null,
       }),
     ).toEqual({
       activeBoardId: 'b1',
-      selectedSceneId: null,
-      selectedSceneIds: ['a', 'b'],
+      selectedArchiveFolderId: null,
     })
   })
 
