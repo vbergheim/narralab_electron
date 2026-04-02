@@ -4,7 +4,7 @@ import type { AppSettingsService } from './app-settings-service'
 import type { ProjectService } from './project-service'
 import type { AppSettings, SavedWindowLayout, WindowWorkspace } from '@/types/ai'
 import type { BoardViewMode } from '@/types/board'
-import type { GlobalUiState, WindowContext, WindowDragSession } from '@/types/project'
+import type { GlobalUiState, ProjectChangeScope, WindowContext, WindowDragSession } from '@/types/project'
 
 type WindowRecord = {
   browserWindow: BrowserWindow
@@ -21,17 +21,15 @@ type BrowserFactory = (input: BrowserFactoryInput) => BrowserWindow
 
 const DEFAULT_GLOBAL_UI_STATE: GlobalUiState = {
   activeBoardId: null,
-  selectedBoardId: null,
-  selectedSceneId: null,
-  selectedSceneIds: [],
-  selectedBoardItemId: null,
   selectedArchiveFolderId: null,
+  selectedTranscriptionItemId: null,
 }
 
 export class WindowManager {
   private readonly windows = new Map<number, WindowRecord>()
   private globalUiState: GlobalUiState = DEFAULT_GLOBAL_UI_STATE
   private dragSession: WindowDragSession = null
+  private projectRevision = 0
   private readonly settingsService: AppSettingsService
   private readonly projectService: ProjectService
   private readonly browserFactory: BrowserFactory
@@ -59,6 +57,10 @@ export class WindowManager {
 
   getContext(windowId: number): WindowContext {
     return this.windows.get(windowId)?.context ?? this.buildFallbackContext(windowId)
+  }
+
+  listContexts() {
+    return Array.from(this.windows.values()).map((record) => record.context)
   }
 
   updateContext(windowId: number, input: Partial<Pick<WindowContext, 'boardId' | 'viewMode' | 'sceneDensity'>>) {
@@ -145,15 +147,23 @@ export class WindowManager {
     return this.globalUiState
   }
 
-  notifyProjectChanged() {
+  notifyProjectChanged(scopes: ProjectChangeScope[] = ['all']) {
+    const normalizedScopes = normalizeProjectChangeScopes(scopes)
     const meta = this.projectService.getMeta()
-    if (meta) {
+    if (meta && (normalizedScopes.includes('all') || normalizedScopes.includes('meta'))) {
       this.settingsService.updateSettings({ lastProjectPath: meta.path })
     }
 
     this.dragSession = null
+    this.projectRevision += 1
 
-    this.broadcast({ type: 'project-changed' })
+    this.broadcast({
+      type: 'project-changed',
+      payload: {
+        revision: this.projectRevision,
+        scopes: normalizedScopes,
+      },
+    })
   }
 
   listLayouts() {
@@ -341,7 +351,7 @@ export class WindowManager {
 
   private broadcast(
     event:
-      | { type: 'project-changed' }
+      | { type: 'project-changed'; payload: { revision: number; scopes: ProjectChangeScope[] } }
       | { type: 'window-context'; payload: WindowContext }
       | { type: 'global-ui-state'; payload: GlobalUiState }
       | { type: 'drag-session'; payload: WindowDragSession },
@@ -384,21 +394,39 @@ function clampBounds(
 }
 
 function workspaceLabel(workspace: WindowWorkspace) {
+  if (workspace === 'board-manager') return 'Board Manager'
+  if (workspace === 'transcribe') return 'Transcribe'
   return workspace.charAt(0).toUpperCase() + workspace.slice(1)
 }
 
 function normalizeDragSession(session: WindowDragSession): WindowDragSession {
-  if (!session || session.kind !== 'scene') {
+  if (!session) {
     return null
   }
 
-  const sceneIds = session.sceneIds.filter((value) => typeof value === 'string' && value.trim().length > 0)
-  if (sceneIds.length === 0) {
-    return null
+  if (session.kind === 'scene') {
+    const sceneIds = session.sceneIds.filter((value) => typeof value === 'string' && value.trim().length > 0)
+    if (sceneIds.length === 0) {
+      return null
+    }
+    return { kind: 'scene', sceneIds }
   }
 
-  return {
-    kind: 'scene',
-    sceneIds,
+  if (session.kind === 'transcription') {
+    const itemIds = session.itemIds.filter((value) => typeof value === 'string' && value.startsWith('tx_item_'))
+    if (itemIds.length === 0) {
+      return null
+    }
+    return { kind: 'transcription', itemIds }
   }
+
+  return null
+}
+
+function normalizeProjectChangeScopes(scopes: ProjectChangeScope[]): ProjectChangeScope[] {
+  if (scopes.length === 0) {
+    return ['all']
+  }
+
+  return [...new Set(scopes)]
 }

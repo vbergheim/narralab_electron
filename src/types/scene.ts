@@ -41,6 +41,9 @@ export type Scene = {
   characters: string[]
   function: string
   sourceReference: string
+  quoteMoment: string
+  quality: string
+  sourcePaths: string[]
   createdAt: string
   updatedAt: string
   tagIds: string[]

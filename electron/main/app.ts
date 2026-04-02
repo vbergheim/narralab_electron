@@ -5,6 +5,7 @@ import { app, BrowserWindow, nativeImage } from 'electron'
 
 import { AIConsultantService } from './ai-consultant-service'
 import { AppSettingsService } from './app-settings-service'
+import { buildBrowserWindowOptions, isAllowedAppNavigation } from './browser-window-policy'
 import { registerIpc } from './ipc'
 import { ProjectService } from './project-service'
 import { WindowManager } from './window-manager'
@@ -33,33 +34,35 @@ function createMainWindow() {
 
 function createBrowserWindow(input: {
   title: string
-  workspace: 'main' | 'outline' | 'bank' | 'inspector' | 'notebook' | 'archive'
+  workspace:
+    | 'main'
+    | 'outline'
+    | 'bank'
+    | 'inspector'
+    | 'notebook'
+    | 'archive'
+    | 'board-manager'
+    | 'transcribe'
   bounds?: { x: number; y: number; width: number; height: number }
 }) {
   const iconPath = resolveRuntimeIconPath()
   const runtimeRoot = app.isPackaged ? app.getAppPath() : process.cwd()
   const preloadPath = path.join(runtimeRoot, 'dist-electron', 'index.js')
-  const isMainWindow = input.workspace === 'main'
-  const minWidth = isMainWindow ? 980 : 220
-  const minHeight = isMainWindow ? 720 : 180
-  const browserWindow = new BrowserWindow({
-    width: input.bounds?.width ?? 1600,
-    height: input.bounds?.height ?? 980,
-    x: input.bounds?.x,
-    y: input.bounds?.y,
-    minWidth,
-    minHeight,
-    backgroundColor: '#0f1117',
-    icon: iconPath,
-    title: input.title,
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 18, y: 18 },
-    webPreferences: {
-      preload: preloadPath,
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false,
-    },
+  const browserWindow = new BrowserWindow(
+    buildBrowserWindowOptions({
+      title: input.title,
+      workspace: input.workspace,
+      preloadPath,
+      icon: iconPath,
+      bounds: input.bounds,
+    }),
+  )
+
+  browserWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  browserWindow.webContents.on('will-navigate', (event, navigationUrl) => {
+    if (!isAllowedAppNavigation(navigationUrl, process.env.VITE_DEV_SERVER_URL)) {
+      event.preventDefault()
+    }
   })
 
   if (process.env.VITE_DEV_SERVER_URL) {
@@ -71,7 +74,6 @@ function createBrowserWindow(input: {
 
   return browserWindow
 }
-
 app.on('open-file', (event, filePath) => {
   event.preventDefault()
   pendingProjectToOpen = filePath

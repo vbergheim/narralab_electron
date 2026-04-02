@@ -1,10 +1,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { randomUUID } from 'node:crypto'
 
 import { app, dialog, shell } from 'electron'
 
-import { clampKeyRating } from '@/lib/scene-rating'
 import type { ArchiveFolder, ArchiveItem, ArchiveItemUpdateInput } from '@/types/archive'
 import type {
   AddSceneToBoardResult,
@@ -20,114 +18,69 @@ import type {
 import type {
   BoardScriptExportFormat,
   NotebookDocument,
-  NotebookTab,
   ProjectMeta,
   ProjectSettings,
   ProjectSettingsUpdateInput,
   ProjectSnapshot,
-  ProjectSnapshotV1,
-  ProjectSnapshotV7,
   ShootLogImportResult,
 } from '@/types/project'
 import type { Scene, SceneBeat, SceneBeatUpdateInput, SceneFolder, SceneUpdateInput } from '@/types/scene'
 import type { Tag, TagType } from '@/types/tag'
+import type { TranscriptionFolder, TranscriptionItem, TranscriptionItemUpdateInput } from '@/types/transcription'
 
 import { openProjectDatabase, type ProjectDatabase } from './db/connection'
 import { ArchiveRepository } from './db/repositories/archive-repository'
 import { BoardRepository } from './db/repositories/board-repository'
+import { ProjectMetadataRepository } from './db/repositories/project-metadata-repository'
+import {
+  buildFolderPath,
+  getFolderNameFromPath,
+  isFolderWithinPath,
+  makeFolderRecord,
+  normalizeFolderPath,
+  normalizeNullableFolderPath,
+  normalizeStoredFolders,
+  parseStoredFolders,
+  replaceFolderPathPrefix,
+} from './folder-utils'
+import { NotebookService } from './notebook-service'
+import {
+  defaultProjectSettings,
+  normalizeBlockKindList,
+  normalizeStoredBoardView,
+  parseBlockKindList,
+  ProjectExchangeService,
+} from './project-exchange'
 import { SceneRepository } from './db/repositories/scene-repository'
 import { TagRepository } from './db/repositories/tag-repository'
+import { TranscriptionLibraryRepository } from './db/repositories/transcription-library-repository'
 import { importShootLogWorkbook } from './shoot-log-import'
-
-const NOTEBOOK_META_KEY = 'project_notebooks_v1'
-
-function notebookTabId(): string {
-  return randomUUID()
-}
-
-function emptyNotebookDocument(): NotebookDocument {
-  const id = notebookTabId()
-  return {
-    tabs: [{ id, title: 'Notes', contentHtml: '', updatedAt: null }],
-    activeTabId: id,
-    updatedAt: null,
-  }
-}
-
-function plainTextToHtml(text: string): string {
-  if (!text.trim()) return ''
-  const escaped = text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-  return escaped
-    .split(/\n/)
-    .map((line) => `<p>${line || '<br>'}</p>`)
-    .join('')
-}
-
-function aggregateNotebookTabTimes(tabs: NotebookTab[]): string | null {
-  const times = tabs.map((t) => t.updatedAt).filter(Boolean) as string[]
-  if (times.length === 0) return null
-  return [...times].sort().at(-1) ?? null
-}
-
-function migrateLegacyNotebookContent(content: string, updatedAt: string | null): NotebookDocument {
-  const id = notebookTabId()
-  return {
-    tabs: [{ id, title: 'Notes', contentHtml: plainTextToHtml(content), updatedAt }],
-    activeTabId: id,
-    updatedAt,
-  }
-}
-
-function sanitizeNotebookDocument(doc: NotebookDocument): NotebookDocument {
-  if (!doc.tabs || doc.tabs.length === 0) {
-    return emptyNotebookDocument()
-  }
-  const tabs = doc.tabs.map((t) => ({
-    id: typeof t.id === 'string' ? t.id : notebookTabId(),
-    title: typeof t.title === 'string' && t.title.trim() ? t.title.trim().slice(0, 200) : 'Untitled',
-    contentHtml: typeof t.contentHtml === 'string' ? t.contentHtml : '',
-    updatedAt: typeof t.updatedAt === 'string' ? t.updatedAt : null,
-  }))
-  let activeTabId = typeof doc.activeTabId === 'string' ? doc.activeTabId : null
-  if (!activeTabId || !tabs.some((t) => t.id === activeTabId)) {
-    activeTabId = tabs[0].id
-  }
-  const updatedAt = aggregateNotebookTabTimes(tabs)
-  return { tabs, activeTabId, updatedAt }
-}
-
-function normalizeNotebookFromSnapshot(notebook: unknown): NotebookDocument {
-  if (
-    notebook &&
-    typeof notebook === 'object' &&
-    Array.isArray((notebook as NotebookDocument).tabs) &&
-    (notebook as NotebookDocument).tabs!.length > 0
-  ) {
-    return sanitizeNotebookDocument(notebook as NotebookDocument)
-  }
-  if (notebook && typeof notebook === 'object' && typeof (notebook as { content?: unknown }).content === 'string') {
-    return migrateLegacyNotebookContent(
-      (notebook as { content: string }).content,
-      (notebook as { updatedAt?: string | null }).updatedAt ?? null,
-    )
-  }
-  return emptyNotebookDocument()
-}
 
 type Repositories = {
   archive: ArchiveRepository
   scenes: SceneRepository
   boards: BoardRepository
   tags: TagRepository
+  metadata: ProjectMetadataRepository
+  notebook: NotebookService
+  transcriptionLibrary: TranscriptionLibraryRepository
 }
 
 export class ProjectService {
   private db: ProjectDatabase | null = null
   private repositories: Repositories | null = null
   private currentPath: string | null = null
+  private readonly exchangeService = new ProjectExchangeService({
+    ensureDatabase: () => this.ensureDatabase(),
+    getMeta: () => this.getMeta(),
+    getProjectSettings: () => this.getProjectSettings(),
+    listScenes: () => this.listScenes(),
+    listTags: () => this.listTags(),
+    listBoards: () => this.listBoards(),
+    getNotebook: () => this.getNotebook(),
+    updateProjectSettings: (input) => this.updateProjectSettings(input),
+    updateNotebook: (document) => this.updateNotebook(document),
+  })
 
   async createProject(requestedPath?: string | null) {
     const filePath = normalizeProjectFilePath(requestedPath ?? (await this.pickSavePath('Create Project')))
@@ -178,7 +131,7 @@ export class ProjectService {
 
     if (!targetPath) return null
 
-    const snapshot = this.getSnapshot()
+    const snapshot = this.exchangeService.getSnapshot()
     fs.writeFileSync(targetPath, JSON.stringify(snapshot, null, 2), 'utf8')
     return targetPath
   }
@@ -210,7 +163,7 @@ export class ProjectService {
 
     if (!targetPath) return null
 
-    const content = buildBoardScript(board, this.listScenes(), format)
+    const content = this.exchangeService.renderBoardScript(board, format)
     fs.writeFileSync(targetPath, content, 'utf8')
     return targetPath
   }
@@ -241,7 +194,7 @@ export class ProjectService {
       throw new Error('Filen er ikke gyldig JSON.')
     }
 
-    this.replaceWithSnapshot(snapshot)
+    this.exchangeService.replaceWithSnapshot(snapshot)
     return this.getMeta()
   }
 
@@ -421,10 +374,216 @@ export class ProjectService {
     }
   }
 
+  async saveTranscriptionToArchive(name: string, content: string): Promise<ArchiveItem | null> {
+    const meta = this.getMeta()
+    const fileName = `${sanitizeFileName(name || 'transcript')}.md`
+    const defaultPath = meta?.path ? path.join(path.dirname(meta.path), fileName) : fileName
+
+    const res = await dialog.showSaveDialog({
+      title: 'Save Transcript to Archive',
+      defaultPath,
+      filters: [{ name: 'Markdown', extensions: ['md'] }],
+    })
+
+    if (res.canceled || !res.filePath) {
+      return null
+    }
+
+    const filePath = res.filePath
+    await fs.promises.writeFile(filePath, content, 'utf8')
+
+    const added = this.ensureRepositories().archive.addFiles([filePath])
+    return added[0] ?? null
+  }
+
   revealArchiveItem(itemId: string): void {
     const item = this.listArchiveItems().find((entry) => entry.id === itemId)
     if (!item) throw new Error('Archive item not found')
     shell.showItemInFolder(item.filePath)
+  }
+
+  listTranscriptionFolders(): TranscriptionFolder[] {
+    const storedValue = this.ensureRepositories().metadata.getTranscriptionFolders()
+    const storedFolders = parseStoredFolders<TranscriptionFolder>(storedValue)
+    const itemFolderPaths = Array.from(
+      new Set(
+        this.listTranscriptionItems()
+          .map((item) => item.folder.trim())
+          .filter(Boolean),
+      ),
+    )
+
+    const merged = [...storedFolders]
+    itemFolderPaths.forEach((folderPath) => {
+      const normalizedPath = normalizeFolderPath(folderPath)
+      if (!normalizedPath) return
+      if (!merged.some((folder) => folder.path.toLowerCase() === normalizedPath.toLowerCase())) {
+        merged.push(makeFolderRecord<TranscriptionFolder>(normalizedPath, 'slate', merged.length))
+      }
+    })
+
+    return normalizeStoredFolders(merged)
+  }
+
+  createTranscriptionFolder(name: string, parentPath?: string | null): TranscriptionFolder[] {
+    const nextName = name.trim()
+    if (!nextName) {
+      throw new Error('Folder name cannot be empty')
+    }
+
+    const folders = this.listTranscriptionFolders()
+    const normalizedParentPath = normalizeNullableFolderPath(parentPath)
+    if (normalizedParentPath && !folders.some((folder) => folder.path.toLowerCase() === normalizedParentPath.toLowerCase())) {
+      throw new Error('Parent folder not found')
+    }
+
+    const nextPath = buildFolderPath(nextName, normalizedParentPath)
+    if (folders.some((folder) => folder.path.toLowerCase() === nextPath.toLowerCase())) {
+      return folders
+    }
+
+    const nextFolders = normalizeStoredFolders([...folders, makeFolderRecord<TranscriptionFolder>(nextPath, 'slate', folders.length)])
+    this.setTranscriptionFolders(nextFolders)
+    return nextFolders
+  }
+
+  updateTranscriptionFolder(
+    currentPath: string,
+    input: { name?: string; color?: Scene['color']; parentPath?: string | null },
+  ): TranscriptionFolder[] {
+    const previousPath = normalizeFolderPath(currentPath)
+    const requestedName = input.name?.trim()
+    if (!previousPath) {
+      throw new Error('Folder name cannot be empty')
+    }
+
+    const folders = this.listTranscriptionFolders()
+    const current = folders.find((folder) => folder.path.toLowerCase() === previousPath.toLowerCase())
+    if (!current) {
+      throw new Error('Folder not found')
+    }
+
+    const nextName = requestedName || current.name
+    if (!nextName) {
+      throw new Error('Folder name cannot be empty')
+    }
+
+    const normalizedParentPath =
+      input.parentPath === undefined ? current.parentPath : normalizeNullableFolderPath(input.parentPath)
+
+    if (
+      normalizedParentPath &&
+      (normalizedParentPath.toLowerCase() === previousPath.toLowerCase() ||
+        normalizedParentPath.toLowerCase().startsWith(`${previousPath.toLowerCase()}/`))
+    ) {
+      throw new Error('Cannot move a folder into itself')
+    }
+
+    if (
+      normalizedParentPath &&
+      !folders.some(
+        (folder) =>
+          folder.path.toLowerCase() === normalizedParentPath.toLowerCase() &&
+          folder.path.toLowerCase() !== previousPath.toLowerCase(),
+      )
+    ) {
+      throw new Error('Parent folder not found')
+    }
+
+    const nextPath = buildFolderPath(nextName, normalizedParentPath)
+    if (
+      previousPath.toLowerCase() !== nextPath.toLowerCase() &&
+      folders.some((folder) => folder.path.toLowerCase() === nextPath.toLowerCase())
+    ) {
+      throw new Error('A folder with that name already exists')
+    }
+
+    const nextFolders = normalizeStoredFolders(
+      folders.map((folder) =>
+        isFolderWithinPath(folder.path, previousPath)
+          ? {
+              ...folder,
+              path: replaceFolderPathPrefix(folder.path, previousPath, nextPath),
+              parentPath: folder.parentPath
+                ? replaceFolderPathPrefix(folder.parentPath, previousPath, nextPath)
+                : null,
+              name: getFolderNameFromPath(replaceFolderPathPrefix(folder.path, previousPath, nextPath)),
+              color: folder.path.toLowerCase() === previousPath.toLowerCase() ? input.color ?? current.color : folder.color,
+            }
+          : folder,
+      ),
+    )
+
+    const items = this.listTranscriptionItems().filter((item) => isFolderWithinPath(item.folder, previousPath))
+    items.forEach((item) => {
+      this.ensureRepositories().transcriptionLibrary.updateItem({
+        id: item.id,
+        folder: replaceFolderPathPrefix(item.folder, previousPath, nextPath),
+      })
+    })
+
+    this.setTranscriptionFolders(nextFolders)
+    return nextFolders
+  }
+
+  deleteTranscriptionFolder(currentPath: string): TranscriptionFolder[] {
+    const previousPath = normalizeFolderPath(currentPath)
+    if (!previousPath) {
+      throw new Error('Folder name cannot be empty')
+    }
+
+    const folders = this.listTranscriptionFolders()
+    const current = folders.find((folder) => folder.path.toLowerCase() === previousPath.toLowerCase())
+    if (!current) {
+      throw new Error('Folder not found')
+    }
+
+    const nextFolders = normalizeStoredFolders(
+      folders.filter((folder) => !isFolderWithinPath(folder.path, previousPath)),
+    )
+
+    const items = this.listTranscriptionItems().filter((item) => isFolderWithinPath(item.folder, previousPath))
+    items.forEach((item) => {
+      this.ensureRepositories().transcriptionLibrary.updateItem({ id: item.id, folder: '' })
+    })
+
+    this.setTranscriptionFolders(nextFolders)
+    return nextFolders
+  }
+
+  listTranscriptionItems(): TranscriptionItem[] {
+    return this.ensureRepositories().transcriptionLibrary.listItems()
+  }
+
+  createTranscriptionItem(input: {
+    name: string
+    content: string
+    folder?: string
+    sourceFilePath?: string | null
+  }): TranscriptionItem {
+    const folder = normalizeFolderPath(input.folder)
+    if (folder) {
+      this.ensureTranscriptionFolder(folder)
+    }
+    return this.ensureRepositories().transcriptionLibrary.createItem({
+      ...input,
+      folder,
+    })
+  }
+
+  updateTranscriptionItem(input: TranscriptionItemUpdateInput): TranscriptionItem {
+    if (input.folder !== undefined) {
+      const next = normalizeFolderPath(input.folder)
+      if (next) {
+        this.ensureTranscriptionFolder(next)
+      }
+      return this.ensureRepositories().transcriptionLibrary.updateItem({ ...input, folder: next })
+    }
+    return this.ensureRepositories().transcriptionLibrary.updateItem(input)
+  }
+
+  deleteTranscriptionItem(itemId: string): void {
+    this.ensureRepositories().transcriptionLibrary.deleteItem(itemId)
   }
 
   createScene(): Scene {
@@ -463,10 +622,8 @@ export class ProjectService {
   }
 
   listSceneFolders(): SceneFolder[] {
-    const db = this.ensureDatabase()
-    const readMeta = db.prepare('SELECT value FROM app_meta WHERE key = ?')
-    const storedValue = (readMeta.get('scene_folders') as { value: string } | undefined)?.value
-    const storedFolders = parseSceneFolders(storedValue)
+    const storedValue = this.ensureRepositories().metadata.getSceneFolders()
+    const storedFolders = parseStoredFolders<SceneFolder>(storedValue)
     const sceneFolderPaths = Array.from(
       new Set(
         this.listScenes()
@@ -480,11 +637,11 @@ export class ProjectService {
       const normalizedPath = normalizeFolderPath(path)
       if (!normalizedPath) return
       if (!merged.some((folder) => folder.path.toLowerCase() === normalizedPath.toLowerCase())) {
-        merged.push(makeFolderRecord(normalizedPath, 'slate', merged.length))
+        merged.push(makeFolderRecord<SceneFolder>(normalizedPath, 'slate', merged.length))
       }
     })
 
-    return normalizeSceneFolders(merged)
+    return normalizeStoredFolders(merged)
   }
 
   createSceneFolder(name: string, parentPath?: string | null): SceneFolder[] {
@@ -504,7 +661,7 @@ export class ProjectService {
       return folders
     }
 
-    const nextFolders = normalizeSceneFolders([...folders, makeFolderRecord(nextPath, 'slate', folders.length)])
+    const nextFolders = normalizeStoredFolders([...folders, makeFolderRecord<SceneFolder>(nextPath, 'slate', folders.length)])
     this.setSceneFolders(nextFolders)
     return nextFolders
   }
@@ -557,7 +714,7 @@ export class ProjectService {
       throw new Error('A folder with that name already exists')
     }
 
-    const nextFolders = normalizeSceneFolders(
+    const nextFolders = normalizeStoredFolders(
       folders.map((folder) =>
         isFolderWithinPath(folder.path, previousPath)
           ? {
@@ -597,7 +754,7 @@ export class ProjectService {
       throw new Error('Folder not found')
     }
 
-    const nextFolders = normalizeSceneFolders(
+    const nextFolders = normalizeStoredFolders(
       folders.filter((folder) => !isFolderWithinPath(folder.path, previousPath)),
     )
 
@@ -665,9 +822,7 @@ export class ProjectService {
   }
 
   listBlockTemplates(): BlockTemplate[] {
-    const db = this.ensureDatabase()
-    const readMeta = db.prepare('SELECT value FROM app_meta WHERE key = ?')
-    const storedValue = (readMeta.get('block_templates') as { value: string } | undefined)?.value
+    const storedValue = this.ensureRepositories().metadata.getBlockTemplates()
     return parseBlockTemplates(storedValue)
   }
 
@@ -700,10 +855,8 @@ export class ProjectService {
   }
 
   listBoardFolders(): BoardFolder[] {
-    const db = this.ensureDatabase()
-    const readMeta = db.prepare('SELECT value FROM app_meta WHERE key = ?')
-    const storedValue = (readMeta.get('board_folders') as { value: string } | undefined)?.value
-    const storedFolders = parseBoardFolders(storedValue)
+    const storedValue = this.ensureRepositories().metadata.getBoardFolders()
+    const storedFolders = parseStoredFolders<BoardFolder>(storedValue)
     const boardFolderPaths = Array.from(
       new Set(
         this.listBoards()
@@ -717,11 +870,11 @@ export class ProjectService {
       const normalizedPath = normalizeFolderPath(path)
       if (!normalizedPath) return
       if (!merged.some((folder) => folder.path.toLowerCase() === normalizedPath.toLowerCase())) {
-        merged.push(makeFolderRecord(normalizedPath, 'slate', merged.length))
+        merged.push(makeFolderRecord<BoardFolder>(normalizedPath, 'slate', merged.length))
       }
     })
 
-    return normalizeBoardFolders(merged)
+    return normalizeStoredFolders(merged)
   }
 
   createBoardFolder(name: string, parentPath?: string | null): BoardFolder[] {
@@ -741,7 +894,7 @@ export class ProjectService {
       return folders
     }
 
-    const nextFolders = normalizeBoardFolders([...folders, makeFolderRecord(nextPath, 'slate', folders.length)])
+    const nextFolders = normalizeStoredFolders([...folders, makeFolderRecord<BoardFolder>(nextPath, 'slate', folders.length)])
     this.setBoardFolders(nextFolders)
     return nextFolders
   }
@@ -798,7 +951,7 @@ export class ProjectService {
       throw new Error('A folder with that name already exists')
     }
 
-    const nextFolders = normalizeBoardFolders(
+    const nextFolders = normalizeStoredFolders(
       folders.map((folder) =>
         isFolderWithinPath(folder.path, previousPath)
           ? {
@@ -838,7 +991,7 @@ export class ProjectService {
       throw new Error('Folder not found')
     }
 
-    const nextFolders = normalizeBoardFolders(
+    const nextFolders = normalizeStoredFolders(
       folders.filter((folder) => !isFolderWithinPath(folder.path, previousPath)),
     )
 
@@ -875,55 +1028,12 @@ export class ProjectService {
     return this.ensureRepositories().boards.updateItem(input)
   }
 
-  getSnapshot(): ProjectSnapshotV7 {
-    return {
-      schemaVersion: 7,
-      exportedAt: new Date().toISOString(),
-      project: this.getMeta(),
-      projectSettings: this.getProjectSettings(),
-      scenes: this.listScenes(),
-      tags: this.listTags(),
-      boards: this.listBoards(),
-      notebook: this.getNotebook(),
-    }
+  getSnapshot() {
+    return this.exchangeService.getSnapshot()
   }
 
   getConsultantContext(activeBoardId: string | null) {
-    const meta = this.getMeta()
-    if (!meta) {
-      return 'No project is currently open.'
-    }
-
-    const boards = this.listBoards()
-    const activeBoard = boards.find((board) => board.id === activeBoardId) ?? boards[0] ?? null
-    if (!activeBoard) {
-      return 'No active board.'
-    }
-
-    const scenes = this.listScenes()
-    const tags = this.listTags()
-    const sceneMap = new Map(scenes.map((scene) => [scene.id, scene]))
-    const tagMap = new Map(tags.map((tag) => [tag.id, tag.name]))
-    const boardLines = activeBoard.items.slice(0, 40).map((item, index) => {
-      if (item.kind === 'scene') {
-        const scene = sceneMap.get(item.sceneId)
-        if (!scene) {
-          return `${index + 1}. [Missing scene]`
-        }
-
-        const tagNames = scene.tagIds.map((id) => tagMap.get(id)).filter(Boolean)
-        return `${index + 1}. Scene: ${scene.title || 'Untitled'} | Synopsis: ${trimForConsultant(scene.synopsis, 140)} | Category: ${scene.category || '-'} | Key rating: ${normalizeSceneKeyRating(scene)}/5 | Tags: ${tagNames.join(', ') || '-'}`
-      }
-
-      return `${index + 1}. ${item.kind}: ${trimForConsultant(item.title || item.body, 140)}`
-    })
-
-    return [
-      `Project: ${meta.name}`,
-      `Active board: ${activeBoard.name}`,
-      'Outline:',
-      ...boardLines,
-    ].join('\n')
+    return this.exchangeService.getConsultantContext(activeBoardId)
   }
 
   close() {
@@ -937,152 +1047,28 @@ export class ProjectService {
     this.close()
     this.currentPath = filePath
     this.db = openProjectDatabase(filePath)
+    const metadata = new ProjectMetadataRepository(this.db)
     this.repositories = {
       archive: new ArchiveRepository(this.db),
       scenes: new SceneRepository(this.db),
       boards: new BoardRepository(this.db),
       tags: new TagRepository(this.db),
+      metadata,
+      notebook: new NotebookService(metadata),
+      transcriptionLibrary: new TranscriptionLibraryRepository(this.db),
     }
-  }
-
-  private replaceWithSnapshot(rawSnapshot: ProjectSnapshot) {
-    const snapshot = normalizeSnapshot(rawSnapshot)
-    const db = this.ensureDatabase()
-
-    const replace = db.transaction(() => {
-      db.exec(`
-        DELETE FROM scene_tags;
-        DELETE FROM scene_beats;
-        DELETE FROM board_items;
-        DELETE FROM boards;
-        DELETE FROM tags;
-        DELETE FROM scenes;
-      `)
-
-      const insertScene = db.prepare(`
-        INSERT INTO scenes (
-          id, sort_order, title, synopsis, notes, color, status, is_key_scene, folder, category,
-          estimated_duration, actual_duration, location, characters,
-          function, source_reference, created_at, updated_at
-        ) VALUES (
-          @id, @sortOrder, @title, @synopsis, @notes, @color, @status, @keyRating, @folder, @category,
-          @estimatedDuration, @actualDuration, @location, @characters,
-          @function, @sourceReference, @createdAt, @updatedAt
-        )
-      `)
-
-      const insertTag = db.prepare('INSERT INTO tags (id, name, type) VALUES (@id, @name, @type)')
-      const insertSceneTag = db.prepare('INSERT INTO scene_tags (scene_id, tag_id) VALUES (?, ?)')
-      const insertSceneBeat = db.prepare(`
-        INSERT INTO scene_beats (
-          id, scene_id, sort_order, text, created_at, updated_at
-        ) VALUES (
-          @id, @sceneId, @sortOrder, @text, @createdAt, @updatedAt
-        )
-      `)
-      const insertBoard = db.prepare(
-        'INSERT INTO boards (id, name, description, color, folder, sort_order, created_at, updated_at) VALUES (@id, @name, @description, @color, @folder, @sortOrder, @createdAt, @updatedAt)',
-      )
-      const insertBoardItem = db.prepare(`
-        INSERT INTO board_items (
-          id, board_id, scene_id, kind, title, body, color, position, board_x, board_y, board_w, board_h, created_at, updated_at
-        ) VALUES (
-          @id, @boardId, @sceneId, @kind, @title, @body, @color, @position, @boardX, @boardY, @boardW, @boardH, @createdAt, @updatedAt
-        )
-      `)
-
-      snapshot.scenes.forEach((scene, index) => {
-        insertScene.run({
-          ...scene,
-          sortOrder: scene.sortOrder ?? index,
-          folder: scene.folder ?? '',
-          keyRating: normalizeSceneKeyRating(scene),
-          characters: JSON.stringify(scene.characters),
-        })
-        scene.tagIds.forEach((tagId) => {
-          insertSceneTag.run(scene.id, tagId)
-        })
-        scene.beats.forEach((beat, beatIndex) => {
-          insertSceneBeat.run({
-            ...beat,
-            sceneId: scene.id,
-            sortOrder: beat.sortOrder ?? beatIndex,
-            text: beat.text ?? '',
-            createdAt: beat.createdAt ?? scene.createdAt,
-            updatedAt: beat.updatedAt ?? scene.updatedAt,
-          })
-        })
-      })
-
-      snapshot.tags.forEach((tag) => insertTag.run(tag))
-      snapshot.boards.forEach((board) => {
-        insertBoard.run(board)
-        board.items.forEach((item) => {
-          insertBoardItem.run({
-            ...item,
-            sceneId: item.kind === 'scene' ? item.sceneId : null,
-            title: item.kind === 'scene' ? '' : item.title,
-            body: item.kind === 'scene' ? '' : item.body,
-            color: item.kind === 'scene' ? 'charcoal' : item.color,
-            boardX: item.boardX ?? item.position * 320,
-            boardY: item.boardY ?? 0,
-            boardW: item.boardW ?? (item.kind === 'scene' ? 300 : 260),
-            boardH: item.boardH ?? (item.kind === 'scene' ? 132 : 108),
-          })
-        })
-      })
-
-      this.setNotebookDocument(normalizeNotebookFromSnapshot(snapshot.notebook))
-      this.updateProjectSettings(snapshot.projectSettings)
-    })
-
-    replace()
   }
 
   getNotebook(): NotebookDocument {
-    const db = this.ensureDatabase()
-    const readMeta = db.prepare('SELECT value FROM app_meta WHERE key = ?')
-    const json = (readMeta.get(NOTEBOOK_META_KEY) as { value: string } | undefined)?.value
-    if (json) {
-      try {
-        const parsed = JSON.parse(json) as NotebookDocument
-        return sanitizeNotebookDocument(parsed)
-      } catch {
-        // fall through to legacy
-      }
-    }
-
-    const content = (readMeta.get('project_notebook') as { value: string } | undefined)?.value ?? ''
-    const updatedAt =
-      (readMeta.get('project_notebook_updated_at') as { value: string } | undefined)?.value ?? null
-
-    if (content || updatedAt) {
-      return migrateLegacyNotebookContent(content, updatedAt)
-    }
-
-    return emptyNotebookDocument()
+    return this.ensureRepositories().notebook.get()
   }
 
   updateNotebook(document: NotebookDocument): NotebookDocument {
-    return this.setNotebookDocument(sanitizeNotebookDocument(document))
+    return this.ensureRepositories().notebook.update(document)
   }
 
-  private setNotebookDocument(document: NotebookDocument): NotebookDocument {
-    const normalized = sanitizeNotebookDocument(document)
-    normalized.updatedAt = aggregateNotebookTabTimes(normalized.tabs)
-    const db = this.ensureDatabase()
-    const upsertMeta = db.prepare(`
-      INSERT INTO app_meta (key, value)
-      VALUES (?, ?)
-      ON CONFLICT(key) DO UPDATE SET value = excluded.value
-    `)
-    const deleteMeta = db.prepare('DELETE FROM app_meta WHERE key = ?')
-
-    upsertMeta.run(NOTEBOOK_META_KEY, JSON.stringify(normalized))
-    deleteMeta.run('project_notebook')
-    deleteMeta.run('project_notebook_updated_at')
-
-    return normalized
+  appendNotebookPlainText(text: string): NotebookDocument {
+    return this.ensureRepositories().notebook.appendPlainText(text)
   }
 
   private ensureBoardFolder(path: string) {
@@ -1094,7 +1080,7 @@ export class ProjectService {
       return
     }
 
-    this.setBoardFolders([...folders, makeFolderRecord(nextPath, 'slate', folders.length)])
+    this.setBoardFolders([...folders, makeFolderRecord<BoardFolder>(nextPath, 'slate', folders.length)])
   }
 
   private ensureSceneFolder(path: string) {
@@ -1110,33 +1096,33 @@ export class ProjectService {
   }
 
   private setBoardFolders(folders: BoardFolder[]) {
-    const db = this.ensureDatabase()
-    const upsertMeta = db.prepare(`
-      INSERT INTO app_meta (key, value)
-      VALUES (?, ?)
-      ON CONFLICT(key) DO UPDATE SET value = excluded.value
-    `)
-    upsertMeta.run('board_folders', JSON.stringify(normalizeBoardFolders(folders)))
+    this.ensureRepositories().metadata.setBoardFolders(JSON.stringify(normalizeStoredFolders(folders)))
   }
 
   private setSceneFolders(folders: SceneFolder[]) {
-    const db = this.ensureDatabase()
-    const upsertMeta = db.prepare(`
-      INSERT INTO app_meta (key, value)
-      VALUES (?, ?)
-      ON CONFLICT(key) DO UPDATE SET value = excluded.value
-    `)
-    upsertMeta.run('scene_folders', JSON.stringify(normalizeSceneFolders(folders)))
+    this.ensureRepositories().metadata.setSceneFolders(JSON.stringify(normalizeStoredFolders(folders)))
+  }
+
+  private ensureTranscriptionFolder(path: string) {
+    const nextPath = normalizeFolderPath(path)
+    if (!nextPath) return
+
+    const folders = this.listTranscriptionFolders()
+    if (folders.some((folder) => folder.path.toLowerCase() === nextPath.toLowerCase())) {
+      return
+    }
+
+    this.setTranscriptionFolders([...folders, makeFolderRecord<TranscriptionFolder>(nextPath, 'slate', folders.length)])
+  }
+
+  private setTranscriptionFolders(folders: TranscriptionFolder[]) {
+    this.ensureRepositories().metadata.setTranscriptionFolders(
+      JSON.stringify(normalizeStoredFolders(folders)),
+    )
   }
 
   private setBlockTemplates(templates: BlockTemplate[]) {
-    const db = this.ensureDatabase()
-    const upsertMeta = db.prepare(`
-      INSERT INTO app_meta (key, value)
-      VALUES (?, ?)
-      ON CONFLICT(key) DO UPDATE SET value = excluded.value
-    `)
-    upsertMeta.run('block_templates', JSON.stringify(normalizeBlockTemplates(templates)))
+    this.ensureRepositories().metadata.setBlockTemplates(JSON.stringify(normalizeBlockTemplates(templates)))
   }
 
   private ensureRepositories() {
@@ -1229,323 +1215,6 @@ function toProjectDisplayName(filePath: string) {
     .replace(/\.sqlite$/i, '')
 }
 
-function normalizeSnapshot(snapshot: ProjectSnapshot): ProjectSnapshotV7 {
-  if (snapshot.schemaVersion === 7) {
-    return {
-      ...snapshot,
-      scenes: snapshot.scenes.map(normalizeSnapshotScene),
-      projectSettings: normalizeProjectSettings(snapshot.projectSettings),
-      boards: snapshot.boards.map(normalizeBoardSnapshot),
-      notebook: normalizeNotebookFromSnapshot(snapshot.notebook),
-    }
-  }
-
-  if (snapshot.schemaVersion === 6) {
-    return {
-      ...snapshot,
-      schemaVersion: 7,
-      scenes: snapshot.scenes.map(normalizeSnapshotScene),
-      projectSettings: normalizeProjectSettings(snapshot.projectSettings),
-      boards: snapshot.boards.map(normalizeBoardSnapshot),
-      notebook: normalizeNotebookFromSnapshot(snapshot.notebook),
-    }
-  }
-
-  if (snapshot.schemaVersion === 5) {
-    return {
-      ...snapshot,
-      schemaVersion: 7,
-      scenes: snapshot.scenes.map(normalizeSnapshotScene),
-      projectSettings: normalizeProjectSettings(snapshot.projectSettings),
-      boards: snapshot.boards.map(normalizeBoardSnapshot),
-      notebook: normalizeNotebookFromSnapshot(snapshot.notebook),
-    }
-  }
-
-  if (snapshot.schemaVersion === 4) {
-    return {
-      ...snapshot,
-      schemaVersion: 7,
-      scenes: snapshot.scenes.map(normalizeSnapshotScene),
-      projectSettings: defaultProjectSettings(),
-      boards: snapshot.boards.map(normalizeBoardSnapshot),
-      notebook: normalizeNotebookFromSnapshot(snapshot.notebook),
-    }
-  }
-
-  if (snapshot.schemaVersion === 3) {
-    return {
-      ...snapshot,
-      schemaVersion: 7,
-      scenes: snapshot.scenes.map(normalizeSnapshotScene),
-      projectSettings: defaultProjectSettings(),
-      boards: snapshot.boards.map((board) => normalizeBoardSnapshot({
-        ...board,
-        description: 'description' in board ? board.description : '',
-        color: 'color' in board ? board.color : 'charcoal',
-        folder: 'folder' in board ? board.folder : '',
-        sortOrder: 'sortOrder' in board ? board.sortOrder : 0,
-      })),
-      notebook: normalizeNotebookFromSnapshot(snapshot.notebook),
-    }
-  }
-
-  if (snapshot.schemaVersion === 2) {
-    return {
-      ...snapshot,
-      schemaVersion: 7,
-      scenes: snapshot.scenes.map(normalizeSnapshotScene),
-      projectSettings: defaultProjectSettings(),
-      boards: snapshot.boards.map((board) => normalizeBoardSnapshot({
-        ...board,
-        description: '',
-        color: 'charcoal',
-        folder: '',
-        sortOrder: 0,
-      })),
-      notebook: normalizeNotebookFromSnapshot({ content: '', updatedAt: null }),
-    }
-  }
-
-  return {
-    schemaVersion: 7,
-    exportedAt: snapshot.exportedAt,
-    project: snapshot.project,
-    projectSettings: defaultProjectSettings(),
-    scenes: snapshot.scenes.map(normalizeSnapshotScene),
-    tags: snapshot.tags,
-    boards: snapshot.boards.map((board) => normalizeBoardSnapshot({
-      ...board,
-      description: '',
-      color: 'charcoal',
-      folder: '',
-      sortOrder: 0,
-      items: board.items.map(normalizeSnapshotBoardItem),
-    })),
-    notebook: normalizeNotebookFromSnapshot({ content: '', updatedAt: null }),
-  }
-}
-
-function normalizeSnapshotScene(scene: Scene) {
-  return {
-    ...scene,
-    beats: Array.isArray(scene.beats)
-      ? scene.beats.map((beat, index) => ({
-          id: typeof beat.id === 'string' ? beat.id : `beat_${Math.random().toString(36).slice(2, 10)}`,
-          sceneId: scene.id,
-          sortOrder: typeof beat.sortOrder === 'number' ? beat.sortOrder : index,
-          text: typeof beat.text === 'string' ? beat.text : '',
-          createdAt: typeof beat.createdAt === 'string' ? beat.createdAt : scene.createdAt,
-          updatedAt: typeof beat.updatedAt === 'string' ? beat.updatedAt : scene.updatedAt,
-        }))
-      : [],
-  }
-}
-
-function normalizeBoardSnapshot(board: Board): Board {
-  return {
-    ...board,
-    items: board.items.map((item) => ({
-      ...item,
-      boardX: item.boardX ?? item.position * 320,
-      boardY: item.boardY ?? 0,
-      boardW: item.boardW ?? (item.kind === 'scene' ? 300 : 260),
-      boardH: item.boardH ?? (item.kind === 'scene' ? 132 : 108),
-    })),
-  }
-}
-
-function normalizeSceneKeyRating(scene: Scene | (Scene & { isKeyScene?: boolean })) {
-  const legacyScene = scene as Scene & { isKeyScene?: boolean }
-  return clampKeyRating(legacyScene.keyRating ?? legacyScene.isKeyScene)
-}
-
-function parseBoardFolders(value?: string | null): BoardFolder[] {
-  if (!value) return []
-
-  try {
-    const parsed = JSON.parse(value)
-    if (!Array.isArray(parsed)) return []
-    return normalizeBoardFolders(
-      parsed
-        .filter((entry): entry is { name?: unknown; color?: unknown; sortOrder?: unknown } => typeof entry === 'object' && entry !== null)
-        .map((entry) => ({
-          path:
-            'path' in entry && typeof entry.path === 'string'
-              ? entry.path.trim()
-              : typeof entry.name === 'string'
-                ? entry.name.trim()
-                : '',
-          name: typeof entry.name === 'string' ? entry.name.trim() : '',
-          parentPath:
-            'parentPath' in entry && typeof entry.parentPath === 'string' && entry.parentPath.trim().length > 0
-              ? entry.parentPath.trim()
-              : null,
-          color: isSceneColor(entry.color) ? entry.color : 'slate',
-          sortOrder: typeof entry.sortOrder === 'number' ? entry.sortOrder : 0,
-        }))
-        .filter((entry) => entry.path.length > 0 || entry.name.length > 0),
-    )
-  } catch {
-    return []
-  }
-}
-
-function normalizeBoardFolders(folders: BoardFolder[]) {
-  const deduped: BoardFolder[] = []
-
-  folders
-    .map((folder, index) => {
-      const path = normalizeFolderPath(folder.path || folder.name)
-      if (!path) return null
-      return {
-        path,
-        name: getFolderNameFromPath(path),
-        parentPath: getParentFolderPath(path),
-        color: folder.color ?? 'slate',
-        sortOrder: typeof folder.sortOrder === 'number' ? folder.sortOrder : index,
-      } satisfies BoardFolder
-    })
-    .filter((folder): folder is BoardFolder => Boolean(folder))
-    .sort((left, right) => left.sortOrder - right.sortOrder || left.path.localeCompare(right.path))
-    .forEach((folder) => {
-      if (!deduped.some((entry) => entry.path.toLowerCase() === folder.path.toLowerCase())) {
-        deduped.push({ ...folder, sortOrder: deduped.length })
-      }
-    })
-
-  return deduped
-}
-
-function parseSceneFolders(value?: string | null): SceneFolder[] {
-  if (!value) return []
-
-  try {
-    const parsed = JSON.parse(value)
-    if (!Array.isArray(parsed)) return []
-    return normalizeSceneFolders(
-      parsed
-        .filter((entry): entry is { name?: unknown; color?: unknown; sortOrder?: unknown } => typeof entry === 'object' && entry !== null)
-        .map((entry) => ({
-          path:
-            'path' in entry && typeof entry.path === 'string'
-              ? entry.path.trim()
-              : typeof entry.name === 'string'
-                ? entry.name.trim()
-                : '',
-          name: typeof entry.name === 'string' ? entry.name.trim() : '',
-          parentPath:
-            'parentPath' in entry && typeof entry.parentPath === 'string' && entry.parentPath.trim().length > 0
-              ? entry.parentPath.trim()
-              : null,
-          color: isSceneColor(entry.color) ? entry.color : 'slate',
-          sortOrder: typeof entry.sortOrder === 'number' ? entry.sortOrder : 0,
-        }))
-        .filter((entry) => entry.path.length > 0 || entry.name.length > 0),
-    )
-  } catch {
-    return []
-  }
-}
-
-function normalizeSceneFolders(folders: SceneFolder[]) {
-  const deduped: SceneFolder[] = []
-
-  folders
-    .map((folder, index) => {
-      const path = normalizeFolderPath(folder.path || folder.name)
-      if (!path) return null
-      return {
-        path,
-        name: getFolderNameFromPath(path),
-        parentPath: getParentFolderPath(path),
-        color: folder.color ?? 'slate',
-        sortOrder: typeof folder.sortOrder === 'number' ? folder.sortOrder : index,
-      } satisfies SceneFolder
-    })
-    .filter((folder): folder is SceneFolder => Boolean(folder))
-    .sort((left, right) => left.sortOrder - right.sortOrder || left.path.localeCompare(right.path))
-    .forEach((folder) => {
-      if (!deduped.some((entry) => entry.path.toLowerCase() === folder.path.toLowerCase())) {
-        deduped.push({ ...folder, sortOrder: deduped.length })
-      }
-    })
-
-  return deduped
-}
-
-function makeFolderRecord(path: string, color: Scene['color'], sortOrder: number) {
-  const normalizedPath = normalizeFolderPath(path)
-  if (!normalizedPath) {
-    throw new Error('Folder path cannot be empty')
-  }
-
-  return {
-    path: normalizedPath,
-    name: getFolderNameFromPath(normalizedPath),
-    parentPath: getParentFolderPath(normalizedPath),
-    color,
-    sortOrder,
-  }
-}
-
-function normalizeFolderPath(value?: string | null) {
-  if (!value) return ''
-  return value
-    .split('/')
-    .map((segment) => segment.trim())
-    .filter(Boolean)
-    .join('/')
-}
-
-function normalizeNullableFolderPath(value?: string | null) {
-  const normalized = normalizeFolderPath(value)
-  return normalized || null
-}
-
-function buildFolderPath(name: string, parentPath?: string | null) {
-  const normalizedName = normalizeFolderPath(name)
-  const normalizedParentPath = normalizeFolderPath(parentPath)
-  return normalizedParentPath ? `${normalizedParentPath}/${normalizedName}` : normalizedName
-}
-
-function getFolderNameFromPath(path: string) {
-  const normalizedPath = normalizeFolderPath(path)
-  if (!normalizedPath) return ''
-  const segments = normalizedPath.split('/')
-  return segments[segments.length - 1] ?? ''
-}
-
-function getParentFolderPath(path: string) {
-  const normalizedPath = normalizeFolderPath(path)
-  if (!normalizedPath || !normalizedPath.includes('/')) return null
-  return normalizedPath.split('/').slice(0, -1).join('/') || null
-}
-
-function isFolderWithinPath(path: string | null | undefined, basePath: string) {
-  const normalizedPath = normalizeFolderPath(path)
-  const normalizedBasePath = normalizeFolderPath(basePath)
-  if (!normalizedPath || !normalizedBasePath) return false
-  return (
-    normalizedPath.toLowerCase() === normalizedBasePath.toLowerCase() ||
-    normalizedPath.toLowerCase().startsWith(`${normalizedBasePath.toLowerCase()}/`)
-  )
-}
-
-function replaceFolderPathPrefix(path: string, fromPath: string, toPath: string) {
-  const normalizedPath = normalizeFolderPath(path)
-  const normalizedFromPath = normalizeFolderPath(fromPath)
-  const normalizedToPath = normalizeFolderPath(toPath)
-
-  if (!normalizedFromPath) return normalizedPath
-  if (normalizedPath.toLowerCase() === normalizedFromPath.toLowerCase()) {
-    return normalizedToPath
-  }
-
-  const suffix = normalizedPath.slice(normalizedFromPath.length)
-  return normalizeFolderPath(`${normalizedToPath}${suffix}`)
-}
-
 function parseBlockTemplates(value?: string | null): BlockTemplate[] {
   if (!value) return []
 
@@ -1592,421 +1261,6 @@ function normalizeBlockTemplates(templates: BlockTemplate[]) {
       title: template.title.trim(),
     }))
     .sort((left, right) => left.name.localeCompare(right.name))
-}
-
-function defaultProjectSettings(): ProjectSettings {
-  return {
-    title: '',
-    genre: '',
-    format: '',
-    targetRuntimeMinutes: 90,
-    logline: '',
-    defaultBoardView: 'outline',
-    enabledBlockKinds: ['chapter', 'voiceover', 'narration', 'text-card', 'note'],
-    blockKindOrder: ['chapter', 'voiceover', 'narration', 'text-card', 'note'],
-  }
-}
-
-function normalizeProjectSettings(value?: Partial<ProjectSettings> | null): ProjectSettings {
-  const defaults = defaultProjectSettings()
-  return {
-    title: value?.title?.trim() ?? defaults.title,
-    genre: value?.genre?.trim() ?? defaults.genre,
-    format: value?.format?.trim() ?? defaults.format,
-    targetRuntimeMinutes:
-      typeof value?.targetRuntimeMinutes === 'number' && Number.isFinite(value.targetRuntimeMinutes)
-        ? value.targetRuntimeMinutes
-        : defaults.targetRuntimeMinutes,
-    logline: value?.logline ?? defaults.logline,
-    defaultBoardView: normalizeStoredBoardView(value?.defaultBoardView ?? defaults.defaultBoardView),
-    enabledBlockKinds: normalizeBlockKindList(value?.enabledBlockKinds ?? defaults.enabledBlockKinds),
-    blockKindOrder: normalizeBlockKindList(value?.blockKindOrder ?? defaults.blockKindOrder),
-  }
-}
-
-function parseBlockKindList(value: string): ProjectSettings['enabledBlockKinds'] {
-  try {
-    const parsed = JSON.parse(value)
-    if (!Array.isArray(parsed)) {
-      return defaultProjectSettings().enabledBlockKinds
-    }
-    return normalizeBlockKindList(parsed)
-  } catch {
-    return defaultProjectSettings().enabledBlockKinds
-  }
-}
-
-function normalizeBlockKindList(value: unknown): ProjectSettings['enabledBlockKinds'] {
-  const allowed: Array<ProjectSettings['enabledBlockKinds'][number]> = [
-    'chapter',
-    'voiceover',
-    'narration',
-    'text-card',
-    'note',
-  ]
-
-  if (!Array.isArray(value)) {
-    return [...allowed]
-  }
-
-  const next = value.filter((entry): entry is ProjectSettings['enabledBlockKinds'][number] =>
-    typeof entry === 'string' && allowed.includes(entry as ProjectSettings['enabledBlockKinds'][number]),
-  )
-
-  return next.length > 0 ? Array.from(new Set(next)) : [...allowed]
-}
-
-function isBoardView(value: unknown): value is ProjectSettings['defaultBoardView'] {
-  return value === 'outline' || value === 'timeline' || value === 'canvas'
-}
-
-function normalizeStoredBoardView(value: unknown): ProjectSettings['defaultBoardView'] {
-  if (value === 'board') return 'canvas'
-  if (value === 'timeline') return 'outline'
-  if (!isBoardView(value)) return 'outline'
-  return value
-}
-
-function normalizeSnapshotBoardItem(item: ProjectSnapshotV1['boards'][number]['items'][number]): BoardItem {
-  if (item.kind && item.kind !== 'scene') {
-    return {
-      id: item.id,
-      boardId: item.boardId,
-      kind: item.kind,
-      title: item.title ?? '',
-      body: item.body ?? '',
-      color: item.color ?? 'charcoal',
-      position: item.position,
-      boardX: 'boardX' in item && typeof item.boardX === 'number' ? item.boardX : item.position * 320,
-      boardY: 'boardY' in item && typeof item.boardY === 'number' ? item.boardY : 0,
-      boardW: 'boardW' in item && typeof item.boardW === 'number' ? item.boardW : 260,
-      boardH: 'boardH' in item && typeof item.boardH === 'number' ? item.boardH : 108,
-      createdAt: item.createdAt,
-      updatedAt: item.updatedAt,
-    }
-  }
-
-  return {
-    id: item.id,
-    boardId: item.boardId,
-    kind: 'scene',
-    sceneId: item.sceneId ?? '',
-    position: item.position,
-    boardX: 'boardX' in item && typeof item.boardX === 'number' ? item.boardX : item.position * 320,
-    boardY: 'boardY' in item && typeof item.boardY === 'number' ? item.boardY : 0,
-    boardW: 'boardW' in item && typeof item.boardW === 'number' ? item.boardW : 300,
-    boardH: 'boardH' in item && typeof item.boardH === 'number' ? item.boardH : 132,
-    createdAt: item.createdAt,
-    updatedAt: item.updatedAt,
-  }
-}
-
-function buildBoardScript(board: Board, scenes: Scene[], format: BoardScriptExportFormat) {
-  const sceneMap = new Map(scenes.map((scene) => [scene.id, scene]))
-
-  const sections = board.items
-    .map((item) => {
-      if (item.kind === 'scene') {
-        const scene = sceneMap.get(item.sceneId)
-        if (!scene) return null
-        return formatSceneSection(scene, format)
-      }
-
-      if (item.kind === 'note') {
-        return null
-      }
-
-      return formatBoardTextSection(item, format)
-    })
-    .filter((entry): entry is string => Boolean(entry))
-
-  if (format === 'html-screenplay' || format === 'doc-screenplay') {
-    return buildBoardScreenplayHtml(board, sections)
-  }
-
-  if (format === 'md') {
-    const header = [`# ${board.name || 'Untitled Board'}`]
-    if (board.description.trim()) {
-      header.push('', board.description.trim())
-    }
-    return [...header, '', ...sections].join('\n\n').replace(/\n{3,}/g, '\n\n')
-  }
-
-  const isFormattedText = format === 'txt-formatted'
-  const header = [
-    isFormattedText ? centerText((board.name || 'Untitled Board').toUpperCase()) : (board.name || 'Untitled Board').toUpperCase(),
-  ]
-  if (board.description.trim()) {
-    header.push('', ...(isFormattedText ? wrapText(board.description.trim()) : wrapText(board.description.trim(), 78)))
-  }
-  return [...header, '', ...sections].join('\n\n').replace(/\n{3,}/g, '\n\n')
-}
-
-function buildBoardScreenplayHtml(board: Board, sections: string[]) {
-  const title = escapeHtml(board.name || 'Untitled Board')
-  const description = board.description.trim() ? `<p class="description">${escapeHtml(board.description.trim())}</p>` : ''
-
-  return `<!doctype html>
-<html lang="nb">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>${title}</title>
-    <style>
-      :root {
-        color-scheme: light;
-      }
-      * {
-        box-sizing: border-box;
-      }
-      body {
-        margin: 0;
-        background: #f3f0ea;
-        color: #111;
-        font-family: "Courier Prime", "Courier New", Courier, monospace;
-        line-height: 1.45;
-      }
-      .page {
-        width: 8.5in;
-        min-height: 11in;
-        margin: 24px auto;
-        background: #fff;
-        padding: 0.9in 0.9in 1in;
-        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.12);
-      }
-      .title {
-        text-align: center;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        font-size: 18px;
-        margin: 0 0 10px;
-      }
-      .description {
-        margin: 0 0 34px;
-        text-align: center;
-        font-size: 13px;
-      }
-      .scene {
-        margin: 0 0 26px;
-      }
-      .scene-heading {
-        margin: 0 0 10px;
-        text-transform: uppercase;
-        font-size: 13px;
-        letter-spacing: 0.04em;
-      }
-      .action {
-        margin: 0;
-        max-width: 6.2in;
-        white-space: pre-wrap;
-      }
-      .center-block {
-        margin: 28px auto;
-        max-width: 4.6in;
-        text-align: center;
-      }
-      .center-label {
-        margin: 0 0 10px;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        font-size: 13px;
-      }
-      .center-body {
-        margin: 0;
-        white-space: pre-wrap;
-      }
-      .chapter {
-        margin-top: 36px;
-      }
-      .chapter .center-label {
-        font-size: 16px;
-      }
-      .text-card .center-label {
-        letter-spacing: 0.12em;
-      }
-    </style>
-  </head>
-  <body>
-    <main class="page">
-      <h1 class="title">${title}</h1>
-      ${description}
-      ${sections.join('\n')}
-    </main>
-  </body>
-</html>`
-}
-
-function formatSceneSection(scene: Scene, format: BoardScriptExportFormat) {
-  const title = scene.title.trim() || 'Untitled Scene'
-  const synopsis = scene.synopsis.trim() || scene.notes.trim() || ''
-
-  if (format === 'html-screenplay') {
-    return `<section class="scene"><h2 class="scene-heading">${escapeHtml(title)}</h2>${synopsis ? `<p class="action">${escapeHtml(synopsis)}</p>` : ''}</section>`
-  }
-
-  if (format === 'md') {
-    const parts = [`## ${title}`]
-    if (synopsis) {
-      parts.push('', synopsis)
-    }
-    return parts.join('\n')
-  }
-
-  const wrappedSynopsis = wrapText(synopsis, format === 'txt-formatted' ? 64 : 78).join('\n')
-  return [title, synopsis ? `\n${wrappedSynopsis}` : ''].join('')
-}
-
-function formatBoardTextSection(item: BoardTextItem, format: BoardScriptExportFormat) {
-  const title = formatBlockTitle(item)
-  const body = item.body.trim()
-
-  if (format === 'html-screenplay') {
-    const kindClass = item.kind.replace(/[^a-z-]/g, '')
-    return `<section class="center-block ${kindClass}"><h3 class="center-label">${escapeHtml(title.toUpperCase())}</h3>${body ? `<p class="center-body">${escapeHtml(body)}</p>` : ''}</section>`
-  }
-
-  if (format === 'md') {
-    switch (item.kind) {
-      case 'chapter':
-        return [`<div align="center">`, '', `## ${title}`, ...(body ? ['', body] : []), '', `</div>`].join('\n')
-      case 'text-card':
-        return [`<div align="center">`, '', `### ${title}`, ...(body ? ['', body] : []), '', `</div>`].join('\n')
-      case 'voiceover':
-      case 'narration':
-        return [
-          `<div align="center">`,
-          '',
-          `**${title}**`,
-          '',
-          body || '',
-          '',
-          `</div>`,
-        ]
-          .filter(Boolean)
-          .join('\n')
-      default:
-        return null
-    }
-  }
-
-  if (format === 'txt-plain') {
-    switch (item.kind) {
-      case 'chapter':
-      case 'text-card':
-        return [title.toUpperCase(), ...(body ? ['', ...wrapText(body, 78)] : [])].join('\n')
-      case 'voiceover':
-      case 'narration':
-        return [
-          `${title.toUpperCase()}:`,
-          ...(body ? wrapText(body, 72) : []),
-        ].join('\n')
-      default:
-        return null
-    }
-  }
-
-  switch (item.kind) {
-    case 'chapter':
-      return [centerText(title.toUpperCase()), ...(body ? ['', ...wrapText(body).map((line) => centerText(line))] : [])].join('\n')
-    case 'text-card':
-      return [centerText(title.toUpperCase()), ...(body ? ['', ...wrapText(body).map((line) => centerText(line))] : [])].join('\n')
-    case 'voiceover':
-    case 'narration':
-      return [
-        centerText(title.toUpperCase()),
-        body ? '' : null,
-        ...(body ? wrapText(body).map((line) => centerText(line)) : []),
-      ]
-        .filter((line): line is string => line !== null)
-        .join('\n')
-    default:
-      return null
-  }
-}
-
-function formatBlockTitle(item: BoardTextItem) {
-  if (item.kind === 'voiceover') return 'Voiceover'
-  if (item.kind === 'narration') return 'Forteller'
-  return item.title.trim() || fallbackBlockTitle(item.kind)
-}
-
-function fallbackBlockTitle(kind: BoardTextItem['kind']) {
-  switch (kind) {
-    case 'chapter':
-      return 'Kapittel'
-    case 'text-card':
-      return 'Mellomtekst'
-    case 'voiceover':
-      return 'Voiceover'
-    case 'narration':
-      return 'Forteller'
-    default:
-      return ''
-  }
-}
-
-function wrapText(value: string, width = 64) {
-  const normalized = value.replace(/\s+/g, ' ').trim()
-  if (!normalized) return []
-
-  const words = normalized.split(' ')
-  const lines: string[] = []
-  let current = ''
-
-  words.forEach((word) => {
-    const candidate = current ? `${current} ${word}` : word
-    if (candidate.length > width && current) {
-      lines.push(current)
-      current = word
-      return
-    }
-    current = candidate
-  })
-
-  if (current) {
-    lines.push(current)
-  }
-
-  return lines
-}
-
-function escapeHtml(value: string) {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-}
-
-function centerText(value: string, width = 72) {
-  const trimmed = value.trim()
-  if (!trimmed) return ''
-  const padding = Math.max(0, Math.floor((width - trimmed.length) / 2))
-  return `${' '.repeat(padding)}${trimmed}`
-}
-
-function trimForConsultant(value: string, limit: number) {
-  const normalized = value.replace(/\s+/g, ' ').trim()
-  return normalized.length > limit ? `${normalized.slice(0, limit - 1)}…` : normalized
-}
-
-function isSceneColor(value: unknown): value is Scene['color'] {
-  return typeof value === 'string' && [
-    'charcoal',
-    'slate',
-    'amber',
-    'ochre',
-    'crimson',
-    'rose',
-    'olive',
-    'moss',
-    'teal',
-    'cyan',
-    'blue',
-    'indigo',
-    'violet',
-    'plum',
-  ].includes(value)
 }
 
 function isBoardTextItemKind(value: unknown): value is BoardTextItemKind {

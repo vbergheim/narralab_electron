@@ -17,11 +17,12 @@
     "build": "tsc -b && vite build && electron-builder",
     "build:dir": "tsc -b && vite build && electron-builder --dir",
     "lint": "eslint .",
-    "test": "npm run test:unit && npm run test:integration",
-    "test:unit": "vitest run tests/unit",
+    "typecheck": "tsc -b",
+    "test": "node scripts/run-test-suite.mjs",
+    "test:unit": "node scripts/run-unit-tests.mjs",
     "test:integration": "node scripts/run-integration-tests.mjs",
     "test:watch": "vitest tests/unit",
-    "check": "npm run lint && npx tsc -b && npm run test",
+    "check": "npm run lint && npm run typecheck && npm run test",
     "preview": "vite preview",
     "postinstall": "npm run rebuild:electron"
   },
@@ -33,6 +34,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "exceljs": "^4.4.0",
+    "ffmpeg-static": "^5.2.0",
     "lucide-react": "^1.7.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
@@ -74,6 +76,9 @@
       "dist/**/*",
       "dist-electron/**/*",
       "package.json"
+    ],
+    "asarUnpack": [
+      "**/node_modules/ffmpeg-static/**/*"
     ],
     "fileAssociations": [
       {

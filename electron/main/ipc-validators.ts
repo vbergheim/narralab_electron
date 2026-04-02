@@ -1,3 +1,5 @@
+import path from 'node:path'
+
 import type { ArchiveFolderUpdateInput, ArchiveItemUpdateInput } from '@/types/archive'
 import type { AppSettingsUpdateInput, ConsultantChatInput, SavedWindowLayout, WindowWorkspace } from '@/types/ai'
 import type { BoardItemKind, BoardItemUpdateInput, BoardTextItemKind, BoardUpdateInput, BoardViewMode } from '@/types/board'
@@ -5,12 +7,19 @@ import type {
   GlobalUiState,
   NotebookDocument,
   NotebookTab,
+  ProjectChangeScope,
   ProjectSettingsUpdateInput,
   WindowContext,
   WindowDragSession,
 } from '@/types/project'
 import type { SceneColor, SceneStatus, SceneBeatUpdateInput, SceneUpdateInput } from '@/types/scene'
 import type { TagType } from '@/types/tag'
+import type {
+  TranscriptionItemUpdateInput,
+  TranscriptionLanguage,
+  TranscriptionModelId,
+  TranscriptionTimestampInterval,
+} from '@/types/transcription'
 import type { SceneDensity } from '@/types/view'
 
 const sceneColors = new Set<SceneColor>([
@@ -33,7 +42,52 @@ const sceneStatuses = new Set<SceneStatus>(['candidate', 'selected', 'maybe', 'o
 const boardTextKinds = new Set<BoardTextItemKind>(['chapter', 'voiceover', 'narration', 'text-card', 'note'])
 const boardViews = new Set<BoardViewMode>(['outline', 'timeline', 'canvas'])
 const sceneDensities = new Set<SceneDensity>(['table', 'compact', 'detailed'])
-const windowWorkspaces = new Set<WindowWorkspace>(['outline', 'bank', 'inspector', 'notebook', 'archive', 'board-manager'])
+const windowWorkspaces = new Set<WindowWorkspace>([
+  'outline',
+  'bank',
+  'inspector',
+  'notebook',
+  'archive',
+  'board-manager',
+  'transcribe',
+])
+const transcriptionModelIds = new Set<TranscriptionModelId>(['base', 'small', 'medium', 'large-v3-turbo', 'nb-whisper-medium', 'nb-whisper-large'])
+const transcriptionTimestampFixedIntervals = new Set<string>(['none', 'segment'])
+const transcriptionLanguages = new Set<TranscriptionLanguage>([
+  'auto',
+  'en',
+  'nb',
+  'nn',
+  'sv',
+  'da',
+  'de',
+  'fr',
+  'es',
+  'it',
+  'pt',
+  'nl',
+  'pl',
+  'ru',
+  'uk',
+  'ja',
+  'zh',
+])
+const projectChangeScopes = new Set<ProjectChangeScope>([
+  'all',
+  'meta',
+  'project-settings',
+  'app-settings',
+  'notebook',
+  'archive',
+  'scenes',
+  'scene-folders',
+  'boards',
+  'board-folders',
+  'block-templates',
+  'tags',
+  'transcription-library',
+  'layouts',
+])
 const aiProviders = new Set(['openai', 'gemini'] as const)
 const responseStyles = new Set(['structured', 'concise', 'exploratory'] as const)
 const tagTypes = new Set<TagType>(['general', 'character', 'theme', 'location'])
@@ -97,6 +151,9 @@ export function parseSceneUpdateInput(value: unknown): SceneUpdateInput {
   if (input.characters !== undefined) next.characters = requireStringArray(input.characters, 'Scene characters')
   if (input.function !== undefined) next.function = optionalString(input.function, 'Scene function') ?? ''
   if (input.sourceReference !== undefined) next.sourceReference = optionalString(input.sourceReference, 'Scene source reference') ?? ''
+  if (input.quoteMoment !== undefined) next.quoteMoment = optionalString(input.quoteMoment, 'Scene quote / moment') ?? ''
+  if (input.quality !== undefined) next.quality = optionalString(input.quality, 'Scene quality') ?? ''
+  if (input.sourcePaths !== undefined) next.sourcePaths = requireStringArray(input.sourcePaths, 'Scene source paths')
   if (input.tagIds !== undefined) next.tagIds = requireStringArray(input.tagIds, 'Scene tag ids')
 
   return next
@@ -206,8 +263,50 @@ export function parseAppSettingsUpdateInput(value: unknown): AppSettingsUpdateIn
   if (input.lastProjectPath !== undefined) next.lastProjectPath = nullableString(input.lastProjectPath, 'Last project path') ?? null
   if (input.lastLayoutByProject !== undefined) next.lastLayoutByProject = requireStringMap(input.lastLayoutByProject, 'Last layout map')
   if (input.savedLayouts !== undefined) next.savedLayouts = requireSavedLayouts(input.savedLayouts)
-
+  if (input.transcriptionModelId !== undefined) {
+    next.transcriptionModelId = requireTranscriptionModelId(input.transcriptionModelId, 'Transcription model')
+  }
+  if (input.transcriptionLanguage !== undefined) {
+    next.transcriptionLanguage = requireTranscriptionLanguage(input.transcriptionLanguage, 'Transcription language')
+  }
+  if (input.transcriptionTimestampInterval !== undefined) {
+    next.transcriptionTimestampInterval = requireTranscriptionTimestampInterval(
+      input.transcriptionTimestampInterval,
+      'Transcription timestamp interval',
+    )
+  }
   return next
+}
+
+export function parseTranscriptionStartInput(value: unknown): {
+  filePath: string
+  modelId?: TranscriptionModelId
+  language?: TranscriptionLanguage
+  timestampInterval?: TranscriptionTimestampInterval
+} {
+  const input = requireObject(value, 'Transcription start')
+  const filePath = requireString(input.filePath, 'Media file path')
+  if (!path.isAbsolute(filePath)) {
+    throw new Error('Media file path must be absolute')
+  }
+  const next: { filePath: string; modelId?: TranscriptionModelId; language?: TranscriptionLanguage; timestampInterval?: TranscriptionTimestampInterval } = { filePath }
+  if (input.modelId !== undefined) {
+    next.modelId = requireTranscriptionModelId(input.modelId, 'Transcription model')
+  }
+  if (input.language !== undefined) {
+    next.language = requireTranscriptionLanguage(input.language, 'Transcription language')
+  }
+  if (input.timestampInterval !== undefined) {
+    next.timestampInterval = requireTranscriptionTimestampInterval(input.timestampInterval, 'Timestamp interval')
+  }
+  return next
+}
+
+export function parseTranscriptionDownloadInput(value: unknown): { modelId: TranscriptionModelId } {
+  const input = requireObject(value, 'Transcription download')
+  return {
+    modelId: requireTranscriptionModelId(input.modelId, 'Transcription model'),
+  }
 }
 
 export function parseConsultantChatInput(value: unknown): ConsultantChatInput {
@@ -240,6 +339,25 @@ export function parseConsultantChatInput(value: unknown): ConsultantChatInput {
 
 export function parseWindowWorkspace(value: unknown) {
   return requireWindowWorkspace(value, 'Window workspace')
+}
+
+export function parseProjectChangeScopes(value: unknown): ProjectChangeScope[] {
+  if (value === undefined) {
+    return ['all']
+  }
+  if (!Array.isArray(value)) {
+    throw new Error('Project change scopes must be an array')
+  }
+
+  const scopes = value.map((entry, index) =>
+    requireEnum(entry, projectChangeScopes, `Project change scope ${index + 1}`),
+  )
+
+  if (scopes.length === 0) {
+    return ['all']
+  }
+
+  return [...new Set(scopes)]
 }
 
 export function parseWindowContextUpdate(
@@ -275,20 +393,11 @@ export function parseGlobalUiStatePatch(value: unknown): Partial<GlobalUiState> 
   if (input.activeBoardId !== undefined) {
     next.activeBoardId = optionalNullableId(input.activeBoardId, 'Active board id') ?? null
   }
-  if (input.selectedBoardId !== undefined) {
-    next.selectedBoardId = optionalNullableId(input.selectedBoardId, 'Selected board id') ?? null
-  }
-  if (input.selectedSceneId !== undefined) {
-    next.selectedSceneId = optionalNullableId(input.selectedSceneId, 'Selected scene id') ?? null
-  }
-  if (input.selectedSceneIds !== undefined) {
-    next.selectedSceneIds = requireStringArray(input.selectedSceneIds, 'Selected scene ids')
-  }
-  if (input.selectedBoardItemId !== undefined) {
-    next.selectedBoardItemId = optionalNullableId(input.selectedBoardItemId, 'Selected board item id') ?? null
-  }
   if (input.selectedArchiveFolderId !== undefined) {
     next.selectedArchiveFolderId = optionalNullableId(input.selectedArchiveFolderId, 'Selected archive folder id') ?? null
+  }
+  if (input.selectedTranscriptionItemId !== undefined) {
+    next.selectedTranscriptionItemId = optionalNullableId(input.selectedTranscriptionItemId, 'Selected transcription item id') ?? null
   }
 
   return next
@@ -299,17 +408,29 @@ export function parseWindowDragSession(value: unknown): WindowDragSession {
     return null
   }
   const input = requireObject(value, 'Drag session')
-  if (input.kind !== 'scene') {
-    return null
+  if (input.kind === 'scene') {
+    if (!Array.isArray(input.sceneIds)) {
+      return null
+    }
+    const sceneIds = input.sceneIds.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+    if (sceneIds.length === 0) {
+      return null
+    }
+    return { kind: 'scene', sceneIds }
   }
-  if (!Array.isArray(input.sceneIds)) {
-    return null
+  if (input.kind === 'transcription') {
+    if (!Array.isArray(input.itemIds)) {
+      return null
+    }
+    const itemIds = input.itemIds.filter(
+      (entry): entry is string => typeof entry === 'string' && entry.startsWith('tx_item_'),
+    )
+    if (itemIds.length === 0) {
+      return null
+    }
+    return { kind: 'transcription', itemIds }
   }
-  const sceneIds = input.sceneIds.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
-  if (sceneIds.length === 0) {
-    return null
-  }
-  return { kind: 'scene', sceneIds }
+  return null
 }
 
 export function parseBlockTemplateInput(value: unknown) {
@@ -528,4 +649,51 @@ function requireEnum<T extends string>(value: unknown, allowed: Set<T>, label: s
   }
 
   return value as T
+}
+
+function requireTranscriptionModelId(value: unknown, label: string): TranscriptionModelId {
+  return requireEnum(value, transcriptionModelIds, label)
+}
+
+function requireTranscriptionLanguage(value: unknown, label: string): TranscriptionLanguage {
+  return requireEnum(value, transcriptionLanguages, label)
+}
+
+function requireTranscriptionTimestampInterval(value: unknown, label: string): TranscriptionTimestampInterval {
+  if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+    return value
+  }
+  if (typeof value === 'string' && transcriptionTimestampFixedIntervals.has(value)) {
+    return value as TranscriptionTimestampInterval
+  }
+  throw new Error(`${label} must be 'none', 'segment', or a positive number of seconds`)
+}
+
+export function requireTranscriptionItemUpdateInput(value: unknown): TranscriptionItemUpdateInput {
+  const obj = requireObject(value, 'Transcription item update input')
+  return {
+    id: requireTranscriptionItemId(obj.id, 'Item ID'),
+    folder:
+      obj.folder === undefined
+        ? undefined
+        : obj.folder === null
+          ? ''
+          : optionalString(obj.folder, 'Transcription folder path') ?? '',
+    sceneId:
+      obj.sceneId !== undefined
+        ? obj.sceneId === null
+          ? null
+          : requireString(obj.sceneId, 'Scene ID')
+        : undefined,
+    name: obj.name !== undefined ? requireString(obj.name, 'Item name') : undefined,
+    content: obj.content !== undefined ? requireString(obj.content, 'Item content') : undefined,
+  }
+}
+
+function requireTranscriptionItemId(value: unknown, label: string): string {
+  const id = requireString(value, label)
+  if (!id.startsWith('tx_item_')) {
+    throw new Error(`${label} is not a valid transcription item ID`)
+  }
+  return id
 }

@@ -1,10 +1,18 @@
 import type { BoardViewMode } from './board'
+import type { TranscriptionLanguage, TranscriptionModelId, TranscriptionTimestampInterval } from './transcription'
 import type { SceneDensity } from './view'
 
 export type AIProvider = 'openai' | 'gemini'
 export type ConsultantResponseStyle = 'structured' | 'concise' | 'exploratory'
 export type ConsultantContextMode = 'none' | 'active-board'
-export type WindowWorkspace = 'outline' | 'bank' | 'inspector' | 'notebook' | 'archive' | 'board-manager'
+export type WindowWorkspace =
+  | 'outline'
+  | 'bank'
+  | 'inspector'
+  | 'notebook'
+  | 'archive'
+  | 'board-manager'
+  | 'transcribe'
 
 export type SavedWindowLayoutWindow = {
   id: string
@@ -24,6 +32,13 @@ export type SavedWindowLayout = {
   windows: SavedWindowLayoutWindow[]
 }
 
+export type AppTranscriptionSettings = {
+  modelId: TranscriptionModelId
+  language: TranscriptionLanguage
+  /** How often to insert [HH:MM:SS] markers in transcript output. */
+  timestampInterval: TranscriptionTimestampInterval
+}
+
 export type AppSettings = {
   ai: {
     provider: AIProvider
@@ -33,6 +48,7 @@ export type AppSettings = {
     extraInstructions: string
     responseStyle: ConsultantResponseStyle
     secretStorageMode: 'safe' | 'plain'
+    allowPlaintextSecrets: boolean
     hasOpenAiApiKey: boolean
     hasGeminiApiKey: boolean
   }
@@ -46,6 +62,7 @@ export type AppSettings = {
     lastLayoutByProject: Record<string, string>
     savedLayouts: SavedWindowLayout[]
   }
+  transcription: AppTranscriptionSettings
 }
 
 export type AppSettingsUpdateInput = {
@@ -55,6 +72,7 @@ export type AppSettingsUpdateInput = {
   systemPrompt?: string
   extraInstructions?: string
   responseStyle?: ConsultantResponseStyle
+  allowPlaintextSecrets?: boolean
   openAiApiKey?: string
   geminiApiKey?: string
   clearOpenAiApiKey?: boolean
@@ -67,6 +85,9 @@ export type AppSettingsUpdateInput = {
   lastProjectPath?: string | null
   lastLayoutByProject?: Record<string, string>
   savedLayouts?: SavedWindowLayout[]
+  transcriptionModelId?: TranscriptionModelId
+  transcriptionLanguage?: TranscriptionLanguage
+  transcriptionTimestampInterval?: TranscriptionTimestampInterval
 }
 
 export type ConsultantRole = 'system' | 'user' | 'assistant'

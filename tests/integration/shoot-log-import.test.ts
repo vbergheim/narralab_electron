@@ -9,6 +9,7 @@ import { buildShootLogTemplateWorkbook, importShootLogWorkbook } from '../../ele
 import { createTestDatabase } from '../helpers/test-database'
 
 const shootLogTemplatePath = path.join(__dirname, '../../sample-data/shoot-log-template.xlsx')
+const shootLogTemplateV2FictionPath = path.join(__dirname, '../../sample-data/shoot-log-template_v2_fiktive_data.xlsx')
 
 describe('shoot log import', () => {
   it('imports scenes and beats from a valid workbook without touching existing scenes', async () => {
@@ -88,6 +89,9 @@ describe('shoot log import', () => {
       expect(importedCar?.folder).toBe('2026-03-29')
       expect(importedKitchen?.characters).toEqual(['Mia', 'Mom'])
       expect(importedKitchen?.sourceReference).toBe('shoot-log.xlsx')
+      expect(importedKitchen?.sourcePaths).toEqual(['shoot-log.xlsx'])
+      expect(importedKitchen?.quoteMoment).toBe('')
+      expect(importedKitchen?.quality).toBe('')
       expect(importedKitchen?.notes).toBe(
         [
           'Shoot date: 2026-03-29',
@@ -106,6 +110,58 @@ describe('shoot log import', () => {
       expect(importedCar?.beats.map((beat) => beat.text)).toEqual([
         'Mia watches the road through the side window.',
       ])
+    } finally {
+      harness.cleanup()
+      fs.rmSync(tempDir, { recursive: true, force: true })
+    }
+  })
+
+  it('imports newer machine-template fields for quote, quality and source paths', async () => {
+    const harness = createTestDatabase()
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'narralab-shoot-log-new-fields-'))
+    const filePath = path.join(tempDir, 'shoot-log-new-fields.xlsx')
+
+    try {
+      const workbook = buildShootLogTemplateWorkbook()
+      setRow(workbook.getWorksheet('Scenes')!, 2, [
+        'scene_obs',
+        '2026-04-01',
+        'Evening',
+        1,
+        'Quiet corridor',
+        'A nurse pauses before going back into the room.',
+        'Ward B',
+        'Mia|Nurse',
+        'observational',
+        'Breathing space',
+        45,
+        30,
+        'maybe',
+        3,
+        'slate',
+        'pickup',
+        '',
+        '',
+        'legacy-source.mov',
+        'Needs companion scene later in the sequence.',
+        'archive/day-02/audio|archive/day-02/stills',
+        'She whispers that it is all catching up with her.',
+        'Usable',
+      ])
+      await workbook.xlsx.writeFile(filePath)
+
+      const result = await importShootLogWorkbook(harness.db, filePath)
+      const imported = harness.scenes.list().find((scene) => scene.title === 'Quiet corridor')
+
+      expect(result.errors).toEqual([])
+      expect(imported?.sourceReference).toBe('archive/day-02/audio')
+      expect(imported?.sourcePaths).toEqual([
+        'archive/day-02/audio',
+        'archive/day-02/stills',
+        'legacy-source.mov',
+      ])
+      expect(imported?.quoteMoment).toBe('She whispers that it is all catching up with her.')
+      expect(imported?.quality).toBe('Usable')
     } finally {
       harness.cleanup()
       fs.rmSync(tempDir, { recursive: true, force: true })
@@ -242,6 +298,30 @@ describe('shoot log import', () => {
       expect(first?.notes).toMatch(/Opptakssted:\s+\S/)
       expect(first?.notes).toContain('Opptaksdag:')
       expect(first?.sourceReference).toBe('shoot-log-template.xlsx')
+      expect(first?.sourcePaths).toEqual(['shoot-log-template.xlsx'])
+    } finally {
+      harness.cleanup()
+    }
+  })
+
+  it('imports the newer OPPTAKSLOGG workbook with category, function, quote and quality', async () => {
+    if (!fs.existsSync(shootLogTemplateV2FictionPath)) {
+      throw new Error(`Missing template at ${shootLogTemplateV2FictionPath}`)
+    }
+
+    const harness = createTestDatabase()
+
+    try {
+      const result = await importShootLogWorkbook(harness.db, shootLogTemplateV2FictionPath)
+      const first = harness.scenes.list().find((scene) => scene.title === 'Morgenrapport på vaktrommet')
+
+      expect(result.errors).toEqual([])
+      expect(first?.category).toBe('Situasjon')
+      expect(first?.function).toBe('Konflikt')
+      expect(first?.quoteMoment).toBe('“Vi må tenke nytt rundt rom 3 i dag.”')
+      expect(first?.quality).toBe('Sterk')
+      expect(first?.sourceReference).toBe('shoot-log-template_v2_fiktive_data.xlsx')
+      expect(first?.sourcePaths).toEqual(['shoot-log-template_v2_fiktive_data.xlsx'])
     } finally {
       harness.cleanup()
     }

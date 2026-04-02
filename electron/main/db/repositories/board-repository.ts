@@ -33,6 +33,8 @@ type BoardItemRow = {
   updatedAt: string
 }
 
+type BoardRow = Omit<Board, 'items'>
+
 export class BoardRepository {
   private readonly db: Database.Database
 
@@ -41,40 +43,17 @@ export class BoardRepository {
   }
 
   list(): Board[] {
-    const boards = this.db
-      .prepare(`
-        SELECT id, name, created_at AS createdAt, updated_at AS updatedAt
-             , description, color, folder, sort_order AS sortOrder
-        FROM boards
-        ORDER BY sort_order ASC, created_at ASC
-      `)
-      .all() as Array<Omit<Board, 'items'>>
-
-    const items = this.db
-      .prepare(`
-        SELECT
-          id,
-          board_id AS boardId,
-          scene_id AS sceneId,
-          kind,
-          title,
-          body,
-          color,
-          position,
-          board_x AS boardX,
-          board_y AS boardY,
-          board_w AS boardW,
-          board_h AS boardH,
-          created_at AS createdAt,
-          updated_at AS updatedAt
-        FROM board_items
-        ORDER BY board_id ASC, position ASC
-      `)
-      .all() as BoardItemRow[]
+    const boards = this.listBoardRows()
+    const itemsByBoardId = this.listItemRows().reduce<Map<string, BoardItem[]>>((map, item) => {
+      const current = map.get(item.boardId) ?? []
+      current.push(mapBoardItemRow(item))
+      map.set(item.boardId, current)
+      return map
+    }, new Map())
 
     return boards.map((board) => ({
       ...board,
-      items: items.filter((item) => item.boardId === board.id).map(mapBoardItemRow),
+      items: itemsByBoardId.get(board.id) ?? [],
     }))
   }
 
@@ -95,12 +74,11 @@ export class BoardRepository {
       .prepare('INSERT INTO boards (id, name, description, color, folder, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
       .run(id, name, options?.description ?? '', options?.color ?? 'charcoal', options?.folder ?? '', sortOrder, timestamp, timestamp)
 
-    return this.list().find((board) => board.id === id) as Board
+    return this.getById(id)
   }
 
   createClone(boardId: string, name: string): Board {
-    const source = this.list().find((board) => board.id === boardId)
-    if (!source) throw new Error('Board not found')
+    const source = this.getById(boardId)
 
     const nextBoard = this.create(name, { description: source.description, color: source.color, folder: source.folder })
     const insert = this.db.prepare(`
@@ -121,41 +99,36 @@ export class BoardRepository {
         item.kind === 'scene' ? '' : item.body,
         item.kind === 'scene' ? 'charcoal' : item.color,
         index,
+        timestamp,
+        timestamp,
         item.boardX,
         item.boardY,
         item.boardW,
         item.boardH,
-        timestamp,
-        timestamp,
       )
     })
 
     this.touchBoard(nextBoard.id)
-    return this.list().find((board) => board.id === nextBoard.id) as Board
+    return this.getById(nextBoard.id)
   }
 
   delete(boardId: string): Board[] {
-    const boards = this.list()
-    if (boards.length <= 1) {
+    const boardIds = this.listBoardIds()
+    if (boardIds.length <= 1) {
       throw new Error('At least one board must remain')
     }
 
-    const existing = boards.find((board) => board.id === boardId)
-    if (!existing) {
-      return boards
+    if (!boardIds.includes(boardId)) {
+      return this.list()
     }
 
     this.db.prepare('DELETE FROM boards WHERE id = ?').run(boardId)
-    const nextBoards = this.list()
-    this.reorderBoards(nextBoards.map((board) => board.id))
-    return this.list()
+    const nextIds = this.listBoardIds()
+    return this.reorderBoards(nextIds)
   }
 
   updateBoard(input: BoardUpdateInput): Board {
-    const current = this.list().find((board) => board.id === input.id)
-    if (!current) {
-      throw new Error('Board not found')
-    }
+    const current = this.getById(input.id)
 
     const nextName = input.name?.trim() ?? current.name
     const nextDescription = input.description ?? current.description
@@ -170,17 +143,11 @@ export class BoardRepository {
       .prepare('UPDATE boards SET name = ?, description = ?, color = ?, folder = ?, updated_at = ? WHERE id = ?')
       .run(nextName, nextDescription, nextColor, nextFolder, nowIso(), input.id)
 
-    const updated = this.list().find((board) => board.id === input.id)
-    if (!updated) {
-      throw new Error('Board not found')
-    }
-
-    return updated
+    return this.getById(input.id)
   }
 
   reorderBoards(boardIds: string[]): Board[] {
-    const currentBoards = this.list()
-    const currentIds = currentBoards.map((board) => board.id)
+    const currentIds = this.listBoardIds()
 
     if (boardIds.length !== currentIds.length || boardIds.some((id) => !currentIds.includes(id))) {
       throw new Error('Board order is invalid')
@@ -204,9 +171,7 @@ export class BoardRepository {
       .get(boardId, 'scene', sceneId) as { id: string } | undefined
 
     if (existing) {
-      const item = this.list()
-        .flatMap((board) => board.items)
-        .find((entry) => entry.id === existing.id) as BoardSceneItem
+      const item = this.getItemById(existing.id) as BoardSceneItem
 
       return { item, existed: true }
     }
@@ -280,13 +245,7 @@ export class BoardRepository {
   }
 
   duplicateItem(itemId: string): BoardItem {
-    const current = this.list()
-      .flatMap((board) => board.items)
-      .find((item) => item.id === itemId)
-
-    if (!current) {
-      throw new Error('Board item not found')
-    }
+    const current = this.getItemById(itemId)
 
     if (current.kind === 'scene') {
       throw new Error('Scene rows must be duplicated as scenes')
@@ -329,6 +288,18 @@ export class BoardRepository {
   }
 
   reorder(boardId: string, itemIds: string[]): BoardItem[] {
+    const currentItems = this.getItemsByBoardId(boardId)
+    const currentIds = currentItems.map((item) => item.id)
+    const uniqueIds = new Set(itemIds)
+
+    if (
+      currentItems.length !== itemIds.length ||
+      uniqueIds.size !== itemIds.length ||
+      itemIds.some((itemId) => !currentIds.includes(itemId))
+    ) {
+      throw new Error('Board item order is invalid')
+    }
+
     const update = this.db.prepare(`
       UPDATE board_items
       SET position = ?, updated_at = ?
@@ -343,17 +314,11 @@ export class BoardRepository {
 
     reorder(itemIds)
     this.touchBoard(boardId)
-    return this.list().find((board) => board.id === boardId)?.items ?? []
+    return this.getItemsByBoardId(boardId)
   }
 
   updateItem(input: BoardItemUpdateInput): BoardItem {
-    const current = this.list()
-      .flatMap((board) => board.items)
-      .find((item) => item.id === input.id)
-
-    if (!current) {
-      throw new Error('Board item not found')
-    }
+    const current = this.getItemById(input.id)
 
     if (current.kind === 'scene') {
       const next: BoardSceneItem = {
@@ -426,6 +391,116 @@ export class BoardRepository {
 
   private touchBoard(boardId: string) {
     this.db.prepare('UPDATE boards SET updated_at = ? WHERE id = ?').run(nowIso(), boardId)
+  }
+
+  private getById(id: string): Board {
+    const board = this.listBoardRows().find((entry) => entry.id === id)
+    if (!board) {
+      throw new Error('Board not found')
+    }
+
+    return {
+      ...board,
+      items: this.getItemsByBoardId(id),
+    }
+  }
+
+  private getItemById(id: string): BoardItem {
+    const row = this.db
+      .prepare(`
+        SELECT
+          id,
+          board_id AS boardId,
+          scene_id AS sceneId,
+          kind,
+          title,
+          body,
+          color,
+          position,
+          board_x AS boardX,
+          board_y AS boardY,
+          board_w AS boardW,
+          board_h AS boardH,
+          created_at AS createdAt,
+          updated_at AS updatedAt
+        FROM board_items
+        WHERE id = ?
+      `)
+      .get(id) as BoardItemRow | undefined
+
+    if (!row) {
+      throw new Error('Board item not found')
+    }
+
+    return mapBoardItemRow(row)
+  }
+
+  private getItemsByBoardId(boardId: string) {
+    return this.db
+      .prepare(`
+        SELECT
+          id,
+          board_id AS boardId,
+          scene_id AS sceneId,
+          kind,
+          title,
+          body,
+          color,
+          position,
+          board_x AS boardX,
+          board_y AS boardY,
+          board_w AS boardW,
+          board_h AS boardH,
+          created_at AS createdAt,
+          updated_at AS updatedAt
+        FROM board_items
+        WHERE board_id = ?
+        ORDER BY position ASC
+      `)
+      .all(boardId)
+      .map((row) => mapBoardItemRow(row as BoardItemRow))
+  }
+
+  private listBoardIds() {
+    return this.db
+      .prepare('SELECT id FROM boards ORDER BY sort_order ASC, created_at ASC')
+      .all()
+      .map((row) => (row as { id: string }).id)
+  }
+
+  private listBoardRows() {
+    return this.db
+      .prepare(`
+        SELECT id, name, created_at AS createdAt, updated_at AS updatedAt
+             , description, color, folder, sort_order AS sortOrder
+        FROM boards
+        ORDER BY sort_order ASC, created_at ASC
+      `)
+      .all() as BoardRow[]
+  }
+
+  private listItemRows() {
+    return this.db
+      .prepare(`
+        SELECT
+          id,
+          board_id AS boardId,
+          scene_id AS sceneId,
+          kind,
+          title,
+          body,
+          color,
+          position,
+          board_x AS boardX,
+          board_y AS boardY,
+          board_w AS boardW,
+          board_h AS boardH,
+          created_at AS createdAt,
+          updated_at AS updatedAt
+        FROM board_items
+        ORDER BY board_id ASC, position ASC
+      `)
+      .all() as BoardItemRow[]
   }
 
   private resolveInsertPosition(boardId: string, afterItemId?: string | null) {

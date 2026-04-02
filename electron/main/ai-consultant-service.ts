@@ -6,10 +6,12 @@ import { ProjectService } from './project-service'
 export class AIConsultantService {
   private projectService: ProjectService
   private settingsService: AppSettingsService
+  private readonly requestTimeoutMs: number
 
-  constructor(projectService: ProjectService, settingsService: AppSettingsService) {
+  constructor(projectService: ProjectService, settingsService: AppSettingsService, requestTimeoutMs = 45_000) {
     this.projectService = projectService
     this.settingsService = settingsService
+    this.requestTimeoutMs = requestTimeoutMs
   }
 
   async chat(input: ConsultantChatInput): Promise<ConsultantChatResult> {
@@ -49,7 +51,7 @@ export class AIConsultantService {
     systemPrompt: string,
     messages: ConsultantChatMessage[],
   ) {
-    const response = await fetch('https://api.openai.com/v1/responses', {
+    const response = await this.fetchWithTimeout('https://api.openai.com/v1/responses', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -63,9 +65,9 @@ export class AIConsultantService {
           .map((message) => ({
             role: message.role,
             content: [{ type: 'input_text', text: message.content }],
-          })),
+        })),
       }),
-    })
+    }, 'OpenAI request timed out')
 
     const data = (await response.json()) as {
       error?: { message?: string }
@@ -98,7 +100,7 @@ export class AIConsultantService {
     systemPrompt: string,
     messages: ConsultantChatMessage[],
   ) {
-    const response = await fetch(
+    const response = await this.fetchWithTimeout(
       `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
       {
         method: 'POST',
@@ -117,6 +119,7 @@ export class AIConsultantService {
             })),
         }),
       },
+      'Gemini request timed out',
     )
 
     const data = (await response.json()) as {
@@ -134,6 +137,22 @@ export class AIConsultantService {
     }
 
     return text
+  }
+
+  private async fetchWithTimeout(url: string, init: RequestInit, timeoutMessage: string) {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), this.requestTimeoutMs)
+
+    try {
+      return await fetch(url, { ...init, signal: controller.signal })
+    } catch (error) {
+      if (isAbortError(error)) {
+        throw new Error(timeoutMessage)
+      }
+      throw error
+    } finally {
+      clearTimeout(timeoutId)
+    }
   }
 }
 
@@ -176,4 +195,8 @@ function buildConsultantPrompt(
   ]
     .filter(Boolean)
     .join('\n\n')
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof Error && error.name === 'AbortError'
 }

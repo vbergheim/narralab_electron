@@ -264,7 +264,7 @@ export function ArchiveWorkspace({
             >
               {editingFolderId === folder.id ? (
                 <InlineEditScope
-                  className="space-y-2 px-4 py-1"
+                  className="space-y-2 px-6 pb-1 pt-1"
                   onSubmit={() => {
                     const nextName = editingFolderDraft.trim()
                     if (nextName) {
@@ -295,7 +295,7 @@ export function ArchiveWorkspace({
                         setEditingFolderId(null)
                         setEditingFolderDraft('')
                       }}
-                      className="h-7 flex-1 text-xs"
+                      className="h-7 min-w-[120px] flex-1 text-xs"
                     />
                     <InlineEditActions
                       onSave={() => {
@@ -330,30 +330,30 @@ export function ArchiveWorkspace({
                   </div>
                 </InlineEditScope>
               ) : (
-                <FolderButton
-                  collapsible={folder.childIds.length > 0}
+                <ArchiveFolderRow
+                  folder={folder}
                   collapsed={collapsedFolders.includes(folder.id)}
                   active={selectedFolderId === folder.id}
                   selected={visibleSelectedFolderIds.includes(folder.id)}
                   dropActive={dragOverFolderId === folder.id}
-                  label={folder.name}
-                  count={folder.itemCount}
-                  color={folder.color}
-                  depth={folder.depth}
-                  onClick={(event) => {
+                  onRowClick={(event) => {
                     event.stopPropagation()
                     if (event.metaKey || event.ctrlKey) {
                       handleFolderSelection(event, folder.id)
                       onSelectFolder(folder.id)
                     } else {
-                      setCollapsedFolders((current) =>
-                        current.includes(folder.id)
-                          ? current.filter((entry) => entry !== folder.id)
-                          : [...current, folder.id],
-                      )
+                      onSelectFolder(folder.id)
                     }
                   }}
-                  onDoubleClick={() => {
+                  onToggleCollapse={(event) => {
+                    event.stopPropagation()
+                    setCollapsedFolders((current) =>
+                      current.includes(folder.id)
+                        ? current.filter((entry) => entry !== folder.id)
+                        : [...current, folder.id],
+                    )
+                  }}
+                  onRequestRename={() => {
                     setEditingFolderId(folder.id)
                     setEditingFolderDraft(folder.name)
                     setEditingFolderColor(folder.color)
@@ -469,6 +469,113 @@ export function ArchiveWorkspace({
   )
 }
 
+type ArchiveFolderTreeNode = ArchiveFolder & {
+  depth: number
+  childIds: string[]
+  itemCount: number
+}
+
+function ArchiveFolderRow({
+  folder,
+  collapsed,
+  active,
+  selected,
+  dropActive,
+  onRowClick,
+  onToggleCollapse,
+  onRequestRename,
+  onContextMenu,
+  onDragStart,
+  onDragEnd,
+  onDragEnter,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+}: {
+  folder: ArchiveFolderTreeNode
+  collapsed: boolean
+  active: boolean
+  selected: boolean
+  dropActive: boolean
+  onRowClick(event: MouseEvent<HTMLDivElement>): void
+  onToggleCollapse(event: MouseEvent<HTMLButtonElement>): void
+  onRequestRename(): void
+  onContextMenu(event: MouseEvent<HTMLDivElement>): void
+  onDragStart(): void
+  onDragEnd(): void
+  onDragEnter(): void
+  onDragOver(event: DragEvent<HTMLDivElement>): void
+  onDragLeave(): void
+  onDrop(event: DragEvent<HTMLDivElement>): void
+}) {
+  const collapsible = folder.childIds.length > 0
+
+  return (
+    <div
+      draggable
+      className={cn(
+        'flex min-h-8 items-center gap-2 rounded-lg px-1 py-0.5 transition text-muted',
+        dropActive
+          ? 'bg-accent/12 ring-1 ring-accent/45'
+          : selected
+            ? 'bg-accent/10 text-foreground ring-1 ring-accent/35'
+            : active
+              ? 'bg-white/[0.05] text-foreground'
+              : 'hover:bg-panelMuted/50 hover:text-foreground',
+      )}
+      onDragEnter={(event) => {
+        event.preventDefault()
+        onDragEnter()
+      }}
+      onDragLeave={(event) => {
+        event.preventDefault()
+        const nextTarget = event.relatedTarget
+        if (nextTarget && event.currentTarget.contains(nextTarget as Node)) return
+        onDragLeave()
+      }}
+      onDragOver={(event) => {
+        event.preventDefault()
+        onDragOver(event)
+      }}
+      onDrop={onDrop}
+      onClick={onRowClick}
+      onContextMenu={onContextMenu}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      style={{ paddingLeft: `${folder.depth * 14 + 4}px` }}
+    >
+      {collapsible ? (
+        <button
+          type="button"
+          className="flex shrink-0 items-center rounded-md px-1 py-0.5 transition hover:bg-panelMuted hover:text-foreground"
+          onClick={onToggleCollapse}
+        >
+          {collapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+        </button>
+      ) : (
+        <span className="w-3.5 shrink-0" />
+      )}
+      <Folder className="h-3.5 w-3.5 shrink-0" style={{ color: colorHex(folder.color) }} />
+      <button
+        type="button"
+        className="min-w-0 flex-1 rounded-md px-1 py-0.5 text-left transition hover:bg-panelMuted hover:text-foreground"
+        onDoubleClick={(event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          onRequestRename()
+        }}
+      >
+        <span className="block truncate text-[11px] font-semibold uppercase tracking-[0.18em]">
+          {formatFolderLabel(folder.name)}
+        </span>
+      </button>
+      <div className="ml-2 flex shrink-0 items-center gap-2 text-[10px] text-muted/80">
+        <span className="min-w-4 text-right">{folder.itemCount}</span>
+      </div>
+    </div>
+  )
+}
+
 function FolderButton({
   collapsible,
   collapsed,
@@ -480,9 +587,7 @@ function FolderButton({
   color,
   depth = 0,
   onClick,
-  onDoubleClick,
   onContextMenu,
-  onToggleCollapse,
   onDragStart,
   onDragEnd,
   onDragEnter,
@@ -500,7 +605,6 @@ function FolderButton({
   color: ArchiveFolder['color']
   depth?: number
   onClick(event: MouseEvent<HTMLDivElement>): void
-  onDoubleClick?(): void
   onContextMenu?(event: MouseEvent<HTMLDivElement>): void
   onDragStart?(): void
   onDragEnd?(): void
@@ -538,7 +642,6 @@ function FolderButton({
       }}
       onDrop={onDrop}
       onClick={onClick}
-      onDoubleClick={onDoubleClick}
       onContextMenu={onContextMenu}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}

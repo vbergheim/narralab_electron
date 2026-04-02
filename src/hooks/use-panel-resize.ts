@@ -28,14 +28,17 @@ function readStoredSize(key: string, min: number, max: number, fallback: number)
 }
 
 export function usePanelResize({ initial, min, max, storageKey }: Options) {
-  const [size, setSize] = useState(initial)
+  const [size, setSize] = useState(() => resolveInitialSize({ initial, min, max, storageKey }))
 
   useEffect(() => {
-    if (!storageKey) {
-      setSize(initial)
-      return
+    const nextSize = resolveInitialSize({ initial, min, max, storageKey })
+    const frameId = window.requestAnimationFrame(() => {
+      setSize((current) => (current === nextSize ? current : nextSize))
+    })
+
+    return () => {
+      window.cancelAnimationFrame(frameId)
     }
-    setSize(readStoredSize(storageKey, min, max, initial))
   }, [storageKey, initial, min, max])
 
   useEffect(() => {
@@ -97,4 +100,12 @@ export function usePanelResize({ initial, min, max, storageKey }: Options) {
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max)
+}
+
+function resolveInitialSize({ initial, min, max, storageKey }: Options) {
+  if (!storageKey) {
+    return initial
+  }
+
+  return readStoredSize(storageKey, min, max, initial)
 }
