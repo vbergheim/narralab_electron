@@ -683,6 +683,7 @@ function AiSettingsPanel({
   const [systemPrompt, setSystemPrompt] = useState(settings.ai.systemPrompt)
   const [extraInstructions, setExtraInstructions] = useState(settings.ai.extraInstructions)
   const [responseStyle, setResponseStyle] = useState(settings.ai.responseStyle)
+  const [allowPlaintextSecrets, setAllowPlaintextSecrets] = useState(settings.ai.allowPlaintextSecrets)
   const [openAiApiKey, setOpenAiApiKey] = useState('')
   const [geminiApiKey, setGeminiApiKey] = useState('')
   const openAiModelChoice = openAiModelOptions.some((option) => option.value === openAiModel) ? openAiModel : 'custom'
@@ -702,6 +703,7 @@ function AiSettingsPanel({
               systemPrompt,
               extraInstructions,
               responseStyle,
+              allowPlaintextSecrets,
               openAiApiKey: openAiApiKey || undefined,
               geminiApiKey: geminiApiKey || undefined,
             })
@@ -715,8 +717,17 @@ function AiSettingsPanel({
 
       {settings.ai.secretStorageMode === 'plain' ? (
         <Panel className="mt-4 border-amber/40 bg-amber/10 p-4 text-sm text-foreground">
-          Safe Storage er ikke tilgjengelig på denne maskinen akkurat nå. Lagrede API-nøkler faller derfor tilbake
-          til base64-lagring i lokale appinnstillinger, ikke ekte kryptering.
+          <div>
+            Safe Storage er ikke tilgjengelig på denne maskinen akkurat nå. API-nøkler blir derfor ikke lagret med
+            mindre du eksplisitt tillater plaintext-lagring i lokale appinnstillinger.
+          </div>
+          <div className="mt-3">
+            <ToggleField
+              label="Allow plaintext API key storage on this device"
+              checked={allowPlaintextSecrets}
+              onChange={setAllowPlaintextSecrets}
+            />
+          </div>
         </Panel>
       ) : null}
 
@@ -795,7 +806,12 @@ function AiSettingsPanel({
             placeholder={settings.ai.hasOpenAiApiKey ? 'Leave blank to keep existing key' : 'sk-...'}
           />
           <div className="mt-3 flex items-center gap-2">
-            <Button variant="default" size="sm" onClick={() => onSave({ openAiApiKey })} disabled={busy}>
+            <Button
+              variant="default"
+              size="sm"
+              onClick={() => onSave({ openAiApiKey, allowPlaintextSecrets })}
+              disabled={busy}
+            >
               Save
             </Button>
             {settings.ai.hasOpenAiApiKey ? (
@@ -823,7 +839,12 @@ function AiSettingsPanel({
             placeholder={settings.ai.hasGeminiApiKey ? 'Leave blank to keep existing key' : 'AIza...'}
           />
           <div className="mt-3 flex items-center gap-2">
-            <Button variant="default" size="sm" onClick={() => onSave({ geminiApiKey })} disabled={busy}>
+            <Button
+              variant="default"
+              size="sm"
+              onClick={() => onSave({ geminiApiKey, allowPlaintextSecrets })}
+              disabled={busy}
+            >
               Save
             </Button>
             {settings.ai.hasGeminiApiKey ? (

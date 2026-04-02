@@ -48,6 +48,7 @@ export type AppSettings = {
     extraInstructions: string
     responseStyle: ConsultantResponseStyle
     secretStorageMode: 'safe' | 'plain'
+    allowPlaintextSecrets: boolean
     hasOpenAiApiKey: boolean
     hasGeminiApiKey: boolean
   }
@@ -71,6 +72,7 @@ export type AppSettingsUpdateInput = {
   systemPrompt?: string
   extraInstructions?: string
   responseStyle?: ConsultantResponseStyle
+  allowPlaintextSecrets?: boolean
   openAiApiKey?: string
   geminiApiKey?: string
   clearOpenAiApiKey?: boolean

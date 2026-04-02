@@ -28,6 +28,7 @@ type SettingsFile = {
     systemPrompt?: string
     extraInstructions?: string
     responseStyle?: ConsultantResponseStyle
+    allowPlaintextSecrets?: boolean
     openAiApiKey?: StoredSecret | null
     geminiApiKey?: StoredSecret | null
   }
@@ -63,6 +64,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     extraInstructions: '',
     responseStyle: 'structured',
     secretStorageMode: resolveSecretStorageMode(),
+    allowPlaintextSecrets: false,
     hasOpenAiApiKey: false,
     hasGeminiApiKey: false,
   },
@@ -95,6 +97,7 @@ export class AppSettingsService {
         extraInstructions: file.ai?.extraInstructions ?? DEFAULT_SETTINGS.ai.extraInstructions,
         responseStyle: file.ai?.responseStyle ?? DEFAULT_SETTINGS.ai.responseStyle,
         secretStorageMode: resolveSecretStorageMode(),
+        allowPlaintextSecrets: file.ai?.allowPlaintextSecrets ?? DEFAULT_SETTINGS.ai.allowPlaintextSecrets,
         hasOpenAiApiKey: !!this.readSecret(file.ai?.openAiApiKey),
         hasGeminiApiKey: !!this.readSecret(file.ai?.geminiApiKey),
       },
@@ -128,6 +131,10 @@ export class AppSettingsService {
         extraInstructions:
           input.extraInstructions ?? current.file.ai?.extraInstructions ?? DEFAULT_SETTINGS.ai.extraInstructions,
         responseStyle: input.responseStyle ?? current.file.ai?.responseStyle ?? DEFAULT_SETTINGS.ai.responseStyle,
+        allowPlaintextSecrets:
+          input.allowPlaintextSecrets ??
+          current.file.ai?.allowPlaintextSecrets ??
+          DEFAULT_SETTINGS.ai.allowPlaintextSecrets,
         openAiApiKey: current.file.ai?.openAiApiKey ?? null,
         geminiApiKey: current.file.ai?.geminiApiKey ?? null,
       },
@@ -175,7 +182,7 @@ export class AppSettingsService {
       nextFile.ai!.openAiApiKey = null
     } else if (input.openAiApiKey !== undefined) {
       nextFile.ai!.openAiApiKey = input.openAiApiKey.trim()
-        ? this.encryptSecret(input.openAiApiKey.trim())
+        ? this.encryptSecret(input.openAiApiKey.trim(), nextFile.ai!.allowPlaintextSecrets ?? false)
         : null
     }
 
@@ -183,7 +190,7 @@ export class AppSettingsService {
       nextFile.ai!.geminiApiKey = null
     } else if (input.geminiApiKey !== undefined) {
       nextFile.ai!.geminiApiKey = input.geminiApiKey.trim()
-        ? this.encryptSecret(input.geminiApiKey.trim())
+        ? this.encryptSecret(input.geminiApiKey.trim(), nextFile.ai!.allowPlaintextSecrets ?? false)
         : null
     }
 
@@ -245,12 +252,18 @@ export class AppSettingsService {
     }
   }
 
-  private encryptSecret(value: string): StoredSecret {
+  private encryptSecret(value: string, allowPlaintextSecrets: boolean): StoredSecret {
     if (safeStorage.isEncryptionAvailable()) {
       return {
         encoding: 'safe',
         value: safeStorage.encryptString(value).toString('base64'),
       }
+    }
+
+    if (!allowPlaintextSecrets) {
+      throw new Error(
+        'Safe Storage is unavailable on this device. Enable plaintext secret storage explicitly in AI Settings before saving API keys.',
+      )
     }
 
     return {

@@ -81,4 +81,27 @@ describe('AppSettingsService', () => {
     expect(corruptCopies).toHaveLength(1)
     expect(fs.existsSync(settingsPath)).toBe(false)
   })
+
+  it('requires explicit opt-in before storing plaintext API keys', () => {
+    expect(() =>
+      service.updateSettings({
+        openAiApiKey: 'sk-test',
+      }),
+    ).toThrow(/plaintext secret storage/i)
+
+    const updated = service.updateSettings({
+      allowPlaintextSecrets: true,
+      openAiApiKey: 'sk-test',
+    })
+
+    expect(updated.ai.allowPlaintextSecrets).toBe(true)
+    expect(updated.ai.hasOpenAiApiKey).toBe(true)
+
+    const raw = JSON.parse(fs.readFileSync(settingsPath, 'utf8')) as {
+      ai?: { allowPlaintextSecrets?: boolean; openAiApiKey?: { encoding?: string } | null }
+    }
+
+    expect(raw.ai?.allowPlaintextSecrets).toBe(true)
+    expect(raw.ai?.openAiApiKey).toMatchObject({ encoding: 'plain' })
+  })
 })

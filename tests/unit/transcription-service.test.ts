@@ -39,6 +39,7 @@ function buildSettings(): AppSettings {
       extraInstructions: '',
       responseStyle: 'structured',
       secretStorageMode: 'plain',
+      allowPlaintextSecrets: true,
       hasOpenAiApiKey: false,
       hasGeminiApiKey: false,
     },
