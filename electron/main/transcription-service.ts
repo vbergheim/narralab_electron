@@ -34,7 +34,17 @@ import {
   userInstalledFfprobePath,
 } from './transcription-ffmpeg-install'
 
-type ProgressSender = Pick<WebContents, 'send'>
+type ProgressSender = Pick<WebContents, 'id' | 'send'>
+type TranscriptionJobRuntime = {
+  sender: ProgressSender
+  status: TranscriptionStatus
+  ffmpegProc: ChildProcess | null
+  whisperProc: ChildProcess | null
+  cancelled: boolean
+  diagnosticFfmpegStderr: string
+  diagnosticWhisperStderr: string
+  diagnosticWhisperStdout: string
+}
 
 /**
  * whisper-cli med -pp: `whisper_print_progress_callback: progress =  45%`
@@ -305,14 +315,7 @@ function parseSMPTETimecode(tc: string): number | null {
 export class TranscriptionService {
   private readonly settingsService: AppSettingsService
   private readonly projectService: ProjectService
-  private status: TranscriptionStatus = { phase: 'idle', message: '' }
-  private ffmpegProc: ChildProcess | null = null
-  private whisperProc: ChildProcess | null = null
-  private progressSender: ProgressSender | null = null
-  private cancelled = false
-  private diagnosticFfmpegStderr = ''
-  private diagnosticWhisperStderr = ''
-  private diagnosticWhisperStdout = ''
+  private readonly jobs = new Map<number, TranscriptionJobRuntime>()
 
   constructor(settingsService: AppSettingsService, projectService: ProjectService) {
     this.settingsService = settingsService
@@ -517,12 +520,14 @@ export class TranscriptionService {
     return result.filePaths[0]
   }
 
-  getStatus(): TranscriptionStatus {
-    return { ...this.status }
+  getStatus(senderId: number): TranscriptionStatus {
+    return { ...(this.jobs.get(senderId)?.status ?? { phase: 'idle', message: '' }) }
   }
 
-  getDiagnostics(): TranscriptionMainDiagnostics {
-    const { resultText, ...rest } = this.status
+  getDiagnostics(senderId: number): TranscriptionMainDiagnostics {
+    const job = this.jobs.get(senderId)
+    const status = job?.status ?? { phase: 'idle', message: '' }
+    const { resultText, ...rest } = status
     const statusForDiag: TranscriptionStatus =
       resultText && resultText.length > 0
         ? { ...rest, resultText: `[utelatt – ${resultText.length} tegn]` }
@@ -549,35 +554,27 @@ export class TranscriptionService {
       whisperBinaryFileDescription,
       whisperHelpProbe,
       status: statusForDiag,
-      cancelled: this.cancelled,
-      ffmpegChildRunning: this.ffmpegProc !== null,
-      whisperChildRunning: this.whisperProc !== null,
-      ffmpegStderrTail: this.diagnosticFfmpegStderr,
-      whisperStderrTail: this.diagnosticWhisperStderr,
-      whisperStdoutTail: this.diagnosticWhisperStdout,
+      cancelled: job?.cancelled ?? false,
+      ffmpegChildRunning: job?.ffmpegProc != null,
+      whisperChildRunning: job?.whisperProc != null,
+      ffmpegStderrTail: job?.diagnosticFfmpegStderr ?? '',
+      whisperStderrTail: job?.diagnosticWhisperStderr ?? '',
+      whisperStdoutTail: job?.diagnosticWhisperStdout ?? '',
     }
   }
 
-  private emit(payload: TranscriptionStatus) {
-    this.status = { ...payload }
-    const target = this.progressSender
-    if (!target) {
-      return
-    }
+  private emit(job: TranscriptionJobRuntime, payload: TranscriptionStatus) {
+    job.status = { ...payload }
     try {
-      target.send('transcription:event', { type: 'status', payload: this.status })
+      job.sender.send('transcription:event', { type: 'status', payload: job.status })
     } catch {
       // WebContents gone or channel unavailable
     }
   }
 
-  private emitDownload(modelId: TranscriptionModelId, bytesReceived: number, totalBytes: number | null) {
-    const target = this.progressSender
-    if (!target) {
-      return
-    }
+  private emitDownload(sender: ProgressSender, modelId: TranscriptionModelId, bytesReceived: number, totalBytes: number | null) {
     try {
-      target.send('transcription:event', {
+      sender.send('transcription:event', {
         type: 'download',
         payload: { modelId, bytesReceived, totalBytes },
       })
@@ -587,16 +584,13 @@ export class TranscriptionService {
   }
 
   private emitEngineDownload(
+    sender: ProgressSender,
     part: 'windows-zip' | 'whisper-cpp' | 'ggml' | 'libomp',
     bytesReceived: number,
     totalBytes: number | null,
   ) {
-    const target = this.progressSender
-    if (!target) {
-      return
-    }
     try {
-      target.send('transcription:event', {
+      sender.send('transcription:event', {
         type: 'engine-download',
         payload: { part, bytesReceived, totalBytes },
       })
@@ -609,20 +603,15 @@ export class TranscriptionService {
     if (!isTranscriptionEngineAutoInstallSupported()) {
       throw new Error('Automatic engine install is not available on this system.')
     }
-    this.progressSender = sender
     await installTranscriptionEngine({
       whisperRoot: this.getWhisperRoot(),
-      onProgress: (p) => this.emitEngineDownload(p.part, p.bytesReceived, p.totalBytes),
+      onProgress: (p) => this.emitEngineDownload(sender, p.part, p.bytesReceived, p.totalBytes),
     })
   }
 
-  private emitFfmpegDownload(bytesReceived: number, totalBytes: number | null) {
-    const target = this.progressSender
-    if (!target) {
-      return
-    }
+  private emitFfmpegDownload(sender: ProgressSender, bytesReceived: number, totalBytes: number | null) {
     try {
-      target.send('transcription:event', {
+      sender.send('transcription:event', {
         type: 'ffmpeg-download',
         payload: { bytesReceived, totalBytes },
       })
@@ -635,23 +624,26 @@ export class TranscriptionService {
     if (!isFfmpegAutoInstallSupported()) {
       throw new Error('Automatic FFmpeg install is not available on this system.')
     }
-    this.progressSender = sender
     await installUserFfmpeg({
       whisperRoot: this.getWhisperRoot(),
-      onProgress: (received, total) => this.emitFfmpegDownload(received, total),
+      onProgress: (received, total) => this.emitFfmpegDownload(sender, received, total),
     })
   }
 
-  cancel() {
-    this.cancelled = true
-    this.killChildren()
-    if (this.status.phase === 'preparing' || this.status.phase === 'transcribing') {
-      this.emit({ phase: 'cancelled', message: 'Cancelled' })
+  cancel(senderId: number) {
+    const job = this.jobs.get(senderId)
+    if (!job) {
+      return
+    }
+    job.cancelled = true
+    this.killChildren(job)
+    if (job.status.phase === 'preparing' || job.status.phase === 'transcribing') {
+      this.emit(job, { phase: 'cancelled', message: 'Cancelled' })
     }
   }
 
-  private killChildren() {
-    for (const proc of [this.ffmpegProc, this.whisperProc]) {
+  private killChildren(job: TranscriptionJobRuntime) {
+    for (const proc of [job.ffmpegProc, job.whisperProc]) {
       if (!proc) continue
       try {
         proc.kill('SIGTERM')
@@ -659,8 +651,8 @@ export class TranscriptionService {
         // ignore
       }
     }
-    this.ffmpegProc = null
-    this.whisperProc = null
+    job.ffmpegProc = null
+    job.whisperProc = null
   }
 
   async downloadModel(modelId: TranscriptionModelId, sender: ProgressSender): Promise<void> {
@@ -669,7 +661,6 @@ export class TranscriptionService {
       throw new Error('Unknown model')
     }
 
-    this.progressSender = sender
     fs.mkdirSync(this.getModelsDir(), { recursive: true })
     const dest = this.getModelPath(modelId)
     const partial = `${dest}.partial`
@@ -700,7 +691,7 @@ export class TranscriptionService {
           continue
         }
         received += value.byteLength
-        this.emitDownload(modelId, received, Number.isFinite(total as number) ? (total as number) : null)
+        this.emitDownload(sender, modelId, received, Number.isFinite(total as number) ? (total as number) : null)
         await new Promise<void>((resolve, reject) => {
           writeStream.write(Buffer.from(value), (err) => (err ? reject(err) : resolve()))
         })
@@ -716,7 +707,7 @@ export class TranscriptionService {
     }
 
     await fs.promises.rename(partial, dest)
-    this.emitDownload(modelId, received, received)
+    this.emitDownload(sender, modelId, received, received)
   }
 
   async deleteModel(modelId: TranscriptionModelId): Promise<void> {
@@ -747,12 +738,13 @@ export class TranscriptionService {
 
   /** Fire-and-forget from IPC; reports via transcription:event */
   async runJob(payload: TranscriptionStartPayload, sender: ProgressSender): Promise<void> {
-    this.cancelled = false
-    this.progressSender = sender
-    this.killChildren()
-    this.diagnosticFfmpegStderr = ''
-    this.diagnosticWhisperStderr = ''
-    this.diagnosticWhisperStdout = ''
+    const job = this.getOrCreateJob(sender)
+    job.sender = sender
+    job.cancelled = false
+    this.killChildren(job)
+    job.diagnosticFfmpegStderr = ''
+    job.diagnosticWhisperStderr = ''
+    job.diagnosticWhisperStdout = ''
 
     let tmpRoot: string | null = null
 
@@ -764,13 +756,13 @@ export class TranscriptionService {
 
       const mediaPath = path.normalize(payload.filePath)
       if (!path.isAbsolute(mediaPath) || !fs.existsSync(mediaPath)) {
-        this.emit({ phase: 'error', message: 'Invalid media file', error: 'File not found' })
+        this.emit(job, { phase: 'error', message: 'Invalid media file', error: 'File not found' })
         return
       }
 
       const ffmpeg = this.resolveFfmpegPath()
       if (!ffmpeg) {
-        this.emit({
+        this.emit(job, {
           phase: 'error',
           message: 'FFmpeg not found',
           error: isFfmpegAutoInstallSupported()
@@ -782,7 +774,7 @@ export class TranscriptionService {
 
       const whisper = this.resolveWhisperCliPath()
       if (!whisper) {
-        this.emit({
+        this.emit(job, {
           phase: 'error',
           message: 'Transcription engine missing',
           error: isTranscriptionEngineAutoInstallSupported()
@@ -794,7 +786,7 @@ export class TranscriptionService {
 
       const modelPath = this.getModelPath(modelId)
       if (!fs.existsSync(modelPath)) {
-        this.emit({
+        this.emit(job, {
           phase: 'error',
           message: 'Model not found',
           error: `Download the "${modelId}" model under Settings → Transcribe.`,
@@ -805,20 +797,20 @@ export class TranscriptionService {
       tmpRoot = await fs.promises.mkdtemp(path.join(app.getPath('temp'), 'narralab-transcribe-'))
       const workWav = path.join(tmpRoot, 'narralab-work.wav')
 
-      this.emit({ phase: 'preparing', message: 'Extracting audio…' })
-      await this.runFfmpeg(ffmpeg, mediaPath, workWav)
+      this.emit(job, { phase: 'preparing', message: 'Extracting audio…' })
+      await this.runFfmpeg(job, ffmpeg, mediaPath, workWav)
 
-      if (this.cancelled) {
+      if (job.cancelled) {
         return
       }
 
       // Extract professional start timecode if ffprobe is available
       const tcOffsetSec = await this.readStartTimecode(mediaPath)
 
-      this.emit({ phase: 'transcribing', message: 'Transcribing locally…' })
-      await this.runWhisper(whisper, modelPath, workWav, tmpRoot, language, timestampInterval !== 'none')
+      this.emit(job, { phase: 'transcribing', message: 'Transcribing locally…' })
+      await this.runWhisper(job, whisper, modelPath, workWav, tmpRoot, language, timestampInterval !== 'none')
 
-      if (this.cancelled) {
+      if (job.cancelled) {
         return
       }
 
@@ -837,7 +829,7 @@ export class TranscriptionService {
       }
 
       if (!text.trim()) {
-        this.emit({
+        this.emit(job, {
           phase: 'error',
           message: 'Empty transcript',
           error: 'Whisper exited without producing text. Try a different model or check the engine under Settings → Transcribe.',
@@ -847,7 +839,7 @@ export class TranscriptionService {
 
       const tcDisplay = tcOffsetSec > 0 ? ` · Start TC: ${secToTimestamp(tcOffsetSec)}` : ''
 
-      this.emit({
+      this.emit(job, {
         phase: 'complete',
         message: `Done${tcDisplay}`,
         progress: 1,
@@ -855,34 +847,34 @@ export class TranscriptionService {
       })
     } catch (error) {
       console.error('Transcription runJob failed:', error)
-      if (this.cancelled) {
+      if (job.cancelled) {
         return
       }
       const message = error instanceof Error ? error.message : 'Transcription failed'
-      this.emit({ phase: 'error', message: 'Transcription failed', error: message })
+      this.emit(job, { phase: 'error', message: 'Transcription failed', error: message })
     } finally {
       if (tmpRoot) {
         await fs.promises.rm(tmpRoot, { recursive: true, force: true }).catch(() => {})
       }
-      this.ffmpegProc = null
-      this.whisperProc = null
+      job.ffmpegProc = null
+      job.whisperProc = null
     }
   }
 
-  private runFfmpeg(ffmpegPath: string, inputPath: string, outputWav: string): Promise<void> {
+  private runFfmpeg(job: TranscriptionJobRuntime, ffmpegPath: string, inputPath: string, outputWav: string): Promise<void> {
     return new Promise((resolve, reject) => {
       const args = ['-nostdin', '-hide_banner', '-loglevel', 'error', '-y', '-i', inputPath, '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', outputWav]
       const proc = spawn(ffmpegPath, args, { stdio: ['ignore', 'ignore', 'pipe'] })
-      this.ffmpegProc = proc
+      job.ffmpegProc = proc
       let err = ''
       proc.stderr?.on('data', (chunk: Buffer) => {
         const s = chunk.toString()
         err += s
-        this.diagnosticFfmpegStderr = appendDiagnosticTail(this.diagnosticFfmpegStderr, s, DIAG_FFMPEG_MAX)
+        job.diagnosticFfmpegStderr = appendDiagnosticTail(job.diagnosticFfmpegStderr, s, DIAG_FFMPEG_MAX)
       })
       proc.on('error', reject)
       proc.on('close', (code) => {
-        this.ffmpegProc = null
+        job.ffmpegProc = null
         if (code === 0) {
           resolve()
         } else {
@@ -893,6 +885,7 @@ export class TranscriptionService {
   }
 
   private runWhisper(
+    job: TranscriptionJobRuntime,
     whisperPath: string,
     modelPath: string,
     workWav: string,
@@ -922,7 +915,7 @@ export class TranscriptionService {
 
       const proc = spawnWhisperCli(whisperPath, whisperArgs, cwd, threads, ['pipe', 'pipe', 'pipe'])
       proc.stdin?.end()
-      this.whisperProc = proc
+      job.whisperProc = proc
       let stderr = ''
       let stdout = ''
       let lastProgressEmitMs = 0
@@ -965,15 +958,15 @@ export class TranscriptionService {
       }
 
       heartbeatTimer = setInterval(() => {
-        if (settled || this.cancelled) {
+        if (settled || job.cancelled) {
           return
         }
         const quietSec = Math.round((Date.now() - lastWhisperIoAt) / 1000)
         if (quietSec < 12) {
           return
         }
-        const prev = this.status.phase === 'transcribing' ? this.status.progress : undefined
-        this.emit({
+        const prev = job.status.phase === 'transcribing' ? job.status.progress : undefined
+        this.emit(job, {
           phase: 'transcribing',
           message: 'Transkriberer lokalt…',
           ...(prev !== undefined ? { progress: prev } : {}),
@@ -993,12 +986,12 @@ export class TranscriptionService {
       }, timeoutMs)
 
       const emitWhisperProgress = (force = false) => {
-        if (this.cancelled) {
+        if (job.cancelled) {
           return
         }
         const combined = `${stderr}\n${stdout}`
         const parsed = parseWhisperProgressFraction(combined)
-        const prev = this.status.phase === 'transcribing' ? this.status.progress : undefined
+        const prev = job.status.phase === 'transcribing' ? job.status.progress : undefined
         const progress = parsed !== undefined ? parsed : prev
         const now = Date.now()
         const fractionMoved = progress !== lastEmittedFraction
@@ -1013,7 +1006,7 @@ export class TranscriptionService {
           stderr.split(/\r?\n/).filter(Boolean).slice(-1)[0] ??
           stdout.split(/\r?\n/).filter(Boolean).slice(-1)[0] ??
           ''
-        this.emit({
+        this.emit(job, {
           phase: 'transcribing',
           message: 'Transkriberer lokalt…',
           ...(progress !== undefined ? { progress } : {}),
@@ -1025,7 +1018,7 @@ export class TranscriptionService {
         lastWhisperIoAt = Date.now()
         const s = chunk.toString()
         stdout += s
-        this.diagnosticWhisperStdout = appendDiagnosticTail(this.diagnosticWhisperStdout, s, DIAG_WHISPER_OUT_MAX)
+        job.diagnosticWhisperStdout = appendDiagnosticTail(job.diagnosticWhisperStdout, s, DIAG_WHISPER_OUT_MAX)
         emitWhisperProgress()
       })
 
@@ -1033,20 +1026,20 @@ export class TranscriptionService {
         lastWhisperIoAt = Date.now()
         const s = chunk.toString()
         stderr += s
-        this.diagnosticWhisperStderr = appendDiagnosticTail(this.diagnosticWhisperStderr, s, DIAG_WHISPER_ERR_MAX)
+        job.diagnosticWhisperStderr = appendDiagnosticTail(job.diagnosticWhisperStderr, s, DIAG_WHISPER_ERR_MAX)
         emitWhisperProgress()
       })
 
       proc.on('error', (err) => {
         settle(() => {
-          this.whisperProc = null
+          job.whisperProc = null
           reject(err)
         })
       })
 
       proc.on('close', (code) => {
         settle(() => {
-          this.whisperProc = null
+          job.whisperProc = null
           if (code === 0) {
             emitWhisperProgress(true)
             resolve()
@@ -1083,5 +1076,26 @@ export class TranscriptionService {
     }
 
     return ''
+  }
+
+  private getOrCreateJob(sender: ProgressSender): TranscriptionJobRuntime {
+    const existing = this.jobs.get(sender.id)
+    if (existing) {
+      existing.sender = sender
+      return existing
+    }
+
+    const next: TranscriptionJobRuntime = {
+      sender,
+      status: { phase: 'idle', message: '' },
+      ffmpegProc: null,
+      whisperProc: null,
+      cancelled: false,
+      diagnosticFfmpegStderr: '',
+      diagnosticWhisperStderr: '',
+      diagnosticWhisperStdout: '',
+    }
+    this.jobs.set(sender.id, next)
+    return next
   }
 }

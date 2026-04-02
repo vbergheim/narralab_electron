@@ -436,12 +436,12 @@ export function registerIpc(
       throw error
     }
   })
-  ipcMain.handle('transcription:cancel', () => {
-    transcriptionService.cancel()
+  ipcMain.handle('transcription:cancel', (event) => {
+    transcriptionService.cancel(event.sender.id)
     return { ok: true as const }
   })
-  ipcMain.handle('transcription:getStatus', () => transcriptionService.getStatus())
-  ipcMain.handle('transcription:getDiagnostics', () => transcriptionService.getDiagnostics())
+  ipcMain.handle('transcription:getStatus', (event) => transcriptionService.getStatus(event.sender.id))
+  ipcMain.handle('transcription:getDiagnostics', (event) => transcriptionService.getDiagnostics(event.sender.id))
   ipcMain.handle('transcription:appendNotebook', (_, text: unknown) => {
     const value = requireString(text, 'Transcript text')
     if (!projectService.getMeta()) {
