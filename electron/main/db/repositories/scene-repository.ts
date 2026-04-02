@@ -42,65 +42,20 @@ export class SceneRepository {
   }
 
   list(): Scene[] {
-    const rows = this.db
-      .prepare(`
-        SELECT
-          id,
-          sort_order AS sortOrder,
-          title,
-          synopsis,
-          notes,
-          color,
-          status,
-          is_key_scene AS keyRating,
-          folder,
-          category,
-          estimated_duration AS estimatedDuration,
-          actual_duration AS actualDuration,
-          location,
-          characters,
-          function,
-          source_reference AS sourceReference,
-          quote_moment AS quoteMoment,
-          quality,
-          source_paths AS sourcePaths,
-          created_at AS createdAt,
-          updated_at AS updatedAt
-        FROM scenes
-        ORDER BY sort_order ASC, updated_at DESC
-      `)
-      .all() as SceneRow[]
-
-    const sceneTags = this.db
-      .prepare('SELECT scene_id AS sceneId, tag_id AS tagId FROM scene_tags')
-      .all() as Array<{ sceneId: string; tagId: string }>
-    const sceneBeats = this.db
-      .prepare(`
-        SELECT
-          id,
-          scene_id AS sceneId,
-          sort_order AS sortOrder,
-          text,
-          created_at AS createdAt,
-          updated_at AS updatedAt
-        FROM scene_beats
-        ORDER BY scene_id ASC, sort_order ASC, created_at ASC
-      `)
-      .all() as SceneBeatRow[]
-
-    const tagsByScene = new Map<string, string[]>()
-    sceneTags.forEach(({ sceneId, tagId }) => {
-      const current = tagsByScene.get(sceneId) ?? []
+    const rows = this.listSceneRows()
+    const tagsByScene = this.listSceneTagRows().reduce<Map<string, string[]>>((map, { sceneId, tagId }) => {
+      const current = map.get(sceneId) ?? []
       current.push(tagId)
-      tagsByScene.set(sceneId, current)
-    })
+      map.set(sceneId, current)
+      return map
+    }, new Map())
 
-    const beatsByScene = new Map<string, SceneBeat[]>()
-    sceneBeats.forEach((beat) => {
-      const current = beatsByScene.get(beat.sceneId) ?? []
+    const beatsByScene = this.listSceneBeatRows().reduce<Map<string, SceneBeat[]>>((map, beat) => {
+      const current = map.get(beat.sceneId) ?? []
       current.push(beat)
-      beatsByScene.set(beat.sceneId, current)
-    })
+      map.set(beat.sceneId, current)
+      return map
+    }, new Map())
 
     return rows.map((row) => ({
       ...row,
@@ -206,7 +161,7 @@ export class SceneRepository {
   }
 
   reorder(sceneIds: string[]) {
-    const currentIds = this.list().map((scene) => scene.id)
+    const currentIds = this.listSceneIds()
     const orderedIds = sceneIds.filter((id, index) => currentIds.includes(id) && sceneIds.indexOf(id) === index)
     const remainingIds = currentIds.filter((id) => !orderedIds.includes(id))
     const nextIds = [...orderedIds, ...remainingIds]
@@ -298,13 +253,48 @@ export class SceneRepository {
   }
 
   getById(id: string): Scene {
-    const scene = this.list().find((entry) => entry.id === id)
+    const row = this.db
+      .prepare(`
+        SELECT
+          id,
+          sort_order AS sortOrder,
+          title,
+          synopsis,
+          notes,
+          color,
+          status,
+          is_key_scene AS keyRating,
+          folder,
+          category,
+          estimated_duration AS estimatedDuration,
+          actual_duration AS actualDuration,
+          location,
+          characters,
+          function,
+          source_reference AS sourceReference,
+          quote_moment AS quoteMoment,
+          quality,
+          source_paths AS sourcePaths,
+          created_at AS createdAt,
+          updated_at AS updatedAt
+        FROM scenes
+        WHERE id = ?
+      `)
+      .get(id) as SceneRow | undefined
 
-    if (!scene) {
+    if (!row) {
       throw new Error(`Scene ${id} was not found`)
     }
 
-    return scene
+    return {
+      ...row,
+      keyRating: clampKeyRating(row.keyRating),
+      characters: parseJsonArray(row.characters),
+      sourcePaths: parseJsonArray(row.sourcePaths),
+      sourceReference: resolvePrimarySourceReference(row.sourceReference, row.sourcePaths),
+      tagIds: this.getTagIdsBySceneId(id),
+      beats: this.getBeatsBySceneId(id),
+    }
   }
 
   private getNextSortOrder() {
@@ -315,7 +305,20 @@ export class SceneRepository {
   }
 
   private getBeatsBySceneId(sceneId: string): SceneBeat[] {
-    return this.list().find((scene) => scene.id === sceneId)?.beats ?? []
+    return this.db
+      .prepare(`
+        SELECT
+          id,
+          scene_id AS sceneId,
+          sort_order AS sortOrder,
+          text,
+          created_at AS createdAt,
+          updated_at AS updatedAt
+        FROM scene_beats
+        WHERE scene_id = ?
+        ORDER BY sort_order ASC, created_at ASC
+      `)
+      .all(sceneId) as SceneBeat[]
   }
 
   private getBeatById(id: string): SceneBeat {
@@ -364,6 +367,73 @@ export class SceneRepository {
     beats.forEach((beat, index) => {
       update.run(index, beat.id)
     })
+  }
+
+  private getTagIdsBySceneId(sceneId: string) {
+    return this.db
+      .prepare('SELECT tag_id AS tagId FROM scene_tags WHERE scene_id = ? ORDER BY rowid ASC')
+      .all(sceneId)
+      .map((row) => (row as { tagId: string }).tagId)
+  }
+
+  private listSceneIds() {
+    return this.db
+      .prepare('SELECT id FROM scenes ORDER BY sort_order ASC, updated_at DESC')
+      .all()
+      .map((row) => (row as { id: string }).id)
+  }
+
+  private listSceneRows() {
+    return this.db
+      .prepare(`
+        SELECT
+          id,
+          sort_order AS sortOrder,
+          title,
+          synopsis,
+          notes,
+          color,
+          status,
+          is_key_scene AS keyRating,
+          folder,
+          category,
+          estimated_duration AS estimatedDuration,
+          actual_duration AS actualDuration,
+          location,
+          characters,
+          function,
+          source_reference AS sourceReference,
+          quote_moment AS quoteMoment,
+          quality,
+          source_paths AS sourcePaths,
+          created_at AS createdAt,
+          updated_at AS updatedAt
+        FROM scenes
+        ORDER BY sort_order ASC, updated_at DESC
+      `)
+      .all() as SceneRow[]
+  }
+
+  private listSceneTagRows() {
+    return this.db
+      .prepare('SELECT scene_id AS sceneId, tag_id AS tagId FROM scene_tags')
+      .all() as Array<{ sceneId: string; tagId: string }>
+  }
+
+  private listSceneBeatRows() {
+    return this.db
+      .prepare(`
+        SELECT
+          id,
+          scene_id AS sceneId,
+          sort_order AS sortOrder,
+          text,
+          created_at AS createdAt,
+          updated_at AS updatedAt
+        FROM scene_beats
+        ORDER BY scene_id ASC, sort_order ASC, created_at ASC
+      `)
+      .all() as SceneBeatRow[]
   }
 }
 
