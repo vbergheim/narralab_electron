@@ -1,5 +1,5 @@
 import type { PointerEventHandler } from 'react'
-import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   AlignJustify,
@@ -38,12 +38,11 @@ import { Panel } from '@/components/ui/panel'
 import { usePanelResize } from '@/hooks/use-panel-resize'
 import { cn } from '@/lib/cn'
 import { nextKeyRating } from '@/lib/scene-rating'
+import { normalizeBoardViewMode, useWindowRuntime } from '@/app/use-window-runtime'
 import { useAppStore } from '@/stores/app-store'
 import { useFilterStore } from '@/stores/filter-store'
 import { isTextBoardItem } from '@/types/board'
-import type { BoardViewMode } from '@/types/board'
-import type { SavedWindowLayout, WindowWorkspace } from '@/types/ai'
-import type { ProjectChangeScope, WindowContext } from '@/types/project'
+import type { WindowWorkspace } from '@/types/ai'
 import type { Scene } from '@/types/scene'
 import type { SceneDensity } from '@/types/view'
 
@@ -62,15 +61,10 @@ export function App() {
   const [, setLeftCollapsed] = useState(false)
   const [settingsNavigate, setSettingsNavigate] = useState<{ tab: SettingsTab; requestId: number } | null>(null)
   const [consultantDockOpen, setConsultantDockOpen] = useState(false)
-  const [sceneDensity, setSceneDensity] = useState<SceneDensity>('compact')
-  const [boardViewMode, setBoardViewMode] = useState<BoardViewMode>('outline')
   const [viewMenuOpen, setViewMenuOpen] = useState(false)
   const [viewMenuPosition, setViewMenuPosition] = useState({ x: 0, y: 0 })
-  const [windowContext, setWindowContext] = useState<WindowContext | null>(null)
-  const [savedLayouts, setSavedLayouts] = useState<SavedWindowLayout[]>([])
   const [outlineImmersive, setOutlineImmersive] = useState(false)
   const inspectorResize = usePanelResize({ initial: 420, min: 320, max: 620 })
-  const lastAppliedProjectBoardViewKeyRef = useRef<string>('')
   const {
     ready,
     busy,
@@ -177,94 +171,31 @@ export function App() {
   }, [setWorkspaceMode])
 
   const filters = useFilterStore()
-  const lastProjectRevisionRef = useRef<number>(0)
 
   useEffect(() => {
     void initialize()
   }, [initialize])
 
-  const syncProjectChangeEvent = useCallback(
-    async (scopes: ProjectChangeScope[]) => {
-      await syncProjectChanges(scopes)
-      if (scopes.includes('all') || scopes.includes('layouts')) {
-        setSavedLayouts(await window.narralab.windows.listLayouts())
-      }
-    },
-    [syncProjectChanges],
-  )
-
-  useEffect(() => {
-    if (!window.narralab) {
-      console.error('[App] window.narralab is undefined - preload script did not load')
-      return
-    }
-
-    const loadWindowState = async () => {
-      const [context, layouts] = await Promise.all([
-        window.narralab.windows.getContext(),
-        window.narralab.windows.listLayouts(),
-      ])
-      setWindowContext(context)
-      setSavedLayouts(layouts)
-      if (context.role === 'detached') {
-        setSceneDensity(context.sceneDensity)
-        setBoardViewMode(normalizeBoardViewMode(context.viewMode))
-      }
-    }
-
-    void loadWindowState()
-
-    const dispose = window.narralab.windows.subscribe((event) => {
-      if (event.type === 'project-changed') {
-        if (event.payload.revision <= lastProjectRevisionRef.current) {
-          return
-        }
-        lastProjectRevisionRef.current = event.payload.revision
-        void syncProjectChangeEvent(event.payload.scopes)
-        return
-      }
-
-      if (event.type === 'global-ui-state') {
-        applyGlobalUiState(event.payload)
-        return
-      }
-
-      if (
-        event.type === 'window-context' &&
-        event.payload.windowId === windowContext?.windowId &&
-        event.payload.role === 'detached'
-      ) {
-        setWindowContext(event.payload)
-        setSceneDensity(event.payload.sceneDensity)
-        setBoardViewMode(normalizeBoardViewMode(event.payload.viewMode))
-      }
-    })
-
-    return dispose
-  }, [applyGlobalUiState, syncProjectChangeEvent, windowContext?.windowId])
-
-  useEffect(() => {
-    if (!ready || windowContext === null) return
-    if (windowContext.role !== 'main') return
-    startTransition(() => {
-      setSceneDensity(appSettings.ui.defaultSceneDensity)
-    })
-  }, [ready, appSettings.ui.defaultSceneDensity, windowContext])
-
-  useEffect(() => {
-    if (!ready || windowContext === null) return
-    if (windowContext.role !== 'main') return
-    if (!projectMeta || !projectSettings) {
-      lastAppliedProjectBoardViewKeyRef.current = ''
-      return
-    }
-    const key = `${projectMeta.path}:${projectSettings.defaultBoardView}`
-    if (lastAppliedProjectBoardViewKeyRef.current === key) return
-    lastAppliedProjectBoardViewKeyRef.current = key
-    startTransition(() => {
-      setBoardViewMode(normalizeBoardViewMode(projectSettings.defaultBoardView))
-    })
-  }, [ready, projectMeta, projectSettings, windowContext])
+  const {
+    boardIdForWindow,
+    boardViewMode,
+    detachedWorkspace,
+    savedLayouts,
+    sceneDensity,
+    setBoardViewMode,
+    setSavedLayouts,
+    setSceneDensity,
+    setWindowContext,
+    windowContext,
+  } = useWindowRuntime({
+    ready,
+    projectMetaPath: projectMeta?.path ?? null,
+    defaultSceneDensity: appSettings.ui.defaultSceneDensity,
+    defaultBoardView: projectSettings?.defaultBoardView ?? null,
+    activeBoardId,
+    applyGlobalUiState,
+    syncProjectChanges,
+  })
 
   useEffect(() => {
     const onFullscreenChange = () => {
@@ -274,45 +205,6 @@ export function App() {
     document.addEventListener('fullscreenchange', onFullscreenChange)
     return () => document.removeEventListener('fullscreenchange', onFullscreenChange)
   }, [])
-
-  const detachedWorkspace =
-    windowContext?.role === 'detached' && windowContext.workspace !== 'main'
-      ? windowContext.workspace
-      : null
-  const boardIdForWindow =
-    detachedWorkspace && windowContext?.boardId
-      ? windowContext.boardId
-      : activeBoardId
-
-  useEffect(() => {
-    const detachedWindowId = windowContext?.role === 'detached' ? windowContext.windowId : null
-    const detachedContextBoardId = windowContext?.role === 'detached' ? windowContext.boardId : null
-    const detachedContextViewMode = windowContext?.role === 'detached' ? windowContext.viewMode : null
-    const detachedContextSceneDensity = windowContext?.role === 'detached' ? windowContext.sceneDensity : null
-
-    if (!detachedWindowId) {
-      return
-    }
-
-    if (
-      detachedContextBoardId === boardIdForWindow &&
-      detachedContextViewMode === boardViewMode &&
-      detachedContextSceneDensity === sceneDensity
-    ) {
-      return
-    }
-
-    void window.narralab.windows.updateContext({
-      boardId: boardIdForWindow,
-      viewMode: normalizeBoardViewMode(boardViewMode),
-      sceneDensity,
-    })
-  }, [
-    boardIdForWindow,
-    boardViewMode,
-    sceneDensity,
-    windowContext,
-  ])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -402,7 +294,7 @@ export function App() {
     }
 
     setActiveBoard(boardId)
-  }, [detachedWorkspace, setActiveBoard, windowContext?.role])
+  }, [detachedWorkspace, setActiveBoard, setWindowContext, windowContext?.role])
 
   const openBoardDetailsForCurrentWindow = useCallback((boardId: string) => {
     if (windowContext?.role === 'detached' && detachedWorkspace) {
@@ -496,7 +388,7 @@ export function App() {
         label: option.label,
         onSelect: () => setSceneDensity(option.value),
       })),
-    [],
+    [setSceneDensity],
   )
   const effectiveBoardViewMode = normalizeBoardViewMode(boardViewMode)
   const projectTitle = projectSettings?.title?.trim() || projectMeta?.name || 'NarraLab'
@@ -1333,7 +1225,3 @@ const densityOptions: Array<{
   { value: 'compact', label: 'Compact', icon: Rows3 },
   { value: 'detailed', label: 'Detailed', icon: LayoutGrid },
 ]
-
-function normalizeBoardViewMode(mode: BoardViewMode): BoardViewMode {
-  return mode === 'timeline' ? 'outline' : mode
-}
