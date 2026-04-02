@@ -36,12 +36,11 @@ import type { TranscriptionFolder, TranscriptionItem, TranscriptionItemUpdateInp
 import { openProjectDatabase, type ProjectDatabase } from './db/connection'
 import { ArchiveRepository } from './db/repositories/archive-repository'
 import { BoardRepository } from './db/repositories/board-repository'
+import { ProjectMetadataRepository } from './db/repositories/project-metadata-repository'
 import { SceneRepository } from './db/repositories/scene-repository'
 import { TagRepository } from './db/repositories/tag-repository'
 import { TranscriptionLibraryRepository } from './db/repositories/transcription-library-repository'
 import { importShootLogWorkbook } from './shoot-log-import'
-
-const NOTEBOOK_META_KEY = 'project_notebooks_v1'
 
 function notebookTabId(): string {
   return randomUUID()
@@ -124,6 +123,7 @@ type Repositories = {
   scenes: SceneRepository
   boards: BoardRepository
   tags: TagRepository
+  metadata: ProjectMetadataRepository
   transcriptionLibrary: TranscriptionLibraryRepository
 }
 
@@ -453,9 +453,7 @@ export class ProjectService {
   }
 
   listTranscriptionFolders(): TranscriptionFolder[] {
-    const db = this.ensureDatabase()
-    const readMeta = db.prepare('SELECT value FROM app_meta WHERE key = ?')
-    const storedValue = (readMeta.get('transcription_folders') as { value: string } | undefined)?.value
+    const storedValue = this.ensureRepositories().metadata.getTranscriptionFolders()
     const storedFolders = parseTranscriptionFolders(storedValue)
     const itemFolderPaths = Array.from(
       new Set(
@@ -674,9 +672,7 @@ export class ProjectService {
   }
 
   listSceneFolders(): SceneFolder[] {
-    const db = this.ensureDatabase()
-    const readMeta = db.prepare('SELECT value FROM app_meta WHERE key = ?')
-    const storedValue = (readMeta.get('scene_folders') as { value: string } | undefined)?.value
+    const storedValue = this.ensureRepositories().metadata.getSceneFolders()
     const storedFolders = parseSceneFolders(storedValue)
     const sceneFolderPaths = Array.from(
       new Set(
@@ -876,9 +872,7 @@ export class ProjectService {
   }
 
   listBlockTemplates(): BlockTemplate[] {
-    const db = this.ensureDatabase()
-    const readMeta = db.prepare('SELECT value FROM app_meta WHERE key = ?')
-    const storedValue = (readMeta.get('block_templates') as { value: string } | undefined)?.value
+    const storedValue = this.ensureRepositories().metadata.getBlockTemplates()
     return parseBlockTemplates(storedValue)
   }
 
@@ -911,9 +905,7 @@ export class ProjectService {
   }
 
   listBoardFolders(): BoardFolder[] {
-    const db = this.ensureDatabase()
-    const readMeta = db.prepare('SELECT value FROM app_meta WHERE key = ?')
-    const storedValue = (readMeta.get('board_folders') as { value: string } | undefined)?.value
+    const storedValue = this.ensureRepositories().metadata.getBoardFolders()
     const storedFolders = parseBoardFolders(storedValue)
     const boardFolderPaths = Array.from(
       new Set(
@@ -1153,6 +1145,7 @@ export class ProjectService {
       scenes: new SceneRepository(this.db),
       boards: new BoardRepository(this.db),
       tags: new TagRepository(this.db),
+      metadata: new ProjectMetadataRepository(this.db),
       transcriptionLibrary: new TranscriptionLibraryRepository(this.db),
     }
   }
@@ -1257,9 +1250,8 @@ export class ProjectService {
   }
 
   getNotebook(): NotebookDocument {
-    const db = this.ensureDatabase()
-    const readMeta = db.prepare('SELECT value FROM app_meta WHERE key = ?')
-    const json = (readMeta.get(NOTEBOOK_META_KEY) as { value: string } | undefined)?.value
+    const metadata = this.ensureRepositories().metadata
+    const json = metadata.getNotebook()
     if (json) {
       try {
         const parsed = JSON.parse(json) as NotebookDocument
@@ -1269,9 +1261,7 @@ export class ProjectService {
       }
     }
 
-    const content = (readMeta.get('project_notebook') as { value: string } | undefined)?.value ?? ''
-    const updatedAt =
-      (readMeta.get('project_notebook_updated_at') as { value: string } | undefined)?.value ?? null
+    const { content, updatedAt } = metadata.getLegacyNotebook()
 
     if (content || updatedAt) {
       return migrateLegacyNotebookContent(content, updatedAt)
@@ -1314,17 +1304,7 @@ export class ProjectService {
   private setNotebookDocument(document: NotebookDocument): NotebookDocument {
     const normalized = sanitizeNotebookDocument(document)
     normalized.updatedAt = aggregateNotebookTabTimes(normalized.tabs)
-    const db = this.ensureDatabase()
-    const upsertMeta = db.prepare(`
-      INSERT INTO app_meta (key, value)
-      VALUES (?, ?)
-      ON CONFLICT(key) DO UPDATE SET value = excluded.value
-    `)
-    const deleteMeta = db.prepare('DELETE FROM app_meta WHERE key = ?')
-
-    upsertMeta.run(NOTEBOOK_META_KEY, JSON.stringify(normalized))
-    deleteMeta.run('project_notebook')
-    deleteMeta.run('project_notebook_updated_at')
+    this.ensureRepositories().metadata.setNotebook(JSON.stringify(normalized))
 
     return normalized
   }
@@ -1354,23 +1334,11 @@ export class ProjectService {
   }
 
   private setBoardFolders(folders: BoardFolder[]) {
-    const db = this.ensureDatabase()
-    const upsertMeta = db.prepare(`
-      INSERT INTO app_meta (key, value)
-      VALUES (?, ?)
-      ON CONFLICT(key) DO UPDATE SET value = excluded.value
-    `)
-    upsertMeta.run('board_folders', JSON.stringify(normalizeBoardFolders(folders)))
+    this.ensureRepositories().metadata.setBoardFolders(JSON.stringify(normalizeBoardFolders(folders)))
   }
 
   private setSceneFolders(folders: SceneFolder[]) {
-    const db = this.ensureDatabase()
-    const upsertMeta = db.prepare(`
-      INSERT INTO app_meta (key, value)
-      VALUES (?, ?)
-      ON CONFLICT(key) DO UPDATE SET value = excluded.value
-    `)
-    upsertMeta.run('scene_folders', JSON.stringify(normalizeSceneFolders(folders)))
+    this.ensureRepositories().metadata.setSceneFolders(JSON.stringify(normalizeSceneFolders(folders)))
   }
 
   private ensureTranscriptionFolder(path: string) {
@@ -1386,23 +1354,13 @@ export class ProjectService {
   }
 
   private setTranscriptionFolders(folders: TranscriptionFolder[]) {
-    const db = this.ensureDatabase()
-    const upsertMeta = db.prepare(`
-      INSERT INTO app_meta (key, value)
-      VALUES (?, ?)
-      ON CONFLICT(key) DO UPDATE SET value = excluded.value
-    `)
-    upsertMeta.run('transcription_folders', JSON.stringify(normalizeSceneFolders(folders)))
+    this.ensureRepositories().metadata.setTranscriptionFolders(
+      JSON.stringify(normalizeSceneFolders(folders)),
+    )
   }
 
   private setBlockTemplates(templates: BlockTemplate[]) {
-    const db = this.ensureDatabase()
-    const upsertMeta = db.prepare(`
-      INSERT INTO app_meta (key, value)
-      VALUES (?, ?)
-      ON CONFLICT(key) DO UPDATE SET value = excluded.value
-    `)
-    upsertMeta.run('block_templates', JSON.stringify(normalizeBlockTemplates(templates)))
+    this.ensureRepositories().metadata.setBlockTemplates(JSON.stringify(normalizeBlockTemplates(templates)))
   }
 
   private ensureRepositories() {
