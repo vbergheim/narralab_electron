@@ -24,7 +24,6 @@ import {
   parseBoardUpdateInput,
   parseConsultantChatInput,
   parseFolderUpdateInput,
-  parseProjectChangeScopes,
   parseProjectSettingsUpdateInput,
   parseSceneBeatUpdateInput,
   parseSceneUpdateInput,
@@ -367,7 +366,6 @@ export function registerIpc(
   ipcMain.handle('windows:updateContext', (event, input) =>
     windowManager.updateContext(event.sender.id, parseWindowContextUpdate(input)),
   )
-  ipcMain.handle('windows:refreshProject', (_, scopes: unknown) => windowManager.refreshProject(parseProjectChangeScopes(scopes)))
   ipcMain.handle('windows:getDragSession', () => windowManager.getDragSession())
   ipcMain.handle('windows:consumeDragSession', () => windowManager.consumeDragSession())
   ipcMain.handle('windows:setDragSession', (_, session) =>

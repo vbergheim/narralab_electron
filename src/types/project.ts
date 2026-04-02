@@ -324,7 +324,6 @@ export interface NarraLabApi {
     listContexts(): Promise<WindowContext[]>
     openWorkspace(workspace: WindowWorkspace, options?: Partial<WindowContext>): Promise<WindowContext>
     updateContext(input: Partial<Pick<WindowContext, 'boardId' | 'viewMode' | 'sceneDensity'>>): Promise<WindowContext>
-    refreshProject(scopes?: ProjectChangeScope[]): Promise<void>
     getDragSession(): WindowDragSession
     readDragSession(): Promise<WindowDragSession>
     consumeDragSession(): Promise<WindowDragSession>

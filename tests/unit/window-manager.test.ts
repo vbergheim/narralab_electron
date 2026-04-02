@@ -119,7 +119,7 @@ describe('WindowManager drag sessions', () => {
     const { sentEvents } = attachFakeWindow()
 
     windowManager.notifyProjectChanged(['boards', 'tags'])
-    windowManager.refreshProject(['layouts'])
+    windowManager.notifyProjectChanged(['layouts'])
 
     expect(sentEvents).toHaveLength(2)
     expect(sentEvents[0]).toEqual({

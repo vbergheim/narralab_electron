@@ -103,7 +103,6 @@ const api: NarraLabApi = {
     listContexts: () => ipcRenderer.invoke('windows:listContexts'),
     openWorkspace: (workspace, options) => ipcRenderer.invoke('windows:openWorkspace', workspace, options),
     updateContext: (input) => ipcRenderer.invoke('windows:updateContext', input),
-    refreshProject: (scopes) => ipcRenderer.invoke('windows:refreshProject', scopes),
     getDragSession: () => currentDragSession,
     readDragSession: () => ipcRenderer.invoke('windows:getDragSession'),
     consumeDragSession: async () => {

@@ -5,6 +5,7 @@ import { app, BrowserWindow, nativeImage } from 'electron'
 
 import { AIConsultantService } from './ai-consultant-service'
 import { AppSettingsService } from './app-settings-service'
+import { buildBrowserWindowOptions, isAllowedAppNavigation } from './browser-window-policy'
 import { registerIpc } from './ipc'
 import { ProjectService } from './project-service'
 import { WindowManager } from './window-manager'
@@ -47,34 +48,19 @@ function createBrowserWindow(input: {
   const iconPath = resolveRuntimeIconPath()
   const runtimeRoot = app.isPackaged ? app.getAppPath() : process.cwd()
   const preloadPath = path.join(runtimeRoot, 'dist-electron', 'index.js')
-  const isMainWindow = input.workspace === 'main'
-  const minWidth = isMainWindow ? 980 : 220
-  const minHeight = isMainWindow ? 720 : 180
-  const browserWindow = new BrowserWindow({
-    width: input.bounds?.width ?? 1600,
-    height: input.bounds?.height ?? 980,
-    x: input.bounds?.x,
-    y: input.bounds?.y,
-    minWidth,
-    minHeight,
-    backgroundColor: '#0f1117',
-    icon: iconPath,
-    title: input.title,
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 18, y: 18 },
-    webPreferences: {
-      preload: preloadPath,
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-      webSecurity: true,
-      allowRunningInsecureContent: false,
-    },
-  })
+  const browserWindow = new BrowserWindow(
+    buildBrowserWindowOptions({
+      title: input.title,
+      workspace: input.workspace,
+      preloadPath,
+      icon: iconPath,
+      bounds: input.bounds,
+    }),
+  )
 
   browserWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   browserWindow.webContents.on('will-navigate', (event, navigationUrl) => {
-    if (!isAllowedAppNavigation(navigationUrl)) {
+    if (!isAllowedAppNavigation(navigationUrl, process.env.VITE_DEV_SERVER_URL)) {
       event.preventDefault()
     }
   })
@@ -88,19 +74,6 @@ function createBrowserWindow(input: {
 
   return browserWindow
 }
-
-function isAllowedAppNavigation(navigationUrl: string) {
-  if (process.env.VITE_DEV_SERVER_URL) {
-    try {
-      return new URL(navigationUrl).origin === new URL(process.env.VITE_DEV_SERVER_URL).origin
-    } catch {
-      return false
-    }
-  }
-
-  return navigationUrl.startsWith('file://')
-}
-
 app.on('open-file', (event, filePath) => {
   event.preventDefault()
   pendingProjectToOpen = filePath

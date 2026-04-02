@@ -166,17 +166,6 @@ export class WindowManager {
     })
   }
 
-  refreshProject(scopes: ProjectChangeScope[] = ['all']) {
-    this.projectRevision += 1
-    this.broadcast({
-      type: 'project-changed',
-      payload: {
-        revision: this.projectRevision,
-        scopes: normalizeProjectChangeScopes(scopes),
-      },
-    })
-  }
-
   listLayouts() {
     return this.settingsService.getSettings().ui.savedLayouts
   }
