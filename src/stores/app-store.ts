@@ -2,10 +2,10 @@ import { create } from 'zustand'
 
 import { defaultBoardCloneName } from '@/lib/constants'
 import { createArchiveActions } from '@/stores/app-store-archive-actions'
+import { createConsultantActions } from '@/stores/app-store-consultant-actions'
 import { createProjectActions } from '@/stores/app-store-project-actions'
 import type { AppStore } from '@/stores/app-store-contract'
 import { buildBoardOrderAfterMove, inferTagType, runProjectAction, sortBeats, toMessage } from '@/stores/app-store-utils'
-import type { ConsultantMessage } from '@/types/ai'
 import type { AddSceneToBoardResult, BoardItem } from '@/types/board'
 import { emptyNotebookDocument } from '@/lib/notebook-document'
 import type { SceneUpdateInput } from '@/types/scene'
@@ -67,70 +67,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
   consultantContextMode: 'none',
   workspaceMode: 'outline',
   ...createArchiveActions(set),
+  ...createConsultantActions(set, get),
   ...createProjectActions(set, get),
-
-  async sendConsultantMessage(content) {
-    const message = content.trim()
-    if (!message) return
-
-    const optimisticUserMessage: ConsultantMessage = {
-      id: crypto.randomUUID(),
-      role: 'user',
-      content: message,
-      createdAt: new Date().toISOString(),
-    }
-
-    set((state) => ({
-      consultantBusy: true,
-      consultantMessages: [...state.consultantMessages, optimisticUserMessage],
-    }))
-
-    try {
-      const conversation = [...get().consultantMessages].slice(-8)
-      const result = await window.narralab.consultant.chat({
-        activeBoardId: get().activeBoardId,
-        contextMode: get().consultantContextMode,
-        messages: conversation.map((entry) => ({
-          role: entry.role,
-          content: entry.content,
-        })),
-      })
-
-      const reply: ConsultantMessage = {
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content: result.message,
-        createdAt: new Date().toISOString(),
-      }
-
-      set((state) => ({
-        consultantBusy: false,
-        consultantMessages: [...state.consultantMessages, reply],
-      }))
-    } catch (error) {
-      const reply: ConsultantMessage = {
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content: toMessage(error),
-        createdAt: new Date().toISOString(),
-        error: true,
-      }
-
-      set((state) => ({
-        consultantBusy: false,
-        error: toMessage(error),
-        consultantMessages: [...state.consultantMessages, reply],
-      }))
-    }
-  },
-
-  setConsultantContextMode(mode) {
-    set({ consultantContextMode: mode })
-  },
-
-  clearConsultantConversation() {
-    set({ consultantMessages: [] })
-  },
 
   async createScene() {
     await runProjectAction(set, async () => {
