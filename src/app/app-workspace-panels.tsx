@@ -264,6 +264,7 @@ export function DetachedWorkspacePanel({
         onUpdateAppSettings={onUpdateAppSettings}
         onUpdateNotebookDraft={onUpdateNotebookDraft}
         onOpenTranscribeSettings={onOpenTranscribeSettings}
+        detachedTranscriptOnly
       />
     )
   }

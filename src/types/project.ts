@@ -73,6 +73,16 @@ export type GlobalUiState = {
   activeBoardId: string | null
   selectedArchiveFolderId: string | null
   selectedTranscriptionItemId: string | null
+  workspaceMode:
+    | 'outline'
+    | 'bank'
+    | 'notebook'
+    | 'archive'
+    | 'consultant'
+    | 'settings'
+    | 'board-manager'
+    | 'transcribe'
+    | null
 }
 
 export type ProjectChangeScope =
@@ -104,6 +114,7 @@ export type WindowContext = {
   role: 'main' | 'detached'
   workspace: WindowWorkspace | 'main'
   boardId: string | null
+  transcriptionItemId: string | null
   viewMode: BoardViewMode
   sceneDensity: import('./view').SceneDensity
 }
@@ -323,14 +334,20 @@ export interface NarraLabApi {
   windows: {
     getContext(): Promise<WindowContext>
     listContexts(): Promise<WindowContext[]>
-    openWorkspace(workspace: WindowWorkspace, options?: Partial<WindowContext>): Promise<WindowContext>
-    updateContext(input: Partial<Pick<WindowContext, 'boardId' | 'viewMode' | 'sceneDensity'>>): Promise<WindowContext>
+    openWorkspace(
+      workspace: WindowWorkspace,
+      options?: Partial<Pick<WindowContext, 'boardId' | 'transcriptionItemId' | 'viewMode' | 'sceneDensity'>>,
+    ): Promise<WindowContext>
+    updateContext(
+      input: Partial<Pick<WindowContext, 'boardId' | 'transcriptionItemId' | 'viewMode' | 'sceneDensity'>>,
+    ): Promise<WindowContext>
     getDragSession(): WindowDragSession
     readDragSession(): Promise<WindowDragSession>
     consumeDragSession(): Promise<WindowDragSession>
     setDragSession(session: WindowDragSession): Promise<WindowDragSession>
     getGlobalUiState(): Promise<GlobalUiState>
     updateGlobalUiState(input: Partial<GlobalUiState>): Promise<GlobalUiState>
+    focusMainWindow(): Promise<void>
     listLayouts(): Promise<SavedWindowLayout[]>
     saveLayout(name: string): Promise<SavedWindowLayout>
     applyLayout(layoutId: string): Promise<SavedWindowLayout | null>

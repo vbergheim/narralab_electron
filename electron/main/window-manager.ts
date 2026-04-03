@@ -23,6 +23,7 @@ const DEFAULT_GLOBAL_UI_STATE: GlobalUiState = {
   activeBoardId: null,
   selectedArchiveFolderId: null,
   selectedTranscriptionItemId: null,
+  workspaceMode: null,
 }
 
 export class WindowManager {
@@ -47,6 +48,7 @@ export class WindowManager {
       role: 'main',
       workspace: 'main',
       boardId: null,
+      transcriptionItemId: null,
       viewMode: settings.ui.defaultBoardView,
       sceneDensity: settings.ui.defaultSceneDensity,
     }
@@ -63,7 +65,10 @@ export class WindowManager {
     return Array.from(this.windows.values()).map((record) => record.context)
   }
 
-  updateContext(windowId: number, input: Partial<Pick<WindowContext, 'boardId' | 'viewMode' | 'sceneDensity'>>) {
+  updateContext(
+    windowId: number,
+    input: Partial<Pick<WindowContext, 'boardId' | 'transcriptionItemId' | 'viewMode' | 'sceneDensity'>>,
+  ) {
     const record = this.windows.get(windowId)
     if (!record) {
       throw new Error('Window not found')
@@ -84,7 +89,7 @@ export class WindowManager {
 
   async openWorkspace(
     workspace: WindowWorkspace,
-    options?: Partial<Pick<WindowContext, 'boardId' | 'viewMode' | 'sceneDensity'>>,
+    options?: Partial<Pick<WindowContext, 'boardId' | 'transcriptionItemId' | 'viewMode' | 'sceneDensity'>>,
   ) {
     const settings = this.settingsService.getSettings()
     const browserWindow = this.browserFactory({
@@ -98,6 +103,7 @@ export class WindowManager {
       role: 'detached',
       workspace,
       boardId: options?.boardId ?? this.globalUiState.activeBoardId ?? null,
+      transcriptionItemId: options?.transcriptionItemId ?? null,
       viewMode: options?.viewMode ?? this.resolveDefaultBoardView(settings),
       sceneDensity: options?.sceneDensity ?? settings.ui.defaultSceneDensity,
     }
@@ -145,6 +151,16 @@ export class WindowManager {
     })
 
     return this.globalUiState
+  }
+
+  focusMainWindow() {
+    const mainRecord = Array.from(this.windows.values()).find((record) => record.context.role === 'main')
+    if (!mainRecord) return
+    if (mainRecord.browserWindow.isMinimized()) {
+      mainRecord.browserWindow.restore()
+    }
+    mainRecord.browserWindow.show()
+    mainRecord.browserWindow.focus()
   }
 
   notifyProjectChanged(scopes: ProjectChangeScope[] = ['all']) {
@@ -230,6 +246,7 @@ export class WindowManager {
         role: 'detached',
         workspace: layoutWindow.workspace,
         boardId: layoutWindow.boardId,
+        transcriptionItemId: null,
         viewMode: layoutWindow.viewMode,
         sceneDensity: layoutWindow.sceneDensity,
       }
@@ -344,6 +361,7 @@ export class WindowManager {
       role: 'main',
       workspace: 'main',
       boardId: this.globalUiState.activeBoardId,
+      transcriptionItemId: null,
       viewMode: this.resolveDefaultBoardView(settings),
       sceneDensity: settings.ui.defaultSceneDensity,
     }

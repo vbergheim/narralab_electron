@@ -9,6 +9,7 @@ import type { Scene } from '@/types/scene'
 export type DragPayload =
   | { kind: 'scene'; sceneId: string }
   | { kind: 'board-item'; itemId: string }
+  | { kind: 'scene-beat'; sceneId: string; beatId: string }
   | null
 
 export function handleDragStart(
@@ -40,6 +41,13 @@ export function handleDragStart(
   }
   if (id.startsWith('item:')) {
     setActiveDrag({ kind: 'board-item', itemId: id.replace('item:', '') })
+    return
+  }
+  if (id.startsWith('beat:')) {
+    const parsed = parseBeatDragId(id)
+    if (parsed) {
+      setActiveDrag({ kind: 'scene-beat', sceneId: parsed.sceneId, beatId: parsed.beatId })
+    }
   }
 }
 

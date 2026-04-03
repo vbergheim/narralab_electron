@@ -22,7 +22,6 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Panel } from '@/components/ui/panel'
-import { Textarea } from '@/components/ui/textarea'
 import { ResizeHandle } from '@/features/boards/outline-workspace-shared'
 import { usePanelResize } from '@/hooks/use-panel-resize'
 import { cn } from '@/lib/cn'
@@ -37,6 +36,7 @@ import type {
   TranscriptionItem,
 } from '@/types/transcription'
 
+import { TranscriptViewerPanel } from './components/transcript-viewer-panel'
 import {
   formatJobElapsed,
   languageOptions,
@@ -703,6 +703,7 @@ export function TranscriptPanel({
   resultText,
   projectMeta,
   selectedItemId,
+  subtitle,
   isSaving,
   hasChanges,
   onCopy,
@@ -710,11 +711,13 @@ export function TranscriptPanel({
   onSaveChanges,
   onSaveToLibrary,
   onSaveTxt,
+  onDetach,
   onResultTextChange,
 }: {
   resultText: string
   projectMeta: ProjectMeta | null
   selectedItemId: string | null
+  subtitle?: string | null
   isSaving: boolean
   hasChanges: boolean
   onCopy(): void
@@ -722,15 +725,20 @@ export function TranscriptPanel({
   onSaveChanges(): void
   onSaveToLibrary(): void
   onSaveTxt(): void
+  onDetach?(): void
   onResultTextChange(value: string): void
 }) {
   return (
-    <Panel className="relative z-0 flex h-full min-h-[min(36vh,240px)] flex-col overflow-hidden lg:min-h-0">
-      <div className="flex shrink-0 items-center justify-between border-b border-border/90 px-5 py-4">
-        <div className="font-display text-sm font-semibold uppercase tracking-[0.16em] text-foreground">
-          Transcript
-        </div>
-        <div className="flex items-center gap-1">
+    <TranscriptViewerPanel
+      title="Transcript"
+      subtitle={subtitle ?? null}
+      text={resultText}
+      editable
+      onTextChange={onResultTextChange}
+      placeholder="Transcript will appear here when the job completes…"
+      onDetach={selectedItemId ? onDetach : undefined}
+      toolbarActions={
+        <div className="flex max-w-full flex-wrap items-center justify-end gap-1">
           <Button
             variant="ghost"
             size="sm"
@@ -768,7 +776,7 @@ export function TranscriptPanel({
               {hasChanges ? 'Save Changes' : 'Saved'}
             </Button>
           ) : (
-            <div className="flex items-center gap-1">
+            <div className="flex max-w-full flex-wrap items-center justify-end gap-1">
               <Button
                 variant="accent"
                 size="sm"
@@ -796,13 +804,7 @@ export function TranscriptPanel({
             </div>
           )}
         </div>
-      </div>
-      <Textarea
-        className="min-h-0 flex-1 resize-none rounded-none border-0 bg-transparent font-mono text-sm focus:ring-0"
-        value={resultText}
-        onChange={(event) => onResultTextChange(event.target.value)}
-        placeholder="Transcript will appear here when the job completes…"
-      />
-    </Panel>
+      }
+    />
   )
 }

@@ -51,6 +51,16 @@ const windowWorkspaces = new Set<WindowWorkspace>([
   'board-manager',
   'transcribe',
 ])
+const workspaceModes = new Set<NonNullable<GlobalUiState['workspaceMode']>>([
+  'outline',
+  'bank',
+  'notebook',
+  'archive',
+  'consultant',
+  'settings',
+  'board-manager',
+  'transcribe',
+])
 const transcriptionModelIds = new Set<TranscriptionModelId>(['base', 'small', 'medium', 'large-v3-turbo', 'nb-whisper-medium', 'nb-whisper-large'])
 const transcriptionTimestampFixedIntervals = new Set<string>(['none', 'segment'])
 const transcriptionLanguages = new Set<TranscriptionLanguage>([
@@ -366,11 +376,14 @@ export function parseProjectChangeScopes(value: unknown): ProjectChangeScope[] {
 
 export function parseWindowContextUpdate(
   value: unknown,
-): Partial<Pick<WindowContext, 'boardId' | 'viewMode' | 'sceneDensity'>> {
+): Partial<Pick<WindowContext, 'boardId' | 'transcriptionItemId' | 'viewMode' | 'sceneDensity'>> {
   const input = requireObject(value, 'Window context update')
-  const next: Partial<Pick<WindowContext, 'boardId' | 'viewMode' | 'sceneDensity'>> = {}
+  const next: Partial<Pick<WindowContext, 'boardId' | 'transcriptionItemId' | 'viewMode' | 'sceneDensity'>> = {}
 
   if (input.boardId !== undefined) next.boardId = nullableString(input.boardId, 'Window board id') ?? null
+  if (input.transcriptionItemId !== undefined) {
+    next.transcriptionItemId = optionalNullableId(input.transcriptionItemId, 'Window transcription item id') ?? null
+  }
   if (input.viewMode !== undefined) next.viewMode = requireBoardViewMode(input.viewMode, 'Window board view')
   if (input.sceneDensity !== undefined) next.sceneDensity = requireSceneDensity(input.sceneDensity, 'Scene density')
   return next
@@ -402,6 +415,10 @@ export function parseGlobalUiStatePatch(value: unknown): Partial<GlobalUiState> 
   }
   if (input.selectedTranscriptionItemId !== undefined) {
     next.selectedTranscriptionItemId = optionalNullableId(input.selectedTranscriptionItemId, 'Selected transcription item id') ?? null
+  }
+  if (input.workspaceMode !== undefined) {
+    next.workspaceMode =
+      input.workspaceMode === null ? null : requireWorkspaceMode(input.workspaceMode, 'Workspace mode')
   }
 
   return next
@@ -572,6 +589,10 @@ function requireSceneDensity(value: unknown, label: string) {
 
 function requireWindowWorkspace(value: unknown, label: string) {
   return requireEnum(value, windowWorkspaces, label)
+}
+
+function requireWorkspaceMode(value: unknown, label: string) {
+  return requireEnum(value, workspaceModes, label)
 }
 
 function requireBoardTextKindArray(value: unknown, label: string) {

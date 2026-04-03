@@ -129,6 +129,7 @@ export function createNarraLabApi(
       },
       getGlobalUiState: () => ipcRenderer.invoke('windows:getGlobalUiState'),
       updateGlobalUiState: (input) => ipcRenderer.invoke('windows:updateGlobalUiState', input),
+      focusMainWindow: () => ipcRenderer.invoke('windows:focusMainWindow'),
       listLayouts: () => ipcRenderer.invoke('windows:listLayouts'),
       saveLayout: (name) => ipcRenderer.invoke('windows:saveLayout', name),
       applyLayout: (layoutId) => ipcRenderer.invoke('windows:applyLayout', layoutId),

@@ -150,6 +150,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set((state) => ({
       activeBoardId: input.activeBoardId ?? state.activeBoardId,
       selectedArchiveFolderId: input.selectedArchiveFolderId ?? state.selectedArchiveFolderId,
+      workspaceMode: input.workspaceMode ?? state.workspaceMode,
     }))
   },
 

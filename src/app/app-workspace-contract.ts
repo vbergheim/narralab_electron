@@ -303,4 +303,6 @@ export type TranscribeWorkspacePanelProps = Pick<
   | 'onUpdateAppSettings'
   | 'onUpdateNotebookDraft'
   | 'onOpenTranscribeSettings'
->
+> & {
+  detachedTranscriptOnly?: boolean
+}

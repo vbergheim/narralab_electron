@@ -1,0 +1,1207 @@
+<!doctype html>
+<html lang="no">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NarraLab brukermanual</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: hsl(225 23% 8%);
+        --bg-2: hsl(225 21% 10%);
+        --panel: hsla(225 18% 12% / 0.95);
+        --panel-strong: hsl(225 18% 12%);
+        --panel-muted: hsl(225 16% 16%);
+        --line: hsla(221 13% 24% / 0.92);
+        --text: hsl(210 20% 96%);
+        --muted: hsl(218 11% 68%);
+        --accent: hsl(196 66% 56%);
+        --accent-strong: hsl(196 66% 52%);
+        --accent-soft: hsla(196 66% 56% / 0.14);
+        --warn: hsl(35 68% 55%);
+        --danger: hsl(355 52% 45%);
+        --shadow: 0 16px 48px rgba(0, 0, 0, 0.34);
+        --shadow-soft: 0 8px 24px rgba(0, 0, 0, 0.22);
+        --radius: 20px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      section[id] {
+        scroll-margin-top: 1.25rem;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Avenir Next", "Segoe UI", "Helvetica Neue", system-ui, sans-serif;
+        background:
+          radial-gradient(circle at top right, hsla(196 66% 56% / 0.11), transparent 26rem),
+          radial-gradient(circle at top left, hsla(196 66% 56% / 0.05), transparent 22rem),
+          linear-gradient(180deg, var(--bg-2) 0%, var(--bg) 100%);
+        color: var(--text);
+        line-height: 1.6;
+      }
+
+      a {
+        color: var(--accent);
+        text-decoration-color: hsla(196 66% 56% / 0.45);
+        text-underline-offset: 0.18em;
+      }
+
+      .page {
+        width: min(1180px, calc(100vw - 2rem));
+        margin: 0 auto;
+        padding: 1.2rem 0 4rem;
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: 260px minmax(0, 1fr);
+        gap: 1.2rem;
+        align-items: start;
+        margin-top: 1.35rem;
+      }
+
+      .sidebar {
+        position: sticky;
+        top: 1rem;
+      }
+
+      .sidebar-panel {
+        padding: 1rem;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(10px);
+      }
+
+      .hero {
+        display: grid;
+        gap: 1.5rem;
+        padding: 2.2rem;
+        background:
+          linear-gradient(135deg, hsla(196 66% 56% / 0.08), transparent 40%),
+          linear-gradient(180deg, hsla(225 18% 13% / 0.98), hsla(225 18% 12% / 0.95));
+        border: 1px solid var(--line);
+        border-radius: calc(var(--radius) + 6px);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(12px);
+      }
+
+      .eyebrow {
+        font-family: "Avenir Next Condensed", "Avenir Next", "Segoe UI", sans-serif;
+        text-transform: uppercase;
+        letter-spacing: 0.18em;
+        font-size: 0.78rem;
+        color: var(--accent);
+        font-weight: 700;
+      }
+
+      h1,
+      h2,
+      h3 {
+        margin: 0;
+        font-weight: 700;
+        line-height: 1.15;
+      }
+
+      h1 {
+        font-family: "Avenir Next Condensed", "Avenir Next", "Segoe UI", sans-serif;
+        font-size: clamp(2.3rem, 4vw, 4.2rem);
+        max-width: 14ch;
+      }
+
+      h2 {
+        font-family: "Avenir Next Condensed", "Avenir Next", "Segoe UI", sans-serif;
+        font-size: clamp(1.5rem, 2.3vw, 2.3rem);
+        margin-bottom: 0.8rem;
+      }
+
+      h3 {
+        font-size: 1.1rem;
+        margin-bottom: 0.45rem;
+      }
+
+      p {
+        margin: 0 0 0.9rem;
+      }
+
+      .lead {
+        font-size: 1.08rem;
+        color: var(--muted);
+        max-width: 68ch;
+      }
+
+      .meta-grid,
+      .card-grid,
+      .two-col,
+      .quick-grid {
+        display: grid;
+        gap: 1rem;
+      }
+
+      .meta-grid {
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      }
+
+      .quick-grid {
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      }
+
+      .card-grid {
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      }
+
+      .two-col {
+        grid-template-columns: 1.2fr 0.8fr;
+      }
+
+      .pill,
+      code,
+      kbd {
+        font-family: "SFMono-Regular", "Menlo", "Consolas", monospace;
+      }
+
+      .pill {
+        display: inline-block;
+        padding: 0.28rem 0.62rem;
+        background: var(--accent-soft);
+        color: var(--accent);
+        border: 1px solid hsla(196 66% 56% / 0.18);
+        border-radius: 999px;
+        font-size: 0.84rem;
+        margin: 0.15rem 0.35rem 0.15rem 0;
+      }
+
+      .section {
+        margin-top: 1.35rem;
+        padding: 1.5rem;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(10px);
+      }
+
+      .card,
+      .callout,
+      .mini {
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: var(--panel-strong);
+      }
+
+      .card,
+      .mini {
+        padding: 1rem 1rem 0.95rem;
+      }
+
+      .callout {
+        padding: 1rem 1.05rem;
+        background: linear-gradient(180deg, hsla(196 66% 56% / 0.12), hsla(196 66% 56% / 0.04));
+      }
+
+      .warn {
+        background: linear-gradient(180deg, hsla(35 68% 55% / 0.14), hsla(35 68% 55% / 0.05));
+      }
+
+      .danger {
+        background: linear-gradient(180deg, hsla(355 52% 45% / 0.14), hsla(355 52% 45% / 0.05));
+      }
+
+      .toc ol,
+      .toc ul,
+      .section ul,
+      .section ol {
+        margin: 0.5rem 0 0 1.2rem;
+        padding: 0;
+      }
+
+      .section li {
+        margin: 0.32rem 0;
+      }
+
+      .checklist li::marker {
+        color: var(--accent);
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 0.8rem;
+        font-size: 0.96rem;
+        background: transparent;
+      }
+
+      th,
+      td {
+        text-align: left;
+        vertical-align: top;
+        padding: 0.8rem 0.72rem;
+        border-top: 1px solid var(--line);
+      }
+
+      th {
+        font-family: "Avenir Next Condensed", "Avenir Next", "Segoe UI", sans-serif;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-size: 0.72rem;
+        color: var(--muted);
+      }
+
+      .stat {
+        padding: 0.95rem 1rem;
+        background: linear-gradient(180deg, hsla(225 16% 16% / 0.9), hsla(225 18% 12% / 0.86));
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        box-shadow: var(--shadow-soft);
+      }
+
+      .stat strong {
+        display: block;
+        font-size: 1rem;
+        margin-bottom: 0.25rem;
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      .small {
+        font-size: 0.93rem;
+      }
+
+      .step {
+        counter-increment: step;
+        position: relative;
+        padding-left: 3rem;
+      }
+
+      .step::before {
+        content: counter(step);
+        position: absolute;
+        left: 0;
+        top: 0.05rem;
+        width: 2rem;
+        height: 2rem;
+        border-radius: 999px;
+        display: grid;
+        place-items: center;
+        background: linear-gradient(180deg, hsla(196 66% 56% / 0.95), hsla(196 66% 52% / 0.95));
+        color: #fff;
+        font-family: "Avenir Next", "Segoe UI", Arial, sans-serif;
+        font-weight: 700;
+        box-shadow: 0 8px 18px hsla(196 66% 56% / 0.24);
+      }
+
+      .steps {
+        counter-reset: step;
+        display: grid;
+        gap: 1rem;
+      }
+
+      code,
+      kbd {
+        border: 1px solid var(--line);
+        background: var(--panel-muted);
+        color: var(--text);
+        border-radius: 0.55rem;
+      }
+
+      code {
+        padding: 0.12rem 0.4rem;
+      }
+
+      kbd {
+        padding: 0.14rem 0.42rem;
+        box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.06);
+      }
+
+      strong {
+        color: var(--text);
+      }
+
+      .card,
+      .mini {
+        box-shadow: var(--shadow-soft);
+      }
+
+      .section > h3 {
+        margin-top: 1.6rem;
+      }
+
+      .section > h3:first-of-type {
+        margin-top: 0.35rem;
+      }
+
+      .section > p + h3,
+      .section > ul + h3,
+      .section > ol + h3,
+      .section > table + h3,
+      .section > .callout + h3,
+      .section > .card-grid + h3,
+      .section > .quick-grid + h3,
+      .section > .steps + h3 {
+        margin-top: 1.9rem;
+      }
+
+      .section > h3 + p,
+      .section > h3 + ul,
+      .section > h3 + ol,
+      .section > h3 + table,
+      .section > h3 + .card-grid,
+      .section > h3 + .quick-grid,
+      .section > h3 + .steps,
+      .section > h3 + .callout {
+        margin-top: 0.8rem;
+      }
+
+      .sidebar-title {
+        font-family: "Avenir Next Condensed", "Avenir Next", "Segoe UI", sans-serif;
+        font-size: 0.9rem;
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        color: var(--muted);
+        margin-bottom: 0.9rem;
+      }
+
+      .sidebar-nav {
+        display: grid;
+        gap: 0.35rem;
+      }
+
+      .sidebar-nav a {
+        display: block;
+        padding: 0.65rem 0.8rem;
+        border-radius: 0.95rem;
+        color: var(--muted);
+        text-decoration: none;
+        border: 1px solid transparent;
+        transition: 140ms ease;
+      }
+
+      .sidebar-nav a:hover {
+        color: var(--text);
+        background: var(--panel-muted);
+        border-color: var(--line);
+      }
+
+      .figure {
+        margin: 1.1rem 0 0;
+      }
+
+      .figure img {
+        display: block;
+        width: 100%;
+        height: auto;
+        border-radius: 18px;
+        border: 1px solid var(--line);
+        box-shadow: var(--shadow-soft);
+      }
+
+      .figure figcaption {
+        margin-top: 0.65rem;
+        font-size: 0.92rem;
+        color: var(--muted);
+      }
+
+      .footer {
+        margin-top: 1.6rem;
+        color: var(--muted);
+        font-size: 0.92rem;
+        text-align: center;
+      }
+
+      @media (max-width: 900px) {
+        .two-col {
+          grid-template-columns: 1fr;
+        }
+
+        .layout {
+          grid-template-columns: 1fr;
+        }
+
+        .sidebar {
+          position: static;
+        }
+
+        .hero,
+        .sidebar-panel,
+        .section {
+          padding: 1.2rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="hero">
+        <div class="eyebrow">Brukermanual</div>
+        <h1>NarraLab: komplett håndbok for daglig bruk</h1>
+        <p class="lead">
+          Denne manualen er skrevet for deg som vil kunne åpne appen og jobbe effektivt med en gang. Den dekker prosjektfiler, menyer, alle arbeidsflater, import og eksport, transkribering, AI-konsulent, flere vinduer, layoutlagring og de viktigste arbeidsmønstrene.
+        </p>
+        <div class="meta-grid">
+          <div class="stat">
+            <strong>Hva appen er</strong>
+            Lokal desktop-app for å strukturere dokumentarfilm scene for scene.
+          </div>
+          <div class="stat">
+            <strong>Hovedidé</strong>
+            Scener er prosjektets grunnmateriale. Boards er dramaturgiske oppstillinger av scenene.
+          </div>
+          <div class="stat">
+            <strong>Lagring</strong>
+            Prosjekter lagres som lokale <code>.narralab</code>-filer, med støtte for eldre <code>.docudoc</code>.
+          </div>
+          <div class="stat">
+            <strong>Arbeidsflater</strong>
+            Outline, Scene Bank, Notebook, Archive, Transcribe, Consultant, Settings og Board Manager.
+          </div>
+        </div>
+        <figure class="figure">
+          <img src="./assets/manual-oversikt.png" alt="NarraLab med Scene Bank til venstre og aktivt outline i midten." />
+          <figcaption>Eksempel på et aktivt prosjekt i NarraLab, med Scene Bank og et ferdig oppsatt outline synlig samtidig.</figcaption>
+        </figure>
+      </section>
+
+      <div class="layout">
+        <aside class="sidebar">
+          <div class="sidebar-panel">
+            <div class="sidebar-title">Innhold</div>
+            <nav class="sidebar-nav" aria-label="Innhold">
+              <a href="#kom-i-gang">Kom i gang</a>
+              <a href="#navigasjon">Grensesnitt og navigasjon</a>
+              <a href="#prosjekt-og-filer">Prosjekt og filer</a>
+              <a href="#outline">Outline</a>
+              <a href="#scene-bank">Scene Bank</a>
+              <a href="#inspector">Inspector</a>
+              <a href="#board-manager">Board Manager</a>
+              <a href="#notebook">Notebook</a>
+              <a href="#archive">Archive</a>
+              <a href="#transcribe">Transcribe</a>
+              <a href="#consultant">Consultant</a>
+              <a href="#settings">Settings</a>
+              <a href="#vinduer-og-layouts">Vinduer og layouts</a>
+              <a href="#snarveier">Snarveier</a>
+              <a href="#arbeidsflyt">Anbefalt arbeidsflyt</a>
+            </nav>
+          </div>
+        </aside>
+
+        <div>
+      <section class="section" id="kom-i-gang">
+        <h2>Kom i gang</h2>
+        <div class="steps">
+          <div class="step">
+            <h3>Opprett eller åpne et prosjekt</h3>
+            <p>Bruk <strong>File</strong>-menyen øverst til å velge <strong>New Project</strong> eller <strong>Open Project</strong>. Når et prosjekt er åpnet, vises prosjektets navn og filsti i toppfeltet.</p>
+          </div>
+          <div class="step">
+            <h3>Velg hvordan du vil jobbe først</h3>
+            <p>For de fleste er startrekkefølgen: <strong>Scene Bank</strong> for å bygge materialet, <strong>Outline</strong> for å organisere dramaturgien, og <strong>Inspector</strong> for detaljarbeid.</p>
+          </div>
+          <div class="step">
+            <h3>Legg inn scener</h3>
+            <p>Du kan lage scener manuelt, importere JSON, eller importere en Excel-basert opptakslogg. Scene Bank er stedet der alt råmateriale samles.</p>
+          </div>
+          <div class="step">
+            <h3>Bygg et board</h3>
+            <p>I Outline legger du scener i ønsket rekkefølge og kan supplere med kapittelkort, voiceover, narration, text cards og notater.</p>
+          </div>
+          <div class="step">
+            <h3>Bruk inspector for presisjon</h3>
+            <p>Når du klikker på en scene, et block-kort eller et board, åpnes relevante felt i inspector. Endringer autosaves normalt etter kort forsinkelse.</p>
+          </div>
+        </div>
+        <div class="callout">
+          <strong>Viktig arbeidsmodell:</strong> Scener er globale i prosjektet. Hvis du sletter en scene, fjernes den også fra alle boards der den brukes.
+        </div>
+      </section>
+
+      <section class="section" id="navigasjon">
+        <h2>Grensesnitt og navigasjon</h2>
+        <figure class="figure">
+          <img src="./assets/manual-arbeidsflate.png" alt="Utsnitt av NarraLab som viser toppnavigasjon, Scene Bank og board-arbeidsflate." />
+          <figcaption>Topplinjen bytter arbeidsflate, mens hovedområdet under kombinerer bibliotek og aktiv boardvisning.</figcaption>
+        </figure>
+        <div class="card-grid">
+          <div class="card">
+            <h3>Toppfeltet</h3>
+            <ul class="checklist">
+              <li>Viser prosjektnavn og filsti.</li>
+              <li>Har globalt søkefelt for scener og metadata.</li>
+              <li>Gir tilgang til <strong>File</strong>, <strong>Script</strong>, <strong>Window</strong> og <strong>Settings</strong>.</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>Arbeidsflatene</h3>
+            <ul class="checklist">
+              <li><strong>Outline</strong>: bygg fortelling og board.</li>
+              <li><strong>Scene Bank</strong>: sceneoversikt, mapper, filtrering og utvalg.</li>
+              <li><strong>Notebook</strong>, <strong>Archive</strong>, <strong>Transcribe</strong>.</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>Inspector</h3>
+            <ul class="checklist">
+              <li>Ligger typisk i høyrepanelet.</li>
+              <li>Endrer innhold etter hva du har valgt.</li>
+              <li>Kan vise scene, board, structure block eller bulk-redigering.</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>Consultant-dock</h3>
+            <ul class="checklist">
+              <li>Kan åpnes som liten dock nede til høyre.</li>
+              <li>Kan utvides til full arbeidsflate.</li>
+              <li>Brukes til AI-basert analyse og sparring.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="prosjekt-og-filer">
+        <h2>Prosjekt og filer</h2>
+        <h3>File-menyen</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Funksjon</th>
+              <th>Hva den gjør</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>New Project</strong></td>
+              <td>Oppretter en ny lokal prosjektfil og starter et tomt prosjekt.</td>
+            </tr>
+            <tr>
+              <td><strong>Open Project</strong></td>
+              <td>Åpner en eksisterende <code>.narralab</code>- eller eldre <code>.docudoc</code>-fil.</td>
+            </tr>
+            <tr>
+              <td><strong>Save As</strong></td>
+              <td>Lagrer prosjektet som en ny fil. Praktisk for versjoner, forks eller trygg lagring før større endringer.</td>
+            </tr>
+            <tr>
+              <td><strong>Import Shoot Log (.xlsx)</strong></td>
+              <td>Legger til scener og beats fra Excel-basert opptakslogg.</td>
+            </tr>
+            <tr>
+              <td><strong>Import JSON</strong></td>
+              <td>Importer prosjektdata fra JSON-snapshot.</td>
+            </tr>
+            <tr>
+              <td><strong>Export JSON</strong></td>
+              <td>Eksporterer et JSON-snapshot av prosjektet.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>Prosjektformat</h3>
+        <ul class="checklist">
+          <li>Primær lagring er lokal prosjektfil på disk.</li>
+          <li>Åpning av eldre filer kan trigge migreringer ved behov.</li>
+          <li>JSON er eksport-/importformat, ikke appens primære lagringsmotor.</li>
+          <li><strong>Save As</strong> fungerer som en kopi av prosjektet til ny fil.</li>
+        </ul>
+
+        <h3>Script-eksport</h3>
+        <p>Script-menyen eksporterer aktivt board i flere formater:</p>
+        <ul class="checklist">
+          <li><strong>Formatted TXT</strong>: lesbar manuslayout med sentrert VO/forteller.</li>
+          <li><strong>Plain TXT</strong>: enkel tekstversjon.</li>
+          <li><strong>Screenplay HTML</strong>: HTML-layout i manusstil.</li>
+          <li><strong>Word Screenplay</strong>: Word-kompatibelt dokument.</li>
+          <li><strong>Markdown</strong>: strukturert eksport for videre redigering.</li>
+        </ul>
+
+        <div class="callout warn">
+          <strong>Tips:</strong> Script-eksport bruker det aktive boardet. Sjekk derfor at riktig board er valgt før du eksporterer.
+        </div>
+
+        <h3>Excel-import av opptakslogg</h3>
+        <p>Importen forventer et Excel-oppsett med ark for scener og beats. Typisk scenedata inkluderer blant annet:</p>
+        <ul class="checklist">
+          <li>scene-referanse, opptaksdato, tittel og synopsis</li>
+          <li>location, characters, category og function</li>
+          <li>estimerte og faktiske lengder</li>
+          <li>editorial status, key rating og farge</li>
+          <li>camera notes, audio notes, notes, quote moment, quality og source paths</li>
+        </ul>
+      </section>
+
+      <section class="section" id="outline">
+        <h2>Outline</h2>
+        <p>Outline er hovedflaten for å sette sammen fortellingen. Her bygger du et board av scener og strukturblokker.</p>
+
+        <div class="card-grid">
+          <div class="card">
+            <h3>Hva et board kan inneholde</h3>
+            <ul class="checklist">
+              <li>Scener</li>
+              <li>Chapter Header</li>
+              <li>Voiceover</li>
+              <li>Narration</li>
+              <li>Text Card</li>
+              <li>Note</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>View modes</h3>
+            <ul class="checklist">
+              <li><strong>Outline</strong>: liste-/rekkefølgevisning.</li>
+              <li><strong>Canvas</strong>: friere romlig plassering av items.</li>
+              <li><strong>Timeline</strong>: finnes i datamodellen, men standardinnstillinger og UI er primært rettet mot outline/canvas.</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>Scene Bank i Outline</h3>
+            <ul class="checklist">
+              <li>Kan ligge som venstre panel.</li>
+              <li>Brukes til å dra eller legge scener inn i boardet.</li>
+              <li>Kan kollapses og justeres i bredde.</li>
+            </ul>
+          </div>
+        </div>
+
+        <h3>Typiske handlinger i Outline</h3>
+        <ul class="checklist">
+          <li>Velg aktivt board fra board-velgeren.</li>
+          <li>Bytt mellom visningsmodus for boardet.</li>
+          <li>Legg til scene fra Scene Bank.</li>
+          <li>Legg til strukturblokk direkte i boardet.</li>
+          <li>Bruk lagrede block templates.</li>
+          <li>Kopier en blokk til et annet board.</li>
+          <li>Dupliser eller slett board items.</li>
+          <li>Reorganiser rekkefølge ved drag and drop.</li>
+          <li>Oppdater scene- eller blokkinnhold inline eller via inspector.</li>
+        </ul>
+
+        <h3>Boards</h3>
+        <p>Et board er en dramaturgisk versjon av prosjektet. Du kan ha mange boards for ulike cuter, vinkler eller utviklingsstadier.</p>
+        <ul class="checklist">
+          <li>Boards kan navngis, beskrives, fargekodes og legges i mapper.</li>
+          <li>Et board kan klones for å lage en alternativ versjon.</li>
+          <li>Boards kan flyttes mellom mapper og omorganiseres i rekkefølge.</li>
+        </ul>
+
+        <div class="callout">
+          <strong>Best praksis:</strong> Lag ett board for grovstruktur, ett for finstruktur og ett for VO/manusarbeid. Da kan du sammenligne ulike dramaturgiske nivåer uten å miste tidligere versjoner.
+        </div>
+      </section>
+
+      <section class="section" id="scene-bank">
+        <h2>Scene Bank</h2>
+        <p>Scene Bank er biblioteket over alle scener i prosjektet. Her jobber du med sceneoversikt, mapper, filtrering, utvalg og organisering.</p>
+
+        <h3>Hva du kan gjøre i Scene Bank</h3>
+        <div class="quick-grid">
+          <div class="mini">
+            <h3>Opprette</h3>
+            <p>Lag nye scener og mapper direkte i banken.</p>
+          </div>
+          <div class="mini">
+            <h3>Organisere</h3>
+            <p>Flytt scener mellom mapper eller tilbake til rot.</p>
+          </div>
+          <div class="mini">
+            <h3>Velge flere</h3>
+            <p>Støtter multi-select med <kbd>Shift</kbd> og <kbd>Cmd/Ctrl</kbd>.</p>
+          </div>
+          <div class="mini">
+            <h3>Legge til i board</h3>
+            <p>Legg scene til åpent outline eller send utvalg til åpent outline-vindu.</p>
+          </div>
+        </div>
+
+        <h3>Mapper</h3>
+        <ul class="checklist">
+          <li>Scenemapper er hierarkiske og kan nestes.</li>
+          <li>Mapper kan opprettes, gis farge, omdøpes, flyttes og slettes.</li>
+          <li>Når du sletter mappe, flyttes scenene til rot.</li>
+          <li>Mapper kan kollapses/ekspanderes og husker normalt kollapset tilstand.</li>
+        </ul>
+
+        <h3>Filtre og søk</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Filter</th>
+              <th>Beskrivelse</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Søk</td>
+              <td>Matcher blant annet tittel, synopsis, notater, location, category, function, sitater, kvalitet, kildebaner og personer.</td>
+            </tr>
+            <tr>
+              <td>Tags</td>
+              <td>Filtrer på én eller flere tags.</td>
+            </tr>
+            <tr>
+              <td>Categories</td>
+              <td>Filtrer på scene-kategori.</td>
+            </tr>
+            <tr>
+              <td>Status</td>
+              <td><code>candidate</code>, <code>selected</code>, <code>maybe</code>, <code>omitted</code>, <code>locked</code>.</td>
+            </tr>
+            <tr>
+              <td>Color</td>
+              <td>Filtrer på scene-farge.</td>
+            </tr>
+            <tr>
+              <td>Key Scenes</td>
+              <td>Vis bare scener med positiv key rating.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3>Valg og batch-arbeid</h3>
+        <ul class="checklist">
+          <li>Når du velger flere scener i Scene Bank, skifter inspector til <strong>Bulk Edit</strong>.</li>
+          <li>Der kan du oppdatere kategori, status og farge for alle valgte scener samtidig.</li>
+          <li>Du kan også slette alle valgte scener i ett grep.</li>
+        </ul>
+
+        <h3>Kontekstmeny på scene</h3>
+        <ul class="checklist">
+          <li>Åpne inspector</li>
+          <li>Legg til i outline</li>
+          <li>Send utvalg til åpent outline-vindu</li>
+          <li>Dupliser scene</li>
+          <li>Øk eller nullstill key rating</li>
+          <li>Flytt scene eller utvalg til root</li>
+          <li>Slett scene eller valgt utvalg</li>
+        </ul>
+      </section>
+
+      <section class="section" id="inspector">
+        <h2>Inspector</h2>
+        <p>Inspector er detaljpanelet som gir deg presis kontroll over valgt objekt. Det fungerer forskjellig avhengig av om du har valgt en scene, et board eller et strukturkort.</p>
+
+        <h3>Scene Inspector</h3>
+        <p>For en valgt scene kan du redigere:</p>
+        <ul class="checklist">
+          <li><strong>Shoot Day</strong>: shoot date og shoot block</li>
+          <li><strong>Scene Log</strong>: title, synopsis, category, estimert og faktisk lengde, location, quality</li>
+          <li>characters/contributors</li>
+          <li>function</li>
+          <li>quote/moment</li>
+          <li>camera notes, audio notes og generelle notes</li>
+          <li>farge, status og key rating</li>
+          <li>tags skrevet som navn</li>
+          <li>source files og source reference</li>
+          <li>beats med oppretting, sletting og flytting opp/ned</li>
+          <li>lenkede transkripsjoner</li>
+        </ul>
+
+        <div class="callout">
+          <strong>Autosave:</strong> Scene Inspector lagrer automatisk etter kort pause mens du skriver. Du trenger vanligvis ikke en egen lagre-knapp.
+        </div>
+
+        <h3>Source Files i scene</h3>
+        <ul class="checklist">
+          <li>Du kan dra filer eller mapper inn i kildelisten.</li>
+          <li>Listen blir lagret på scenen som <em>source paths</em>.</li>
+          <li>Første kilde brukes som primær source reference når relevant.</li>
+          <li>Klikk på kilde for å vise den i Finder.</li>
+        </ul>
+
+        <h3>Beats</h3>
+        <ul class="checklist">
+          <li>Hver scene kan ha en egen beat-liste.</li>
+          <li>Beats kan opprettes, redigeres, slettes og omorganiseres.</li>
+          <li>Excel-import kan også opprette beats direkte på scene.</li>
+        </ul>
+
+        <h3>Structure Block Inspector</h3>
+        <ul class="checklist">
+          <li>Bytt type mellom chapter, voiceover, narration, text-card og note.</li>
+          <li>Rediger tittel/label og tekst.</li>
+          <li>Lagre et block som template for gjenbruk.</li>
+          <li>Slett block fra boardet.</li>
+        </ul>
+
+        <h3>Board Inspector</h3>
+        <ul class="checklist">
+          <li>Rediger navn, beskrivelse, mappe og board-farge.</li>
+          <li>Se antall rader samt opprettet/oppdatert tidspunkt.</li>
+        </ul>
+
+        <h3>Bulk Edit Inspector</h3>
+        <ul class="checklist">
+          <li>Vises når flere scener er valgt i Scene Bank.</li>
+          <li>Kan bruke samme category, status eller farge på hele utvalget.</li>
+          <li>Kan rydde utvalget eller slette alle valgte scener.</li>
+        </ul>
+      </section>
+
+      <section class="section" id="board-manager">
+        <h2>Board Manager</h2>
+        <p>Board Manager er oversikten over alle boards og board-mapper i prosjektet. Den kan åpnes som egen arbeidsflate eller eget vindu.</p>
+        <ul class="checklist">
+          <li>Opprett nytt board eller ny board-mappe.</li>
+          <li>Velg aktivt board.</li>
+          <li>Åpne board inspector.</li>
+          <li>Dupliser board.</li>
+          <li>Slett board eller flere boards.</li>
+          <li>Flytt board opp eller ned innen samme mappe.</li>
+          <li>Flytt boards mellom mapper.</li>
+          <li>Organiser mapper hierarkisk og fargekod dem.</li>
+        </ul>
+        <p class="small muted">Board Manager støtter også multi-select av både mapper og boards med <kbd>Shift</kbd> og <kbd>Cmd/Ctrl</kbd>.</p>
+      </section>
+
+      <section class="section" id="notebook">
+        <h2>Notebook</h2>
+        <p>Notebook er prosjektets innebygde notatbok med riktekst og flere faner.</p>
+        <div class="card-grid">
+          <div class="card">
+            <h3>Faner</h3>
+            <ul class="checklist">
+              <li>Opprett nye notatfaner.</li>
+              <li>Bytt mellom faner.</li>
+              <li>Dobbeltklikk fanetittel for å gi nytt navn.</li>
+              <li>Lukk faner når du har mer enn én.</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>Redigering</h3>
+            <ul class="checklist">
+              <li>Riktekstfelt med blant annet fet, kursiv, understrek, gjennomstreking og lister.</li>
+              <li>Passer for research, manusnotater, intervjuspørsmål og strukturkommentarer.</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>Lagring</h3>
+            <ul class="checklist">
+              <li>Notebook autosaves til prosjektet.</li>
+              <li>Viser totalt ord- og tegnantall.</li>
+              <li>Viser sist lagret tidspunkt.</li>
+            </ul>
+          </div>
+        </div>
+        <div class="callout">
+          <strong>Smart samspill:</strong> Transcribe kan sende transkripsjonstekst direkte til Notebook, noe som er nyttig når du vil samle research og sitater uten å fylle opp scenestrukturen med råtekst.
+        </div>
+      </section>
+
+      <section class="section" id="archive">
+        <h2>Archive</h2>
+        <p>Archive er prosjektets filbibliotek. Her lagrer du referanser til dokumenter, bilder, lyd, video, PDF-er, regneark og andre filer som hører til prosjektet.</p>
+
+        <h3>Hva arkivet gjør</h3>
+        <ul class="checklist">
+          <li>Organiserer filer i mapper med fargekoding.</li>
+          <li>Lar deg dra inn filer fra Finder.</li>
+          <li>Lar deg flytte filer mellom mapper uten å flytte originalfilene på disk.</li>
+          <li>Kan åpne fil og vise den i Finder.</li>
+          <li>Støtter søk i filnavn, filsti, filtype og mappenavn.</li>
+        </ul>
+
+        <h3>Viktig å forstå</h3>
+        <div class="callout warn">
+          <strong>Delete From Archive</strong> fjerner elementet fra arkivlisten, men sletter ikke originalfilen fra harddisken.
+        </div>
+
+        <h3>Mapper i arkivet</h3>
+        <ul class="checklist">
+          <li>Opprett, gi nytt navn, fargekod og slett mapper.</li>
+          <li>Mapper kan ligge inni andre mapper.</li>
+          <li>Hvis en mappe slettes, flyttes filene til <strong>All Files</strong>/rotlisten.</li>
+        </ul>
+      </section>
+
+      <section class="section" id="transcribe">
+        <h2>Transcribe</h2>
+        <p>Transcribe er den lokale transkriberingsdelen av appen. Her brukes Whisper-baserte modeller lokalt på maskinen, uten at lydfilene må sendes ut av appen.</p>
+
+        <h3>Transcribe har to hovedvisninger</h3>
+        <div class="card-grid">
+          <div class="card">
+            <h3>Transcribe</h3>
+            <p>Velg fil, modell, språk og timestamp-oppsett, og start ny transkripsjon.</p>
+          </div>
+          <div class="card">
+            <h3>Library</h3>
+            <p>Her ligger alle lagrede transkripsjoner, med mapper, redigering, scene-linking og eksportmuligheter.</p>
+          </div>
+        </div>
+
+        <h3>Første gangs oppsett</h3>
+        <ul class="checklist">
+          <li>Åpne <strong>Settings → Transcribe</strong>.</li>
+          <li>Kontroller at <strong>FFmpeg/ffprobe</strong> og <strong>Engine</strong> er klare.</li>
+          <li>Last ned minst én Whisper-modell.</li>
+          <li>Velg ønsket standardmodell, språk og timestamp-intervall.</li>
+        </ul>
+
+        <h3>Tilgjengelige modelltyper</h3>
+        <ul class="checklist">
+          <li><strong>Base</strong>: raskest, lavest presisjon.</li>
+          <li><strong>Small</strong>: god standardbalanse.</li>
+          <li><strong>Medium</strong> og <strong>Large v3 turbo</strong>: mer kvalitet, tyngre kjøring.</li>
+          <li><strong>NB-Whisper Medium/Large</strong>: spesielt relevante for norsk.</li>
+        </ul>
+
+        <h3>Ny transkripsjon</h3>
+        <ol>
+          <li>Velg modell, språk og timestamps.</li>
+          <li>Dra inn lyd-/videofil eller bruk <strong>Browse</strong>.</li>
+          <li>Trykk <strong>Transcribe</strong>.</li>
+          <li>Følg fremdriftsstatus og eventuell prosentvis progresjon.</li>
+          <li>Når jobben er ferdig, havner teksten i transkripsjonspanelet.</li>
+        </ol>
+
+        <h3>Hva du kan gjøre med transkripsjonsteksten</h3>
+        <ul class="checklist">
+          <li>Kopiere tekst til utklippstavlen.</li>
+          <li>Legge teksten til Notebook.</li>
+          <li>Lagre draft til biblioteket.</li>
+          <li>Eksportere til fil.</li>
+          <li>Redigere lagret transkripsjon og lagre endringer.</li>
+          <li>Åpne lagret transkripsjon i eget detached transcript-vindu.</li>
+        </ul>
+
+        <h3>Transkripsjonsbiblioteket</h3>
+        <ul class="checklist">
+          <li>Lag mapper for transkripsjoner.</li>
+          <li>Gi nytt navn til transkripsjoner.</li>
+          <li>Flytt transkripsjoner mellom mapper.</li>
+          <li>Slett transkripsjoner.</li>
+          <li>Filtrer biblioteket med søk.</li>
+        </ul>
+
+        <h3>Metadata på lagret transkripsjon</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Funksjon</th>
+              <th>Bruk</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Source File</td>
+              <td>Viser originalfilen transkripsjonen ble laget fra.</td>
+            </tr>
+            <tr>
+              <td>Linked Scene</td>
+              <td>Lenker transkripsjonen til en scene i prosjektet.</td>
+            </tr>
+            <tr>
+              <td>Save to Archive</td>
+              <td>Lagrer transkripsjonen som arkivelement.</td>
+            </tr>
+            <tr>
+              <td>Transcribe Again</td>
+              <td>Kjører ny transkripsjon fra samme kildefil.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="callout">
+          <strong>Samspill med scener:</strong> Når en transkripsjon er lenket til en scene, dukker den opp under <strong>Transcriptions</strong> i scene-inspector, slik at scene og råintervju lett kan kobles sammen.
+        </div>
+      </section>
+
+      <section class="section" id="consultant">
+        <h2>Consultant</h2>
+        <p>Consultant er appens AI-samtaleverktøy. Den er ment for analyse og dramaturgisk sparring, ikke som autoritativ prosjektlagring.</p>
+
+        <h3>Hva du kan bruke den til</h3>
+        <ul class="checklist">
+          <li>Få forslag til struktur, kapittelinndeling eller VO-plassering.</li>
+          <li>Be om vurdering av repetisjon, hull i materialet eller svak fremdrift.</li>
+          <li>Få sammenlikning mellom versjoner av boardet.</li>
+          <li>Få hjelp til å skissere emosjonell linje eller fortellerstemme.</li>
+        </ul>
+
+        <h3>Hvordan den styres</h3>
+        <ul class="checklist">
+          <li>Velg AI-provider i Settings: <strong>OpenAI</strong> eller <strong>Gemini</strong>.</li>
+          <li>Legg inn API-nøkkel før du starter.</li>
+          <li>Velg context mode: <strong>Off</strong> eller <strong>Use Current Board</strong>.</li>
+          <li>Trykk <kbd>Enter</kbd> for å sende, <kbd>Shift</kbd> + <kbd>Enter</kbd> for ny linje.</li>
+          <li>Du kan nullstille samtalen med <strong>Clear</strong>.</li>
+        </ul>
+
+        <div class="callout warn">
+          <strong>God praksis:</strong> Bruk board-kontekst bare når du faktisk vil ha board-spesifikk feedback. Hvis konteksten er av, blir samtalen mer generell.
+        </div>
+      </section>
+
+      <section class="section" id="settings">
+        <h2>Settings</h2>
+        <p>Settings er delt i fire faner: <strong>App</strong>, <strong>Project</strong>, <strong>AI</strong> og <strong>Transcribe</strong>.</p>
+
+        <h3>App Settings</h3>
+        <ul class="checklist">
+          <li><strong>Restore Last Project</strong>: åpne sist brukte prosjekt automatisk.</li>
+          <li><strong>Restore Last Layout</strong>: hent sist brukte vinduslayout for prosjektet.</li>
+          <li><strong>Default View Mode</strong>: standard boardvisning.</li>
+          <li><strong>Default Scene Density</strong>: table, compact eller detailed.</li>
+          <li><strong>Default Detached Window</strong>: hvilken arbeidsflate som åpnes i nytt vindu som standard.</li>
+        </ul>
+
+        <h3>Project Settings</h3>
+        <ul class="checklist">
+          <li>Tittel, sjanger, format, target runtime og logline.</li>
+          <li>Standardvisning for boards i prosjektet.</li>
+          <li>Hvilke block-typer som er tilgjengelige i boards.</li>
+          <li>Rekkefølge på block-typene.</li>
+        </ul>
+
+        <h3>AI Settings</h3>
+        <ul class="checklist">
+          <li>Velg provider og modell.</li>
+          <li>Legg inn eller fjern API-nøkler.</li>
+          <li>Velg response style.</li>
+          <li>Rediger system prompt og ekstra instruksjoner.</li>
+          <li>Velg hvordan hemmeligheter skal lagres.</li>
+        </ul>
+
+        <h3>Transcription Settings</h3>
+        <ul class="checklist">
+          <li>Last ned motor, FFmpeg og modeller.</li>
+          <li>Velg standardmodell, språk og timestamps.</li>
+          <li>Slett modeller du ikke trenger lenger.</li>
+          <li>Følg med på nedlastingsstatus og feil.</li>
+        </ul>
+      </section>
+
+      <section class="section" id="vinduer-og-layouts">
+        <h2>Flere vinduer og layouts</h2>
+        <p>NarraLab er laget for å kunne fordeles over flere vinduer. Dette er spesielt nyttig på store skjermer eller når du vil ha én arbeidsflate per skjerm.</p>
+
+        <h3>Window-menyen</h3>
+        <p>Du kan åpne disse arbeidsflatene i egne vinduer:</p>
+        <ul class="checklist">
+          <li>Outline</li>
+          <li>Scene Bank</li>
+          <li>Board Manager</li>
+          <li>Inspector</li>
+          <li>Notebook</li>
+          <li>Archive</li>
+          <li>Transcribe</li>
+        </ul>
+
+        <h3>Layouts</h3>
+        <ul class="checklist">
+          <li><strong>Save Current Layout</strong> lagrer åpne vinduer og plasseringer som en layout.</li>
+          <li>Lagret layout kan åpnes igjen fra Window-menyen.</li>
+          <li>En layout lagrer hvilke arbeidsflater som var åpne, hvilket board som var knyttet til vinduet, view mode og vindusstørrelser.</li>
+          <li>Lagrede layouts kan slettes fra samme meny.</li>
+        </ul>
+      </section>
+
+      <section class="section" id="snarveier">
+        <h2>Snarveier</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Snarvei</th>
+              <th>Funksjon</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><kbd>Cmd/Ctrl</kbd> + <kbd>N</kbd></td>
+              <td>Opprett nytt prosjekt hvis ingen prosjektfil er åpen, ellers opprett ny scene.</td>
+            </tr>
+            <tr>
+              <td><kbd>Cmd/Ctrl</kbd> + <kbd>F</kbd></td>
+              <td>Fokuser globalt søk.</td>
+            </tr>
+            <tr>
+              <td><kbd>Shift</kbd> + <kbd>1</kbd></td>
+              <td>Vis/skjul høyrepanelet (inspector).</td>
+            </tr>
+            <tr>
+              <td><kbd>Shift</kbd> + <kbd>2</kbd></td>
+              <td>Vis/skjul venstrepanel der aktuelt.</td>
+            </tr>
+            <tr>
+              <td><kbd>Esc</kbd></td>
+              <td>Fjern scenevalg.</td>
+            </tr>
+            <tr>
+              <td><kbd>Delete</kbd> / <kbd>Backspace</kbd></td>
+              <td>Slett valgt board item eller scene, hvis du ikke står i et tekstfelt.</td>
+            </tr>
+            <tr>
+              <td><kbd>Enter</kbd> i Consultant</td>
+              <td>Send melding.</td>
+            </tr>
+            <tr>
+              <td><kbd>Shift</kbd> + <kbd>Enter</kbd> i Consultant</td>
+              <td>Ny linje.</td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="small muted">I lister brukes også <kbd>Shift</kbd> for områdevalg og <kbd>Cmd/Ctrl</kbd> for å legge til/fjerne elementer i utvalget.</p>
+      </section>
+
+      <section class="section" id="arbeidsflyt">
+        <h2>Anbefalt arbeidsflyt</h2>
+        <div class="steps">
+          <div class="step">
+            <h3>Bygg grunnmaterialet i Scene Bank</h3>
+            <p>Importer opptakslogg eller opprett scener manuelt. Rydd mapper, legg inn notater, gi farger og kategorier, og sett key rating på de viktigste scenene.</p>
+          </div>
+          <div class="step">
+            <h3>Detaljer scener i Inspector</h3>
+            <p>Legg inn synopsis, location, characters, quality, kildebaner og beats. Knytt også transkripsjoner til relevante scener.</p>
+          </div>
+          <div class="step">
+            <h3>Bygg dramaturgien i Outline</h3>
+            <p>Lag ett eller flere boards. Dra inn scener, legg til chapter headers og blocks for VO, narration og tekstkort.</p>
+          </div>
+          <div class="step">
+            <h3>Samle tanker i Notebook</h3>
+            <p>Bruk Notebook for research, manusutkast, åpne spørsmål, utviklingsspor og møtenotater.</p>
+          </div>
+          <div class="step">
+            <h3>Bruk Transcribe for råmateriale</h3>
+            <p>Transkriber intervjuer, lagre dem i biblioteket, knytt dem til scener og flytt viktige sitater videre til Notebook eller scene-notater.</p>
+          </div>
+          <div class="step">
+            <h3>Bruk Consultant som sparringspartner</h3>
+            <p>Be om analyse av boardet når strukturen begynner å sitte. Den er best til å peke på mønstre, hull og mulige grep.</p>
+          </div>
+          <div class="step">
+            <h3>Eksporter når du er klar</h3>
+            <p>Eksporter boardet som TXT, HTML, Word eller Markdown, eller lag et JSON-snapshot som sikkerhetskopi.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Vanlige ting det er lett å misforstå</h2>
+        <ul class="checklist">
+          <li><strong>Scener er globale:</strong> samme scene kan brukes i flere boards, men finnes bare én gang i prosjektdata.</li>
+          <li><strong>Board blocks er board-lokale:</strong> chapter, VO, notes og lignende finnes bare i boardet der de er laget.</li>
+          <li><strong>Archive er referansebasert:</strong> du administrerer prosjektets filregister, ikke nødvendigvis filene selv.</li>
+          <li><strong>Notebook er prosjektlokal:</strong> notatene følger prosjektfilen.</li>
+          <li><strong>Transcribe er lokal:</strong> modeller og motor må være installert før første bruk.</li>
+          <li><strong>Consultant trenger API-nøkkel:</strong> uten nøkkel kommer du ikke i gang med chatting.</li>
+        </ul>
+      </section>
+        </div>
+      </div>
+
+      <p class="footer">Dokumentet er laget som en praktisk, kodebasert brukermanual for NarraLab.</p>
+    </main>
+  </body>
+</html>

@@ -115,7 +115,7 @@ export function BoardSortableItem({
   onDoubleClick(): void
   onToggleKeyScene(): void
   beatsExpanded: boolean
-  onToggleBeats(): void
+  onToggleBeats?(): void
   onCreateBeat(sceneId: string, afterBeatId?: string | null): void
   onUpdateBeat(input: SceneBeatUpdateInput): void
   onDeleteBeat(beatId: string): void
@@ -489,7 +489,7 @@ function OutlineSceneRow({
           {tags.slice(0, 3).map((tag) => (
             <Badge key={tag.id}>{tag.name}</Badge>
           ))}
-          <Badge className="capitalize">{scene.status}</Badge>
+          {scene.status !== 'candidate' ? <Badge className="capitalize">{scene.status}</Badge> : null}
         </div>
       ) : null}
       {beatsSection ? (
@@ -514,18 +514,22 @@ function OutlineBeatsSection({
 }) {
   return (
     <SortableContext items={scene.beats.map((beat) => `beat:${scene.id}:${beat.id}`)} strategy={verticalListSortingStrategy}>
-      <div className="space-y-2">
-        {scene.beats.map((beat, index) => (
+      <div className="space-y-1.5 border-l border-border/60 pl-4">
+        {scene.beats.map((beat) => (
           <OutlineBeatRow
             key={`${beat.id}:${beat.updatedAt}`}
             sceneId={scene.id}
             beat={beat}
-            index={index}
             onUpdateBeat={onUpdateBeat}
             onDeleteBeat={onDeleteBeat}
           />
         ))}
-        <Button variant="ghost" size="sm" onClick={() => onCreateBeat(scene.id, scene.beats.at(-1)?.id ?? null)}>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="mt-1 h-8 justify-start px-0 text-xs uppercase tracking-[0.14em] text-muted"
+          onClick={() => onCreateBeat(scene.id, scene.beats.at(-1)?.id ?? null)}
+        >
           <Plus className="h-4 w-4" />
           Add Beat
         </Button>
@@ -537,13 +541,11 @@ function OutlineBeatsSection({
 function OutlineBeatRow({
   sceneId,
   beat,
-  index,
   onUpdateBeat,
   onDeleteBeat,
 }: {
   sceneId: string
   beat: SceneBeat
-  index: number
   onUpdateBeat(input: SceneBeatUpdateInput): void
   onDeleteBeat(beatId: string): void
 }) {
@@ -564,7 +566,7 @@ function OutlineBeatRow({
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform), transition }}
       className={cn(
-        'flex items-center gap-2 rounded-xl border border-border/70 bg-panelMuted/30 px-3 py-2',
+        'flex items-start gap-2 rounded-none border-0 bg-transparent px-0 py-1.5',
         isDragging && 'opacity-40',
       )}
       onDoubleClick={(event) => {
@@ -574,17 +576,15 @@ function OutlineBeatRow({
     >
       <button
         type="button"
-        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted transition hover:bg-panel hover:text-foreground"
+        className="mt-0.5 inline-flex h-5 w-5 shrink-0 cursor-grab items-center justify-center rounded-full text-muted transition hover:bg-panelMuted/60 hover:text-foreground active:cursor-grabbing"
         aria-label="Reorder beat"
         title="Reorder beat"
         {...attributes}
         {...listeners}
       >
-        <GripVertical className="h-4 w-4" />
+        <GripVertical className="h-3.5 w-3.5" />
       </button>
-      <div className="w-5 shrink-0 text-center text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">
-        {index + 1}
-      </div>
+      <div className="mt-[0.35rem] h-1.5 w-1.5 shrink-0 rounded-full bg-border" />
       {editing ? (
         <InlineNameEditor
           value={draft}
@@ -594,13 +594,13 @@ function OutlineBeatRow({
             setDraft(beat.text)
             setEditing(false)
           }}
-          className="h-9 flex-1"
+          className="h-8 flex-1 text-sm"
           autoFocus={true}
         />
       ) : (
         <button
           type="button"
-          className="min-w-0 flex-1 text-left text-sm leading-6 text-foreground/90"
+          className="min-w-0 flex-1 py-0.5 text-left text-[13px] leading-5 text-foreground/90"
           onClick={(event) => event.stopPropagation()}
           onDoubleClick={(event) => {
             event.stopPropagation()
@@ -610,9 +610,18 @@ function OutlineBeatRow({
           {beat.text || 'Untitled beat'}
         </button>
       )}
-      <InlineActionButton label="Delete beat" onClick={() => onDeleteBeat(beat.id)}>
-        <X className="h-4 w-4" />
-      </InlineActionButton>
+      <button
+        type="button"
+        className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-panelMuted/60 hover:text-foreground"
+        aria-label="Delete beat"
+        title="Delete beat"
+        onClick={(event) => {
+          event.stopPropagation()
+          onDeleteBeat(beat.id)
+        }}
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
     </div>
   )
 }

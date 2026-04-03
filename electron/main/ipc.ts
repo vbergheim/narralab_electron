@@ -380,6 +380,7 @@ export function registerIpc(
   ipcMain.handle('windows:updateGlobalUiState', (_, input) =>
     windowManager.updateGlobalUiState(parseGlobalUiStatePatch(input)),
   )
+  ipcMain.handle('windows:focusMainWindow', () => windowManager.focusMainWindow())
   ipcMain.handle('windows:listLayouts', () => windowManager.listLayouts())
   ipcMain.handle('windows:saveLayout', (_, name: string) => {
     const result = windowManager.saveLayout(requireString(name, 'Layout name'))

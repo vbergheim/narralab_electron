@@ -230,8 +230,11 @@ export function OutlineWorkspace({
     if (activeDrag.kind === 'scene') {
       return scenes.find((scene) => scene.id === activeDrag.sceneId) ?? null
     }
+    if (activeDrag.kind === 'board-item') {
+      return board.items.find((item) => item.id === activeDrag.itemId) ?? null
+    }
 
-    return board.items.find((item) => item.id === activeDrag.itemId) ?? null
+    return null
   }, [activeDrag, board.items, scenes])
   const activeSceneOverlay = useMemo(
     () => (activeDrag?.kind === 'scene' ? (activeOverlay as Scene | null) : null),
@@ -536,15 +539,19 @@ export function OutlineWorkspace({
                         onToggleKeyScene={() => {
                           if (scene) onToggleKeyScene(scene)
                         }}
-                        beatsExpanded={scene ? expandedSceneIds.includes(scene.id) : false}
-                        onToggleBeats={() => {
-                          if (!scene) return
-                          setExpandedSceneIds((current) =>
-                            current.includes(scene.id)
-                              ? current.filter((id) => id !== scene.id)
-                              : [...current, scene.id],
-                          )
-                        }}
+                        beatsExpanded={scene ? density === 'detailed' || expandedSceneIds.includes(scene.id) : false}
+                        onToggleBeats={
+                          density === 'detailed'
+                            ? undefined
+                            : () => {
+                                if (!scene) return
+                                setExpandedSceneIds((current) =>
+                                  current.includes(scene.id)
+                                    ? current.filter((id) => id !== scene.id)
+                                    : [...current, scene.id],
+                                )
+                              }
+                        }
                         onCreateBeat={onCreateBeat}
                         onUpdateBeat={onUpdateBeat}
                         onDeleteBeat={onDeleteBeat}

@@ -304,6 +304,7 @@ export function TranscribeWorkspacePanel({
   onUpdateAppSettings,
   onUpdateNotebookDraft,
   onOpenTranscribeSettings,
+  detachedTranscriptOnly = false,
 }: TranscribeWorkspacePanelProps) {
   return (
     <TranscribeWorkspace
@@ -312,6 +313,7 @@ export function TranscribeWorkspacePanel({
       onSaveAppSettings={onUpdateAppSettings}
       onNotebookSynced={onUpdateNotebookDraft}
       onOpenTranscribeSettings={onOpenTranscribeSettings}
+      detachedTranscriptOnly={detachedTranscriptOnly}
     />
   )
 }

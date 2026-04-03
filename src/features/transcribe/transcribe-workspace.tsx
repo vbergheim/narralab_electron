@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type CSSProperties } from 'react'
 
 import { CollapsedRail } from '@/app/app-shell-controls'
+import { Panel } from '@/components/ui/panel'
 import { ResizeHandle } from '@/features/boards/outline-workspace-shared'
 import { usePanelResize } from '@/hooks/use-panel-resize'
 import type { AppSettings, AppSettingsUpdateInput } from '@/types/ai'
@@ -38,6 +39,7 @@ type Props = {
   onSaveAppSettings(input: AppSettingsUpdateInput): Promise<void>
   onNotebookSynced(document: NotebookDocument): void
   onOpenTranscribeSettings(): void
+  detachedTranscriptOnly?: boolean
 }
 
 
@@ -47,6 +49,7 @@ export function TranscribeWorkspace({
   onSaveAppSettings,
   onNotebookSynced,
   onOpenTranscribeSettings,
+  detachedTranscriptOnly = false,
 }: Props) {
   const sortLibraryItems = useCallback((items: TranscriptionItem[]) => {
     return [...items].sort(
@@ -81,6 +84,7 @@ export function TranscribeWorkspace({
 
   // Project data for linking
   const [scenes, setScenes] = useState<Scene[]>([])
+  const [windowTranscriptionItemId, setWindowTranscriptionItemId] = useState<string | null>(null)
   const libraryResize = usePanelResize({
     initial: 280,
     min: 220,
@@ -204,6 +208,14 @@ export function TranscribeWorkspace({
     setStatus({ phase: 'idle', message: '' })
   }, [libraryItems])
 
+  const applySelectedItem = useCallback(
+    (itemId: string) => {
+      handleSelectItem(itemId)
+      setActiveView(resolveTranscribeWorkspaceView('external-selection'))
+    },
+    [handleSelectItem],
+  )
+
   // Sync from global selection
   useEffect(() => {
     const dispose = window.narralab.windows.subscribe((event) => {
@@ -217,15 +229,51 @@ export function TranscribeWorkspace({
         return
       }
 
+      if (event.type === 'window-context') {
+        setWindowTranscriptionItemId(event.payload.transcriptionItemId ?? null)
+      }
+
       if (event.type === 'global-ui-state' && event.payload.selectedTranscriptionItemId) {
-        handleSelectItem(event.payload.selectedTranscriptionItemId)
-        setActiveView(resolveTranscribeWorkspaceView('external-selection'))
-        // Clear it so it doesn't re-trigger on next sync if we select something else
+        applySelectedItem(event.payload.selectedTranscriptionItemId)
         void window.narralab.windows.updateGlobalUiState({ selectedTranscriptionItemId: null })
       }
     })
     return dispose
-  }, [handleSelectItem, refreshLibrary, refreshScenes])
+  }, [applySelectedItem, refreshLibrary, refreshScenes])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadInitialSelections = async () => {
+      try {
+        const [context, state] = await Promise.all([
+          window.narralab.windows.getContext(),
+          window.narralab.windows.getGlobalUiState(),
+        ])
+        if (cancelled) return
+        setWindowTranscriptionItemId(context.transcriptionItemId ?? null)
+        if (context.transcriptionItemId) {
+          applySelectedItem(context.transcriptionItemId)
+          return
+        }
+        if (!state.selectedTranscriptionItemId) return
+        applySelectedItem(state.selectedTranscriptionItemId)
+        await window.narralab.windows.updateGlobalUiState({ selectedTranscriptionItemId: null })
+      } catch (error) {
+        console.error('Failed to load initial transcription selection:', error)
+      }
+    }
+
+    void loadInitialSelections()
+    return () => {
+      cancelled = true
+    }
+  }, [applySelectedItem])
+
+  useEffect(() => {
+    if (!windowTranscriptionItemId) return
+    applySelectedItem(windowTranscriptionItemId)
+  }, [applySelectedItem, windowTranscriptionItemId])
 
   useEffect(() => {
     if (!selectedItemId) return
@@ -398,6 +446,57 @@ export function TranscribeWorkspace({
     '--transcribe-library-metadata-width': `${libraryMetadataResize.size}px`,
   } as CSSProperties
 
+  if (detachedTranscriptOnly) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-4">
+        {selectedItem ? (
+          <TranscriptPanel
+            resultText={libraryResultText}
+            projectMeta={projectMeta}
+            selectedItemId={selectedItemId}
+            subtitle={selectedItem.name}
+            isSaving={isSaving}
+            hasChanges={hasChanges}
+            onCopy={() => void copyText(libraryResultText)}
+            onAppendNotebook={() => void appendNotebook(libraryResultText)}
+            onSaveChanges={() => {
+              if (!selectedItemId) return
+              void (async () => {
+                setIsSaving(true)
+                try {
+                  const updatedItem = await window.narralab.transcription.library.items.update({
+                    id: selectedItemId,
+                    content: libraryResultText,
+                  })
+                  mergeLibraryItemsLocally([updatedItem])
+                  void refreshLibrary()
+                } catch (error) {
+                  console.error('Failed to save changes:', error)
+                } finally {
+                  setIsSaving(false)
+                }
+              })()
+            }}
+            onSaveToLibrary={() => undefined}
+            onSaveTxt={() => void saveTxt(libraryResultText)}
+            onDetach={undefined}
+            onResultTextChange={setLibraryResultText}
+          />
+        ) : selectedItemId ? (
+          <LibraryEmptyState />
+        ) : (
+          <Panel className="flex h-full min-h-0 flex-col overflow-hidden">
+            <div className="flex min-h-0 flex-1 items-center justify-center p-8 text-center">
+              <div className="max-w-sm text-sm text-muted">
+                Open a transcript from the library to view it in a detached transcript window.
+              </div>
+            </div>
+          </Panel>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
       <TranscribeWorkspaceHeader
@@ -436,6 +535,7 @@ export function TranscribeWorkspace({
             resultText={draftResultText}
             projectMeta={projectMeta}
             selectedItemId={null}
+            subtitle={fileName ? `Draft · ${fileName}` : 'Draft transcript'}
             isSaving={isSaving}
             hasChanges={false}
             onCopy={() => void copyText(draftResultText)}
@@ -443,6 +543,7 @@ export function TranscribeWorkspace({
             onSaveChanges={() => undefined}
             onSaveToLibrary={() => void handleSaveDraftToLibrary()}
             onSaveTxt={() => void saveTxt(draftResultText)}
+            onDetach={undefined}
             onResultTextChange={setDraftResultText}
           />
         </div>
@@ -511,6 +612,7 @@ export function TranscribeWorkspace({
                     resultText={libraryResultText}
                     projectMeta={projectMeta}
                     selectedItemId={selectedItemId}
+                    subtitle={selectedItem.name}
                     isSaving={isSaving}
                     hasChanges={hasChanges}
                     onCopy={() => void copyText(libraryResultText)}
@@ -535,6 +637,17 @@ export function TranscribeWorkspace({
                     }}
                     onSaveToLibrary={() => undefined}
                     onSaveTxt={() => void saveTxt(libraryResultText)}
+                    onDetach={() => {
+                      void (async () => {
+                        if (!selectedItemId) return
+                        await window.narralab.windows.updateGlobalUiState({
+                          selectedTranscriptionItemId: selectedItemId,
+                        })
+                        await window.narralab.windows.openWorkspace('transcribe', {
+                          transcriptionItemId: selectedItemId,
+                        })
+                      })()
+                    }}
                     onResultTextChange={setLibraryResultText}
                   />
                 </div>

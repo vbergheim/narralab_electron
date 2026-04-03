@@ -13,11 +13,13 @@ import {
   FolderOpen,
   LibraryBig,
   Plus,
+  Search,
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { ContextMenu, type ContextMenuItem } from '@/components/ui/context-menu'
 import { InlineEditActions, InlineEditScope, InlineNameEditor } from '@/components/ui/inline-name-editor'
+import { Input } from '@/components/ui/input'
 import { Panel } from '@/components/ui/panel'
 import { usePersistedStringArray } from '@/hooks/use-persisted-string-array'
 import { cn } from '@/lib/cn'
@@ -62,13 +64,16 @@ export function ArchiveWorkspace({
   const [editingFolderColor, setEditingFolderColor] = useState<ArchiveFolder['color']>('slate')
   const [dragOverFolderId, setDragOverFolderId] = useState<string | 'root' | null>(null)
   const [draggedFolderId, setDraggedFolderId] = useState<string | null>(null)
+  const [draggedItemId, setDraggedItemId] = useState<string | null>(null)
   const [collapsedFolders, setCollapsedFolders] = usePersistedStringArray('narralab:collapsed:archive-folders')
   const [menuState, setMenuState] = useState<{ itemId: string; x: number; y: number } | null>(null)
   const [folderMenuState, setFolderMenuState] = useState<{ folderId: string; folderName: string; x: number; y: number } | null>(null)
   const [selectedFolderIds, setSelectedFolderIds] = useState<string[]>([])
+  const [searchQuery, setSearchQuery] = useState('')
   const folderSelectionAnchorRef = useRef<number | null>(null)
   const folderNodes = useMemo(() => buildArchiveFolderTree(folders, items), [folders, items])
   const folderIdOrder = useMemo(() => folderNodes.map((folder) => folder.id), [folderNodes])
+  const folderById = useMemo(() => new Map(folders.map((folder) => [folder.id, folder])), [folders])
   const visibleSelectedFolderIds = useMemo(
     () => selectedFolderIds.filter((id) => folderIdOrder.includes(id)),
     [folderIdOrder, selectedFolderIds],
@@ -78,6 +83,17 @@ export function ArchiveWorkspace({
     () => (selectedFolderId ? items.filter((item) => item.folderId === selectedFolderId) : items),
     [items, selectedFolderId],
   )
+  const visibleItems = useMemo(() => {
+    const query = searchQuery.trim().toLocaleLowerCase()
+    if (!query) return filteredItems
+    return filteredItems.filter((item) =>
+      [item.name, item.filePath, item.extension, folderById.get(item.folderId ?? '')?.name ?? '']
+        .join(' ')
+        .toLocaleLowerCase()
+        .includes(query),
+    )
+  }, [filteredItems, folderById, searchQuery])
+  const activeFolder = selectedFolderId ? folderById.get(selectedFolderId) ?? null : null
 
   const menuItems = useMemo<ContextMenuItem[]>(() => {
     if (!menuState) return []
@@ -149,19 +165,30 @@ export function ArchiveWorkspace({
     if (draggedFolderId) {
       if (draggedFolderId !== folderId) {
         onUpdateFolder(draggedFolderId, { parentId: folderId })
+        onSelectFolder(folderId)
       }
       setDraggedFolderId(null)
       return
     }
+
+    if (draggedItemId) {
+      onMoveItem(draggedItemId, folderId)
+      onSelectFolder(folderId)
+      setDraggedItemId(null)
+      return
+    }
+
     const paths = window.narralab.archive.items.resolveDroppedPaths(Array.from(event.dataTransfer.files))
     if (paths.length > 0) {
       onAddFiles(paths, folderId)
+      onSelectFolder(folderId)
       return
     }
 
     const archiveItemId = event.dataTransfer.getData('application/x-narralab-archive-item')
     if (archiveItemId) {
       onMoveItem(archiveItemId, folderId)
+      onSelectFolder(folderId)
     }
   }
 
@@ -436,13 +463,15 @@ export function ArchiveWorkspace({
         onDrop={(event) => handleDropFiles(event, selectedFolderId)}
       >
         <div className="flex items-center justify-between border-b border-border/90 px-5 py-4">
-          <div>
+          <div className="min-w-0">
             <div className="flex items-center gap-2 font-display text-sm font-semibold uppercase tracking-[0.16em] text-foreground">
               <LibraryBig className="h-4 w-4 text-accent" />
-              <span>Archive</span>
+              <span>{activeFolder ? formatFolderLabel(activeFolder.name) : 'Archive'}</span>
             </div>
             <div className="mt-1 text-sm text-muted">
-              Drag files in from Finder, or add them manually. Files stay where they are; the archive stores local references.
+              {activeFolder
+                ? `${visibleItems.length} item${visibleItems.length === 1 ? '' : 's'} in selected folder.`
+                : 'All archived links across folders. Drop onto a folder in the left panel to move items there.'}
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -453,36 +482,59 @@ export function ArchiveWorkspace({
           </div>
         </div>
 
+        <div className="border-b border-border/70 px-5 py-3">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+            <Input
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              className="pl-9"
+              placeholder={activeFolder ? 'Search in this folder…' : 'Search archive…'}
+            />
+          </div>
+        </div>
+
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4">
-          {filteredItems.length === 0 ? (
+          {visibleItems.length === 0 ? (
             <div className="flex h-full items-center justify-center">
               <div className="max-w-md rounded-3xl border border-dashed border-border/90 bg-panelMuted/30 px-8 py-10 text-center">
-                <div className="text-lg font-semibold text-foreground">Drop documents here</div>
+                <div className="text-lg font-semibold text-foreground">
+                  {searchQuery.trim() ? 'No matches' : 'Drop documents here'}
+                </div>
                 <div className="mt-2 text-sm text-muted">
-                  PDFs, Word docs, spreadsheets, images, audio or video can all live here as local references.
+                  {searchQuery.trim()
+                    ? 'Try a different search, or clear the query.'
+                    : 'PDFs, Word docs, spreadsheets, images, audio or video can all live here as local references.'}
                 </div>
               </div>
             </div>
           ) : (
             <div className="space-y-2">
-              {filteredItems.map((item) => (
+              {visibleItems.map((item) => (
                 <button
                   key={item.id}
                   type="button"
                   draggable
                   onDragStart={(event) => {
                     event.stopPropagation()
+                    setDraggedItemId(item.id)
                     event.dataTransfer.setData('application/x-narralab-archive-item', item.id)
                     event.dataTransfer.setData('text/plain', item.id)
                     event.dataTransfer.effectAllowed = 'move'
                   }}
+                  onDragEnd={() => setDraggedItemId(null)}
                   onDoubleClick={() => onOpenItem(item.id)}
                   onContextMenu={(event) => openArchiveMenu(event, item.id, setMenuState)}
                   className="flex w-full items-center gap-3 rounded-2xl border border-border bg-panelMuted/45 px-4 py-3 text-left transition hover:border-accent/30 hover:bg-panelMuted"
                 >
                   <div className="shrink-0 text-muted">{archiveIconFor(item.kind)}</div>
                   <div className="min-w-0 flex-1">
-                    <div className="truncate font-medium text-foreground">{item.name}</div>
+                    <div className="flex items-center gap-2">
+                      <div className="truncate font-medium text-foreground">{item.name}</div>
+                      <span className="shrink-0 rounded-full border border-border/70 bg-panel px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-muted">
+                        {folderLabelForItem(item, folderById)}
+                      </span>
+                    </div>
                     <div className="mt-1 truncate text-xs text-muted">{item.filePath}</div>
                   </div>
                   <div className="shrink-0 text-right text-xs text-muted">
@@ -745,6 +797,14 @@ function colorHex(color: ArchiveFolder['color']) {
 
 function formatFolderLabel(label: string) {
   return label.toLocaleUpperCase('nb-NO')
+}
+
+function folderLabelForItem(item: ArchiveItem, folderById: Map<string, ArchiveFolder>) {
+  if (!item.folderId) {
+    return 'Loose'
+  }
+
+  return folderById.get(item.folderId)?.name ?? 'Folder'
 }
 
 function buildArchiveFolderTree(folders: ArchiveFolder[], items: ArchiveItem[]) {
