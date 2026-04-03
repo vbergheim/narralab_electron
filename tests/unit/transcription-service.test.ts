@@ -52,6 +52,9 @@ function buildSettings(): AppSettings {
       lastProjectPath: null,
       lastLayoutByProject: {},
       savedLayouts: [],
+      consultantLauncherPosition: null,
+      consultantDialogSize: null,
+      consultantDialogPosition: null,
     },
     transcription: {
       modelId: 'small',

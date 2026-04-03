@@ -1,3 +1,4 @@
+import { buildConsultantContext, inferConsultantHint } from '@/features/consultant/consultant-context'
 import type { AppStore, AppStoreGet, AppStoreSet } from '@/stores/app-store-contract'
 import { toMessage } from '@/stores/app-store-utils'
 import type { ConsultantMessage } from '@/types/ai'
@@ -5,7 +6,7 @@ import type { ConsultantMessage } from '@/types/ai'
 export function createConsultantActions(
   set: AppStoreSet,
   get: AppStoreGet,
-): Pick<AppStore, 'sendConsultantMessage' | 'setConsultantContextMode' | 'clearConsultantConversation'> {
+): Pick<AppStore, 'sendConsultantMessage' | 'clearConsultantConversation'> {
   return {
     async sendConsultantMessage(content) {
       const message = content.trim()
@@ -24,10 +25,27 @@ export function createConsultantActions(
       }))
 
       try {
-        const conversation = [...get().consultantMessages].slice(-8)
+        const state = get()
+        const conversation = [...state.consultantMessages].slice(-8)
+        const contextInput = {
+          projectMeta: state.projectMeta,
+          projectSettings: state.projectSettings,
+          workspaceMode: state.workspaceMode,
+          boards: state.boards,
+          scenes: state.scenes,
+          tags: state.tags,
+          activeBoardId: state.activeBoardId,
+          selectedSceneId: state.selectedSceneId,
+          selectedSceneIds: state.selectedSceneIds,
+          selectedBoardItemId: state.selectedBoardItemId,
+        }
+        const hint = inferConsultantHint(contextInput)
         const result = await window.narralab.consultant.chat({
-          activeBoardId: get().activeBoardId,
-          contextMode: get().consultantContextMode,
+          activeBoardId: state.activeBoardId,
+          context: {
+            ...buildConsultantContext(contextInput),
+            triggerReason: conversation.length === 1 ? hint?.reason ?? null : null,
+          },
           messages: conversation.map((entry) => ({
             role: entry.role,
             content: entry.content,
@@ -60,10 +78,6 @@ export function createConsultantActions(
           consultantMessages: [...state.consultantMessages, reply],
         }))
       }
-    },
-
-    setConsultantContextMode(mode) {
-      set({ consultantContextMode: mode })
     },
 
     clearConsultantConversation() {

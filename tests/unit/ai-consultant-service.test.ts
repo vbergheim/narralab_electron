@@ -48,7 +48,10 @@ describe('AIConsultantService', () => {
 
     const result = await service.chat({
       activeBoardId: 'board-1',
-      contextMode: 'active-board',
+      context: {
+        ambient: 'Workspace: Outline',
+        focused: 'Board: Pilot',
+      },
       messages: [{ role: 'user', content: 'Hva mangler?' }],
     })
 
@@ -94,7 +97,10 @@ describe('AIConsultantService', () => {
 
     const pending = service.chat({
       activeBoardId: 'board-1',
-      contextMode: 'active-board',
+      context: {
+        ambient: 'Workspace: Outline',
+        focused: 'Board: Pilot',
+      },
       messages: [{ role: 'user', content: 'Hva mangler?' }],
     })
     const assertion = expect(pending).rejects.toThrow('OpenAI request timed out')

@@ -4,12 +4,10 @@ import { AppSettingsService } from './app-settings-service'
 import { ProjectService } from './project-service'
 
 export class AIConsultantService {
-  private projectService: ProjectService
-  private settingsService: AppSettingsService
+  private readonly settingsService: AppSettingsService
   private readonly requestTimeoutMs: number
 
-  constructor(projectService: ProjectService, settingsService: AppSettingsService, requestTimeoutMs = 45_000) {
-    this.projectService = projectService
+  constructor(_projectService: ProjectService, settingsService: AppSettingsService, requestTimeoutMs = 45_000) {
     this.settingsService = settingsService
     this.requestTimeoutMs = requestTimeoutMs
   }
@@ -25,16 +23,11 @@ export class AIConsultantService {
       throw new Error(`No ${provider === 'openai' ? 'OpenAI' : 'Gemini'} API key configured in Settings`)
     }
 
-    const context =
-      input.contextMode === 'active-board'
-        ? this.projectService.getConsultantContext(input.activeBoardId ?? null)
-        : null
-
     const systemPrompt = buildConsultantPrompt(
       settings.ai.systemPrompt,
       settings.ai.responseStyle,
       settings.ai.extraInstructions,
-      context,
+      input.context ?? null,
     )
 
     const message =
@@ -160,7 +153,7 @@ function buildConsultantPrompt(
   systemPrompt: string,
   responseStyle: 'structured' | 'concise' | 'exploratory',
   extraInstructions: string,
-  context: string | null,
+  context: ConsultantChatInput['context'] | null,
 ) {
   const styleInstructions =
     responseStyle === 'concise'
@@ -177,21 +170,32 @@ function buildConsultantPrompt(
           ]
         : [
             'Svar ryddig og stramt.',
-            'Bruk denne standardstrukturen som hovedregel: 1. Hovedlesning 2. Konkrete forslag 3. Risikoer eller åpne spørsmål.',
-            'Hver del skal være kort. Foretrekk 1-3 punkt per del.',
+            'Skriv naturlig og menneskelig, ikke som en fast mal.',
+            'Ikke start svar rutinemessig med etiketter som "Hovedlesning:", "Konkrete forslag:" eller lignende.',
+            'Bruk korte avsnitt eller punkt bare når det faktisk gjør svaret klarere.',
+            'Hvis en tydelig struktur hjelper, varier formuleringene og tilpass dem til spørsmålet.',
             'Ikke skriv lange vegger av tekst.',
             'Unngå markdown-formatering som **fet skrift**, backticks og overskrifter med #.',
             'Bruk ren tekst. Hvis du lager punktliste, bruk korte enkle linjer.',
             'Prioriter konkrete anbefalinger over generisk refleksjon.',
-            'Hvis brukeren ber om vurdering, start med en tydelig dom før du forklarer.',
+            'Hvis brukeren ber om vurdering, start gjerne med en tydelig dom eller reaksjon før du forklarer.',
           ]
 
   return [
     systemPrompt.trim(),
     'Svar på norsk med mindre brukeren tydelig skriver på et annet språk.',
+    'Dette verktøyet brukes primært til dokumentarfilm og dokumentarserier.',
+    'Tenk innenfor dokumentariske begrensninger: ikke finn opp nye hendelser, karakterer, vendepunkter eller scener som om dette var fiksjon.',
+    'Prioriter alltid først å lese, vurdere og forbedre det materialet og den dekningen som faktisk finnes.',
+    'Først når det er nødvendig, kan du foreslå hva som burde hentes inn, filmes på nytt eller bygges med andre dokumentariske grep.',
+    'Du kan foreslå hva som bør observeres, filmes på nytt, dekkes med voiceover, bygges med arkiv, intervjuer, inserts, lyd eller rekonstruerte grep, men vær tydelig på forskjellen mellom faktisk materiale og forslag til ny dekning.',
+    'Når du foreslår nye scener eller grep, formuler dem som realistiske opptaks- eller konstruksjonsmuligheter, ikke som fri diktning.',
+    'Hvis materialet ikke bærer et forslag, si det tydelig og foreslå heller hva som mangler eller hva som må avklares redaksjonelt.',
     ...styleInstructions,
     extraInstructions.trim() ? `Ekstra instruksjoner:\n${extraInstructions.trim()}` : '',
-    context ? `Project context:\n${context}` : '',
+    context?.ambient ? `Ambient context:\n${context.ambient}` : '',
+    context?.focused ? `Focused context:\n${context.focused}` : '',
+    context?.triggerReason ? `Why the assistant was opened:\n${context.triggerReason}` : '',
   ]
     .filter(Boolean)
     .join('\n\n')

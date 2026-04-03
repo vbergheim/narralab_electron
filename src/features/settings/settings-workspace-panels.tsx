@@ -671,36 +671,39 @@ export function AiSettingsPanel({ settings, busy, onSave }: AiSettingsPanelProps
             <option value="exploratory">Exploratory</option>
           </select>
         </Field>
-        <Field label="Default OpenAI Model">
-          <div className="space-y-2">
-            <select className={selectClassName} value={openAiModelChoice} onChange={(event) => setOpenAiModel(event.target.value === 'custom' ? '' : event.target.value)}>
-              {openAiModelOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-              <option value="custom">Custom…</option>
-            </select>
-            {openAiModelChoice === 'custom' ? (
-              <Input value={openAiModel} onChange={(event) => setOpenAiModel(event.target.value)} placeholder="Enter OpenAI model name" />
-            ) : null}
-          </div>
-        </Field>
-        <Field label="Default Gemini Model">
-          <div className="space-y-2">
-            <select className={selectClassName} value={geminiModelChoice} onChange={(event) => setGeminiModel(event.target.value === 'custom' ? '' : event.target.value)}>
-              {geminiModelOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-              <option value="custom">Custom…</option>
-            </select>
-            {geminiModelChoice === 'custom' ? (
-              <Input value={geminiModel} onChange={(event) => setGeminiModel(event.target.value)} placeholder="Enter Gemini model name" />
-            ) : null}
-          </div>
-        </Field>
+        {provider === 'openai' ? (
+          <Field label="Default OpenAI Model">
+            <div className="space-y-2">
+              <select className={selectClassName} value={openAiModelChoice} onChange={(event) => setOpenAiModel(event.target.value === 'custom' ? '' : event.target.value)}>
+                {openAiModelOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+                <option value="custom">Custom…</option>
+              </select>
+              {openAiModelChoice === 'custom' ? (
+                <Input value={openAiModel} onChange={(event) => setOpenAiModel(event.target.value)} placeholder="Enter OpenAI model name" />
+              ) : null}
+            </div>
+          </Field>
+        ) : (
+          <Field label="Default Gemini Model">
+            <div className="space-y-2">
+              <select className={selectClassName} value={geminiModelChoice} onChange={(event) => setGeminiModel(event.target.value === 'custom' ? '' : event.target.value)}>
+                {geminiModelOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+                <option value="custom">Custom…</option>
+              </select>
+              {geminiModelChoice === 'custom' ? (
+                <Input value={geminiModel} onChange={(event) => setGeminiModel(event.target.value)} placeholder="Enter Gemini model name" />
+              ) : null}
+            </div>
+          </Field>
+        )}
       </div>
 
       <div className="mt-4">

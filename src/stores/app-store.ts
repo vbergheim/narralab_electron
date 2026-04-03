@@ -23,7 +23,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       openAiModel: 'gpt-5-mini',
       geminiModel: 'gemini-2.5-flash',
       systemPrompt:
-        'Du er en skarp, erfaren dokumentarkonsulent. Gi konkrete, redaksjonelle forslag til struktur, dramaturgi, scenevalg, voiceover, tematiske linjer og hva som mangler. Vær presis og arbeidsnær, ikke vag.',
+        'Du er en skarp, erfaren dokumentarkonsulent. Gi konkrete, redaksjonelle forslag til struktur, dramaturgi, scenevalg, voiceover, tematiske linjer og hva som mangler. Tenk dokumentarisk: ikke dikt opp hendelser eller karakterer som om materialet var fiksjon. Vær presis og arbeidsnær, ikke vag.',
       extraInstructions: '',
       responseStyle: 'structured',
       secretStorageMode: 'safe',
@@ -40,6 +40,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
       lastProjectPath: null,
       lastLayoutByProject: {},
       savedLayouts: [],
+      consultantLauncherPosition: null,
+      consultantDialogSize: null,
+      consultantDialogPosition: null,
     },
     transcription: {
       modelId: 'small',
@@ -63,7 +66,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
   selectedBoardItemId: null,
   selectedArchiveFolderId: null,
   consultantMessages: [],
-  consultantContextMode: 'none',
   workspaceMode: 'outline',
   ...createArchiveActions(set),
   ...createBoardActions(set, get),

@@ -1,20 +1,19 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react'
-import { ArrowUp, Bot, RotateCcw, Settings2 } from 'lucide-react'
+import { ArrowUp, Bot, CircleHelp, RotateCcw, Settings2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Panel } from '@/components/ui/panel'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/cn'
-import type { AppSettings, ConsultantContextMode, ConsultantMessage } from '@/types/ai'
+import type { AppSettings, ConsultantMessage, ConsultantProactiveHint } from '@/types/ai'
 
 type Props = {
   settings: AppSettings
   messages: ConsultantMessage[]
   busy: boolean
-  activeBoardName: string | null
-  contextMode: ConsultantContextMode
+  contextSummary: string
+  proactiveHint: ConsultantProactiveHint | null
   compact?: boolean
-  onChangeContextMode(mode: ConsultantContextMode): void
   onSend(content: string): void
   onClear(): void
   onOpenSettings(): void
@@ -24,15 +23,15 @@ export function ConsultantWorkspace({
   settings,
   messages,
   busy,
-  activeBoardName,
-  contextMode,
+  contextSummary,
+  proactiveHint,
   compact = false,
-  onChangeContextMode,
   onSend,
   onClear,
   onOpenSettings,
 }: Props) {
   const [draft, setDraft] = useState('')
+  const [showCompactHelp, setShowCompactHelp] = useState(false)
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const hasConfiguredKey =
     settings.ai.provider === 'openai' ? settings.ai.hasOpenAiApiKey : settings.ai.hasGeminiApiKey
@@ -52,7 +51,22 @@ export function ConsultantWorkspace({
 
   return (
     <div className={cn('grid h-full min-h-0 gap-4', compact ? 'grid-cols-1' : 'lg:grid-cols-[minmax(0,1.4fr)_320px]')}>
-      <Panel className="flex h-full min-h-0 flex-col overflow-hidden">
+      <div className={cn('flex h-full min-h-0 flex-col overflow-hidden', compact ? '' : 'rounded-[28px] border border-border/90 bg-panel')}>
+        {compact ? (
+          <div className="flex items-center justify-between gap-3 px-1 pb-4">
+            <div className="flex items-center gap-1">
+              <Button variant="ghost" size="sm" onClick={() => setShowCompactHelp((current) => !current)} aria-label="Show consultant help">
+                <CircleHelp className="h-4 w-4" />
+              </Button>
+              <Button variant="ghost" size="sm" onClick={onOpenSettings} aria-label="Open consultant settings">
+                <Settings2 className="h-4 w-4" />
+              </Button>
+              <Button variant="ghost" size="sm" onClick={onClear} disabled={messages.length === 0 && !draft} aria-label="Clear conversation">
+                <RotateCcw className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        ) : null}
         {!compact ? (
           <div className="flex items-center justify-between border-b border-border/90 px-5 py-4">
             <div>
@@ -62,7 +76,7 @@ export function ConsultantWorkspace({
                 {' · '}
                 Model: {settings.ai.provider === 'openai' ? settings.ai.openAiModel : settings.ai.geminiModel}
                 {' · '}
-                Context: {contextMode === 'none' ? 'Off' : activeBoardName ?? 'Current board'}
+                Focus: {contextSummary}
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -80,12 +94,26 @@ export function ConsultantWorkspace({
 
         <div
           ref={viewportRef}
-          className={cn(
-            'min-h-0 flex-1 overflow-y-auto overscroll-contain bg-black/10',
-            compact ? 'space-y-3 px-4 py-3' : 'space-y-4 px-5 py-5',
-          )}
+          className={cn('min-h-0 flex-1 overflow-y-auto overscroll-contain bg-black/10', compact ? 'space-y-4 px-1 py-1' : 'space-y-4 px-5 py-5')}
         >
-          {messages.length === 0 ? (
+          {compact && showCompactHelp ? (
+            <div className="rounded-2xl border border-border/90 bg-panelMuted/40 p-4 text-sm text-muted">
+              Konsulenten bruker automatisk det du jobber med akkurat nå. Du kan spørre om struktur, svakheter, manglende scener eller be om konkrete forslag. Åpne fullt panel hvis du vil jobbe mer systematisk.
+            </div>
+          ) : null}
+          {proactiveHint ? (
+            <div className="rounded-2xl border border-accent/30 bg-accent/10 p-4 text-sm text-foreground">
+              <div className="font-semibold">{proactiveHint.title}</div>
+              <div className="mt-1 text-muted">{proactiveHint.reason}</div>
+              <div className="mt-3">
+                <Button variant="accent" size="sm" onClick={() => onSend(proactiveHint.prompt)} disabled={busy || !hasConfiguredKey}>
+                  Be om forslag
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          {messages.length === 0 && !compact ? (
             <div className="rounded-2xl border border-border/90 bg-panelMuted/40 p-5 text-sm text-muted">
               Ask for structure notes, chapter ideas, missing scenes, VO placement, what feels repetitive, or how to sharpen the emotional line.
             </div>
@@ -103,7 +131,7 @@ export function ConsultantWorkspace({
               </div>
               <div
                 className={cn(
-                  'max-w-[82%] rounded-2xl px-4 py-3 text-sm leading-6 shadow-card whitespace-pre-wrap',
+                  'max-w-[82%] rounded-[24px] px-5 py-4 text-sm leading-7 shadow-card whitespace-pre-wrap',
                   message.role === 'user'
                     ? 'border border-accent/40 bg-accent/12 text-foreground'
                     : message.error
@@ -127,32 +155,15 @@ export function ConsultantWorkspace({
           ) : null}
         </div>
 
-        <div className={cn('border-t border-border/90', compact ? 'px-4 py-3' : 'px-5 py-4')}>
+        <div className={cn(compact ? 'mt-5 px-1 pt-4' : 'border-t border-border/90 px-5 py-4')}>
           {!hasConfiguredKey ? (
             <div className="mb-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
               Add a {settings.ai.provider === 'openai' ? 'OpenAI' : 'Gemini'} API key in Settings before chatting.
             </div>
           ) : null}
-          <div className="mb-3 flex flex-wrap items-center gap-2">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">Context</span>
-            <Button
-              variant={contextMode === 'none' ? 'accent' : 'ghost'}
-              size="sm"
-              onClick={() => onChangeContextMode('none')}
-            >
-              Off
-            </Button>
-            <Button
-              variant={contextMode === 'active-board' ? 'accent' : 'ghost'}
-              size="sm"
-              onClick={() => onChangeContextMode('active-board')}
-            >
-              Use Current Board
-            </Button>
-          </div>
-          <div className="flex items-end gap-3">
+          <div className={cn('flex items-end gap-3', compact ? 'rounded-[24px] bg-panel/50 p-2.5' : '')}>
             <Textarea
-              className={cn('flex-1', compact ? 'min-h-[64px]' : 'min-h-[96px]')}
+              className={cn('flex-1', compact ? 'min-h-[92px] rounded-[20px]' : 'min-h-[96px]')}
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={(event) => {
@@ -162,18 +173,18 @@ export function ConsultantWorkspace({
                 }
               }}
             />
-            <Button variant="accent" size="md" onClick={submit} disabled={busy || !hasConfiguredKey || !draft.trim()}>
+            <Button className={cn(compact ? 'h-14 w-14 rounded-[20px] px-0' : '')} variant="accent" size="md" onClick={submit} disabled={busy || !hasConfiguredKey || !draft.trim()}>
               <ArrowUp className="h-4 w-4" />
               {!compact ? 'Send' : null}
             </Button>
           </div>
           {!compact ? (
             <div className="mt-2 text-xs text-muted">
-              Enter sends. Shift + Enter adds a new line. Context is off by default.
+              Enter sends. Shift + Enter adds a new line. Konsulenten bruker fokusert kontekst bare når du faktisk åpner og spør.
             </div>
           ) : null}
         </div>
-      </Panel>
+      </div>
 
       {!compact ? (
         <Panel className="p-5">
@@ -183,7 +194,7 @@ export function ConsultantWorkspace({
           </div>
           <div className="mt-4 space-y-3 text-sm text-muted">
             <p>Ask it to compare two board versions, spot weak transitions, propose chapter breaks or find missing scenes.</p>
-            <p>Use `Context: Use Current Board` only when you actually want board-aware feedback.</p>
+            <p>Den følger arbeidsflaten og aktivt board automatisk, uten at du trenger å slå kontekst av og på.</p>
             <p>Enter sends quickly. Shift + Enter adds a new line.</p>
           </div>
         </Panel>

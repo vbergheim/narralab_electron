@@ -3,8 +3,8 @@ import type { ReactNode } from 'react'
 import type {
   AppSettings,
   AppSettingsUpdateInput,
-  ConsultantContextMode,
   ConsultantMessage,
+  ConsultantProactiveHint,
   WindowWorkspace,
 } from '@/types/ai'
 import type { ArchiveFolder, ArchiveItem } from '@/types/archive'
@@ -146,10 +146,10 @@ export type MainWorkspacePanelProps = SharedWorkspaceProps & {
   busy: boolean
   consultantBusy: boolean
   consultantMessages: ConsultantMessage[]
-  consultantContextMode: ConsultantContextMode
+  consultantContextSummary: string
+  consultantProactiveHint: ConsultantProactiveHint | null
   settingsNavigate: { tab: SettingsTab; requestId: number } | null
   onSetWorkspaceMode(mode: WorkspaceMode): void
-  onSetConsultantContextMode(mode: ConsultantContextMode): void
   onSendConsultantMessage(content: string): Promise<void> | void
   onClearConsultantConversation(): void
   onOpenAppSettings(): void

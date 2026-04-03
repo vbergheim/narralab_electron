@@ -4,7 +4,6 @@ import type { SceneDensity } from './view'
 
 export type AIProvider = 'openai' | 'gemini'
 export type ConsultantResponseStyle = 'structured' | 'concise' | 'exploratory'
-export type ConsultantContextMode = 'none' | 'active-board'
 export type WindowWorkspace =
   | 'outline'
   | 'bank'
@@ -39,6 +38,34 @@ export type AppTranscriptionSettings = {
   timestampInterval: TranscriptionTimestampInterval
 }
 
+export type ConsultantLauncherPosition = {
+  x: number
+  y: number
+}
+
+export type ConsultantDialogSize = {
+  width: number
+  height: number
+}
+
+export type ConsultantDialogPosition = {
+  x: number
+  y: number
+}
+
+export type ConsultantContextPayload = {
+  ambient: string
+  focused?: string
+  triggerReason?: string | null
+}
+
+export type ConsultantProactiveHint = {
+  id: string
+  title: string
+  prompt: string
+  reason: string
+}
+
 export type AppSettings = {
   ai: {
     provider: AIProvider
@@ -61,6 +88,9 @@ export type AppSettings = {
     lastProjectPath: string | null
     lastLayoutByProject: Record<string, string>
     savedLayouts: SavedWindowLayout[]
+    consultantLauncherPosition: ConsultantLauncherPosition | null
+    consultantDialogSize: ConsultantDialogSize | null
+    consultantDialogPosition: ConsultantDialogPosition | null
   }
   transcription: AppTranscriptionSettings
 }
@@ -85,6 +115,9 @@ export type AppSettingsUpdateInput = {
   lastProjectPath?: string | null
   lastLayoutByProject?: Record<string, string>
   savedLayouts?: SavedWindowLayout[]
+  consultantLauncherPosition?: ConsultantLauncherPosition | null
+  consultantDialogSize?: ConsultantDialogSize | null
+  consultantDialogPosition?: ConsultantDialogPosition | null
   transcriptionModelId?: TranscriptionModelId
   transcriptionLanguage?: TranscriptionLanguage
   transcriptionTimestampInterval?: TranscriptionTimestampInterval
@@ -108,7 +141,7 @@ export type ConsultantChatMessage = {
 export type ConsultantChatInput = {
   messages: ConsultantChatMessage[]
   activeBoardId?: string | null
-  contextMode?: ConsultantContextMode
+  context?: ConsultantContextPayload
 }
 
 export type ConsultantChatResult = {

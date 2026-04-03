@@ -277,6 +277,24 @@ export function parseAppSettingsUpdateInput(value: unknown): AppSettingsUpdateIn
   if (input.lastProjectPath !== undefined) next.lastProjectPath = nullableString(input.lastProjectPath, 'Last project path') ?? null
   if (input.lastLayoutByProject !== undefined) next.lastLayoutByProject = requireStringMap(input.lastLayoutByProject, 'Last layout map')
   if (input.savedLayouts !== undefined) next.savedLayouts = requireSavedLayouts(input.savedLayouts)
+  if (input.consultantLauncherPosition !== undefined) {
+    next.consultantLauncherPosition =
+      input.consultantLauncherPosition === null
+        ? null
+        : parseConsultantLauncherPosition(input.consultantLauncherPosition)
+  }
+  if (input.consultantDialogSize !== undefined) {
+    next.consultantDialogSize =
+      input.consultantDialogSize === null
+        ? null
+        : parseConsultantDialogSize(input.consultantDialogSize)
+  }
+  if (input.consultantDialogPosition !== undefined) {
+    next.consultantDialogPosition =
+      input.consultantDialogPosition === null
+        ? null
+        : parseConsultantDialogPosition(input.consultantDialogPosition)
+  }
   if (input.transcriptionModelId !== undefined) {
     next.transcriptionModelId = requireTranscriptionModelId(input.transcriptionModelId, 'Transcription model')
   }
@@ -344,10 +362,10 @@ export function parseConsultantChatInput(value: unknown): ConsultantChatInput {
       return { role, content }
     }),
     activeBoardId: input.activeBoardId === undefined ? undefined : nullableString(input.activeBoardId, 'Active board id') ?? null,
-    contextMode:
-      input.contextMode === undefined
+    context:
+      input.context === undefined
         ? undefined
-        : requireEnum(input.contextMode, new Set(['none', 'active-board'] as const), 'Consultant context mode'),
+        : parseConsultantContextPayload(input.context),
   }
 }
 
@@ -549,6 +567,42 @@ function requireObject(value: unknown, label: string): AnyRecord {
   }
 
   return value as AnyRecord
+}
+
+function parseConsultantLauncherPosition(value: unknown) {
+  const input = requireObject(value, 'Consultant launcher position')
+  return {
+    x: requireFiniteNumber(input.x, 'Consultant launcher X'),
+    y: requireFiniteNumber(input.y, 'Consultant launcher Y'),
+  }
+}
+
+function parseConsultantDialogSize(value: unknown) {
+  const input = requireObject(value, 'Consultant dialog size')
+  return {
+    width: requireFiniteNumber(input.width, 'Consultant dialog width'),
+    height: requireFiniteNumber(input.height, 'Consultant dialog height'),
+  }
+}
+
+function parseConsultantDialogPosition(value: unknown) {
+  const input = requireObject(value, 'Consultant dialog position')
+  return {
+    x: requireFiniteNumber(input.x, 'Consultant dialog X'),
+    y: requireFiniteNumber(input.y, 'Consultant dialog Y'),
+  }
+}
+
+function parseConsultantContextPayload(value: unknown) {
+  const input = requireObject(value, 'Consultant context')
+  return {
+    ambient: requireString(input.ambient, 'Consultant ambient context'),
+    focused: input.focused === undefined ? undefined : optionalString(input.focused, 'Consultant focused context') ?? '',
+    triggerReason:
+      input.triggerReason === undefined
+        ? undefined
+        : nullableString(input.triggerReason, 'Consultant trigger reason') ?? null,
+  }
 }
 
 function requireFiniteNumber(value: unknown, label: string) {

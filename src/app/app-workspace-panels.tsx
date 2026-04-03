@@ -294,7 +294,8 @@ export function MainWorkspacePanel({
   selectedArchiveFolderId,
   consultantBusy,
   consultantMessages,
-  consultantContextMode,
+  consultantContextSummary,
+  consultantProactiveHint,
   filteredScenes,
   filteredSceneIds,
   sceneDensity,
@@ -359,7 +360,6 @@ export function MainWorkspacePanel({
   onSendScenesToOpenOutline,
   onOpenTranscribeSettings,
   onSetWorkspaceMode,
-  onSetConsultantContextMode,
   onSendConsultantMessage,
   onClearConsultantConversation,
   onOpenAppSettings,
@@ -386,9 +386,8 @@ export function MainWorkspacePanel({
         settings={appSettings}
         messages={consultantMessages}
         busy={consultantBusy}
-        activeBoardName={activeBoard?.name ?? null}
-        contextMode={consultantContextMode}
-        onChangeContextMode={onSetConsultantContextMode}
+        contextSummary={consultantContextSummary}
+        proactiveHint={consultantProactiveHint}
         onSend={(content) => void onSendConsultantMessage(content)}
         onClear={onClearConsultantConversation}
         onOpenSettings={onOpenAppSettings}

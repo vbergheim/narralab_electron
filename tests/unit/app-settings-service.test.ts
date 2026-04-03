@@ -104,4 +104,28 @@ describe('AppSettingsService', () => {
     expect(raw.ai?.allowPlaintextSecrets).toBe(true)
     expect(raw.ai?.openAiApiKey).toMatchObject({ encoding: 'plain' })
   })
+
+  it('persists consultant launcher position as part of UI settings', () => {
+    const updated = service.updateSettings({
+      consultantLauncherPosition: { x: 320.4, y: 180.6 },
+      consultantDialogSize: { width: 512.2, height: 644.8 },
+      consultantDialogPosition: { x: 420.9, y: 96.2 },
+    })
+
+    expect(updated.ui.consultantLauncherPosition).toEqual({ x: 320, y: 181 })
+    expect(updated.ui.consultantDialogSize).toEqual({ width: 512, height: 645 })
+    expect(updated.ui.consultantDialogPosition).toEqual({ x: 421, y: 96 })
+
+    const raw = JSON.parse(fs.readFileSync(settingsPath, 'utf8')) as {
+      ui?: {
+        consultantLauncherPosition?: { x: number; y: number } | null
+        consultantDialogSize?: { width: number; height: number } | null
+        consultantDialogPosition?: { x: number; y: number } | null
+      }
+    }
+
+    expect(raw.ui?.consultantLauncherPosition).toEqual({ x: 320, y: 181 })
+    expect(raw.ui?.consultantDialogSize).toEqual({ width: 512, height: 645 })
+    expect(raw.ui?.consultantDialogPosition).toEqual({ x: 421, y: 96 })
+  })
 })

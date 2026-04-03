@@ -7,6 +7,9 @@ import type {
   AIProvider,
   AppSettings,
   AppSettingsUpdateInput,
+  ConsultantDialogSize,
+  ConsultantDialogPosition,
+  ConsultantLauncherPosition,
   ConsultantResponseStyle,
   SavedWindowLayout,
   WindowWorkspace,
@@ -41,6 +44,9 @@ type SettingsFile = {
     lastProjectPath?: string | null
     lastLayoutByProject?: Record<string, string>
     savedLayouts?: SavedWindowLayout[]
+    consultantLauncherPosition?: ConsultantLauncherPosition | null
+    consultantDialogSize?: ConsultantDialogSize | null
+    consultantDialogPosition?: ConsultantDialogPosition | null
   }
   transcription?: {
     modelId?: TranscriptionModelId
@@ -77,6 +83,9 @@ const DEFAULT_SETTINGS: AppSettings = {
     lastProjectPath: null,
     lastLayoutByProject: {},
     savedLayouts: [],
+    consultantLauncherPosition: null,
+    consultantDialogSize: null,
+    consultantDialogPosition: null,
   },
   transcription: {
     modelId: 'small',
@@ -111,6 +120,9 @@ export class AppSettingsService {
         lastProjectPath: file.ui?.lastProjectPath ?? DEFAULT_SETTINGS.ui.lastProjectPath,
         lastLayoutByProject: file.ui?.lastLayoutByProject ?? DEFAULT_SETTINGS.ui.lastLayoutByProject,
         savedLayouts: normalizeLayouts(file.ui?.savedLayouts),
+        consultantLauncherPosition: normalizeConsultantLauncherPosition(file.ui?.consultantLauncherPosition),
+        consultantDialogSize: normalizeConsultantDialogSize(file.ui?.consultantDialogSize),
+        consultantDialogPosition: normalizeConsultantDialogPosition(file.ui?.consultantDialogPosition),
       },
       transcription: {
         modelId: normalizeTranscriptionModelId(file.transcription?.modelId),
@@ -161,6 +173,18 @@ export class AppSettingsService {
         lastLayoutByProject:
           input.lastLayoutByProject ?? current.file.ui?.lastLayoutByProject ?? DEFAULT_SETTINGS.ui.lastLayoutByProject,
         savedLayouts: normalizeLayouts(input.savedLayouts ?? current.file.ui?.savedLayouts),
+        consultantLauncherPosition:
+          input.consultantLauncherPosition !== undefined
+            ? normalizeConsultantLauncherPosition(input.consultantLauncherPosition)
+            : normalizeConsultantLauncherPosition(current.file.ui?.consultantLauncherPosition),
+        consultantDialogSize:
+          input.consultantDialogSize !== undefined
+            ? normalizeConsultantDialogSize(input.consultantDialogSize)
+            : normalizeConsultantDialogSize(current.file.ui?.consultantDialogSize),
+        consultantDialogPosition:
+          input.consultantDialogPosition !== undefined
+            ? normalizeConsultantDialogPosition(input.consultantDialogPosition)
+            : normalizeConsultantDialogPosition(current.file.ui?.consultantDialogPosition),
       },
       transcription: {
         modelId:
@@ -309,6 +333,57 @@ function normalizeLayouts(value?: SavedWindowLayout[] | null): SavedWindowLayout
         : [],
     }))
     .filter((layout) => layout.id && layout.name)
+}
+
+function normalizeConsultantLauncherPosition(
+  value?: ConsultantLauncherPosition | null,
+): ConsultantLauncherPosition | null {
+  if (!value || typeof value.x !== 'number' || typeof value.y !== 'number') {
+    return null
+  }
+
+  if (!Number.isFinite(value.x) || !Number.isFinite(value.y)) {
+    return null
+  }
+
+  return {
+    x: Math.round(value.x),
+    y: Math.round(value.y),
+  }
+}
+
+function normalizeConsultantDialogSize(
+  value?: ConsultantDialogSize | null,
+): ConsultantDialogSize | null {
+  if (!value || typeof value.width !== 'number' || typeof value.height !== 'number') {
+    return null
+  }
+
+  if (!Number.isFinite(value.width) || !Number.isFinite(value.height)) {
+    return null
+  }
+
+  return {
+    width: Math.round(value.width),
+    height: Math.round(value.height),
+  }
+}
+
+function normalizeConsultantDialogPosition(
+  value?: ConsultantDialogPosition | null,
+): ConsultantDialogPosition | null {
+  if (!value || typeof value.x !== 'number' || typeof value.y !== 'number') {
+    return null
+  }
+
+  if (!Number.isFinite(value.x) || !Number.isFinite(value.y)) {
+    return null
+  }
+
+  return {
+    x: Math.round(value.x),
+    y: Math.round(value.y),
+  }
 }
 
 function normalizeDefaultBoardView(value?: BoardViewMode | string | null): BoardViewMode {

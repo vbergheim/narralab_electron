@@ -19,8 +19,11 @@ import { Button } from '@/components/ui/button'
 import { Panel } from '@/components/ui/panel'
 import type {
   AppSettings,
-  ConsultantContextMode,
+  ConsultantDialogSize,
+  ConsultantDialogPosition,
+  ConsultantLauncherPosition,
   ConsultantMessage,
+  ConsultantProactiveHint,
   WindowWorkspace,
 } from '@/types/ai'
 
@@ -210,79 +213,137 @@ export function InspectorSidebar({
   )
 }
 
-export function ConsultantDock({
+export function ConsultantLauncher({
   open,
+  position,
+  hasHint,
+  dialogPosition,
+  dialogSize,
   settings,
   messages,
   busy,
-  activeBoardName,
-  contextMode,
-  onToggleOpen,
+  contextSummary,
+  proactiveHint,
+  onOpen,
+  onClose,
   onOpenFullView,
-  onChangeContextMode,
+  onPointerDown,
+  onDialogPointerDown,
+  onResizePointerDown,
   onSend,
   onClear,
   onOpenSettings,
 }: {
   open: boolean
+  position: ConsultantLauncherPosition
+  hasHint: boolean
+  dialogPosition: ConsultantDialogPosition
+  dialogSize: ConsultantDialogSize
   settings: AppSettings
   messages: ConsultantMessage[]
   busy: boolean
-  activeBoardName: string | null
-  contextMode: ConsultantContextMode
-  onToggleOpen(): void
+  contextSummary: string
+  proactiveHint: ConsultantProactiveHint | null
+  onOpen(): void
+  onClose(): void
   onOpenFullView(): void
-  onChangeContextMode(mode: ConsultantContextMode): void
+  onPointerDown: PointerEventHandler<HTMLButtonElement>
+  onDialogPointerDown: PointerEventHandler<HTMLDivElement>
+  onResizePointerDown: PointerEventHandler<HTMLButtonElement>
   onSend(content: string): void
   onClear(): void
   onOpenSettings(): void
 }) {
   return (
-    <div className="pointer-events-none fixed bottom-5 right-5 z-50 flex flex-col items-end gap-3">
+    <>
       {open ? (
-        <div className="pointer-events-auto w-[min(440px,calc(100vw-2rem))]">
-          <Panel className="h-[min(72vh,680px)] overflow-hidden shadow-2xl shadow-black/40">
-            <div className="flex items-center justify-between border-b border-border/90 px-4 py-3">
-              <div className="text-sm font-semibold uppercase tracking-[0.16em] text-muted">
-                Consultant
+        <div className="pointer-events-none fixed inset-0 z-40">
+          <div
+            className="pointer-events-auto absolute"
+            style={{ left: dialogPosition.x, top: dialogPosition.y, width: dialogSize.width }}
+          >
+            <Panel className="relative flex flex-col overflow-hidden rounded-[32px] shadow-2xl shadow-black/40" style={{ height: dialogSize.height }}>
+              <div className="flex cursor-move items-start justify-between gap-4 border-b border-border/90 px-6 py-5" onPointerDown={onDialogPointerDown}>
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold uppercase tracking-[0.16em] text-muted">Consultant</div>
+                  <div className="mt-2 truncate text-base text-muted">{contextSummary}</div>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button variant="ghost" size="sm" onClick={onOpenFullView}>
+                    Open Panel
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={onClose} aria-label="Close consultant dialog">
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <Button variant="ghost" size="sm" onClick={onOpenFullView}>
-                  Full View
-                </Button>
-                <Button variant="ghost" size="sm" onClick={onToggleOpen}>
-                  <X className="h-4 w-4" />
-                </Button>
+              <div className="min-h-0 flex-1 p-5">
+                <ConsultantWorkspace
+                  settings={settings}
+                  messages={messages}
+                  busy={busy}
+                  contextSummary={contextSummary}
+                  proactiveHint={proactiveHint}
+                  compact
+                  onSend={onSend}
+                  onClear={onClear}
+                  onOpenSettings={onOpenSettings}
+                />
               </div>
-            </div>
-            <div className="h-[calc(100%-57px)] p-3">
-              <ConsultantWorkspace
-                key="consultant-dock"
-                settings={settings}
-                messages={messages}
-                busy={busy}
-                activeBoardName={activeBoardName}
-                contextMode={contextMode}
-                compact
-                onChangeContextMode={onChangeContextMode}
-                onSend={(content) => onSend(content)}
-                onClear={onClear}
-                onOpenSettings={onOpenSettings}
+              <button
+                type="button"
+                data-direction="left"
+                className="absolute bottom-12 left-0 top-12 w-3 cursor-ew-resize"
+                onPointerDown={onResizePointerDown}
+                aria-label="Resize consultant dialog from left edge"
+                title="Resize"
               />
-            </div>
-          </Panel>
+              <button
+                type="button"
+                data-direction="right"
+                className="absolute bottom-12 right-0 top-12 w-3 cursor-ew-resize"
+                onPointerDown={onResizePointerDown}
+                aria-label="Resize consultant dialog from right edge"
+                title="Resize"
+              />
+              <button
+                type="button"
+                data-direction="bottom"
+                className="absolute bottom-0 left-4 right-4 h-3 cursor-ns-resize"
+                onPointerDown={onResizePointerDown}
+                aria-label="Resize consultant dialog from bottom edge"
+                title="Resize"
+              />
+              <button
+                type="button"
+                data-direction="bottom-left"
+                className="absolute bottom-0 left-0 h-4 w-4 cursor-nesw-resize"
+                onPointerDown={onResizePointerDown}
+                aria-label="Resize consultant dialog from bottom left corner"
+                title="Resize"
+              />
+            </Panel>
+          </div>
         </div>
       ) : null}
 
-      <Button
-        className="pointer-events-auto h-12 rounded-full px-4 shadow-2xl shadow-black/35"
-        variant="accent"
-        size="md"
-        onClick={onToggleOpen}
+      <div
+        className="pointer-events-none fixed z-50"
+        style={{ left: position.x, top: position.y }}
       >
-        <MessageCircle className="h-4 w-4" />
-        Consultant
-      </Button>
-    </div>
+        <Button
+          className="pointer-events-auto relative h-14 w-14 rounded-full px-0 shadow-2xl shadow-black/35"
+          variant="accent"
+          size="md"
+          onClick={onOpen}
+          onPointerDown={onPointerDown}
+          aria-label={hasHint ? 'Open consultant with suggestion available' : 'Open consultant'}
+          title={hasHint ? 'Consultant has a suggestion for your current work' : 'Open consultant'}
+        >
+          <MessageCircle className="h-5 w-5" />
+          {hasHint ? <span className="absolute right-1.5 top-1.5 h-3 w-3 rounded-full border border-panel bg-amber-400" /> : null}
+        </Button>
+      </div>
+    </>
   )
 }

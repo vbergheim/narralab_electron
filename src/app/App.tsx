@@ -1,10 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEventHandler } from 'react'
 import { Loader2 } from 'lucide-react'
 
 import { ProjectsToolbar } from '@/features/projects/projects-toolbar'
+import {
+  buildConsultantContextSummary,
+  inferConsultantHint,
+} from '@/features/consultant/consultant-context'
 import type { SettingsTab } from '@/features/settings/settings-workspace'
 import {
-  ConsultantDock,
+  ConsultantLauncher,
   ErrorBanner,
   InspectorSidebar,
   WorkspaceTabsBar,
@@ -25,7 +29,7 @@ import { nextKeyRating } from '@/lib/scene-rating'
 import { normalizeBoardViewMode, useWindowRuntime } from '@/app/use-window-runtime'
 import { useAppStore } from '@/stores/app-store'
 import { useFilterStore } from '@/stores/filter-store'
-import type { WindowWorkspace } from '@/types/ai'
+import type { ConsultantDialogPosition, ConsultantDialogSize, ConsultantLauncherPosition, WindowWorkspace } from '@/types/ai'
 import type { Scene } from '@/types/scene'
 
 export function App() {
@@ -34,10 +38,44 @@ export function App() {
   const [rightCollapsed, setRightCollapsed] = useState(true)
   const [, setLeftCollapsed] = useState(false)
   const [settingsNavigate, setSettingsNavigate] = useState<{ tab: SettingsTab; requestId: number } | null>(null)
-  const [consultantDockOpen, setConsultantDockOpen] = useState(false)
   const [viewMenuOpen, setViewMenuOpen] = useState(false)
   const [viewMenuPosition, setViewMenuPosition] = useState({ x: 0, y: 0 })
   const [outlineImmersive, setOutlineImmersive] = useState(false)
+  const [consultantDialogOpen, setConsultantDialogOpen] = useState(false)
+  const [consultantLauncherOverride, setConsultantLauncherOverride] = useState<ConsultantLauncherPosition | null>(null)
+  const [consultantDialogPositionOverride, setConsultantDialogPositionOverride] = useState<ConsultantDialogPosition | null>(null)
+  const [consultantDialogSizeOverride, setConsultantDialogSizeOverride] = useState<ConsultantDialogSize | null>(null)
+  const dragStateRef = useRef<{
+    pointerId: number
+    startX: number
+    startY: number
+    originX: number
+    originY: number
+    moved: boolean
+    lastPosition: ConsultantLauncherPosition
+  } | null>(null)
+  const resizeStateRef = useRef<{
+    pointerId: number
+    startX: number
+    startY: number
+    direction: 'left' | 'right' | 'bottom' | 'bottom-left'
+    originWidth: number
+    originHeight: number
+    originX: number
+    originY: number
+    lastSize: ConsultantDialogSize
+    lastPosition: ConsultantDialogPosition
+  } | null>(null)
+  const dialogDragStateRef = useRef<{
+    pointerId: number
+    startX: number
+    startY: number
+    originX: number
+    originY: number
+    moved: boolean
+    lastPosition: ConsultantDialogPosition
+  } | null>(null)
+  const suppressLauncherClickRef = useRef(false)
   const inspectorResize = usePanelResize({ initial: 420, min: 320, max: 620 })
   const {
     ready,
@@ -63,13 +101,11 @@ export function App() {
     selectedBoardItemId,
     selectedArchiveFolderId,
     consultantMessages,
-    consultantContextMode,
     workspaceMode,
     applyGlobalUiState,
     updateAppSettings,
     updateProjectSettings,
     sendConsultantMessage,
-    setConsultantContextMode,
     clearConsultantConversation,
     initialize,
     syncProjectChanges,
@@ -170,6 +206,19 @@ export function App() {
     applyGlobalUiState,
     syncProjectChanges,
   })
+
+  useEffect(() => {
+    const onResize = () => {
+      setConsultantLauncherOverride((current) => (current ? clampConsultantLauncherPosition(current) : current))
+      setConsultantDialogPositionOverride((current) =>
+        current ? clampConsultantDialogPosition(current, consultantDialogSizeOverride ?? appSettings.ui.consultantDialogSize ?? getDefaultConsultantDialogSize()) : current,
+      )
+      setConsultantDialogSizeOverride((current) => (current ? clampConsultantDialogSize(current) : current))
+    }
+
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [appSettings.ui.consultantDialogSize, consultantDialogSizeOverride])
 
   useEffect(() => {
     const onFullscreenChange = () => {
@@ -516,6 +565,375 @@ export function App() {
     () => getBoardBlockKindsForProject(projectSettings),
     [projectSettings],
   )
+  const consultantContextInput = useMemo(
+    () => ({
+      projectMeta,
+      projectSettings,
+      workspaceMode,
+      boards,
+      scenes,
+      tags,
+      activeBoardId,
+      selectedSceneId,
+      selectedSceneIds,
+      selectedBoardItemId,
+    }),
+    [
+      projectMeta,
+      projectSettings,
+      workspaceMode,
+      boards,
+      scenes,
+      tags,
+      activeBoardId,
+      selectedSceneId,
+      selectedSceneIds,
+      selectedBoardItemId,
+    ],
+  )
+  const consultantContextSummary = useMemo(
+    () => buildConsultantContextSummary(consultantContextInput),
+    [consultantContextInput],
+  )
+  const consultantProactiveHint = useMemo(
+    () => inferConsultantHint(consultantContextInput),
+    [consultantContextInput],
+  )
+  const consultantDialogSize = useMemo(
+    () =>
+      clampConsultantDialogSize(
+        consultantDialogSizeOverride ?? appSettings.ui.consultantDialogSize ?? getDefaultConsultantDialogSize(),
+      ),
+    [appSettings.ui.consultantDialogSize, consultantDialogSizeOverride],
+  )
+  const consultantDialogPosition = useMemo(
+    () =>
+      clampConsultantDialogPosition(
+        consultantDialogPositionOverride ??
+          appSettings.ui.consultantDialogPosition ??
+          getDefaultConsultantDialogPosition(appSettings.ui.consultantDialogSize ?? getDefaultConsultantDialogSize()),
+        consultantDialogSize,
+      ),
+    [appSettings.ui.consultantDialogPosition, appSettings.ui.consultantDialogSize, consultantDialogPositionOverride, consultantDialogSize],
+  )
+  const consultantLauncherPosition = useMemo(
+    () =>
+      consultantDialogOpen
+        ? getLauncherPositionForDialog(consultantDialogPosition, consultantDialogSize)
+        : clampConsultantLauncherPosition(
+            consultantLauncherOverride ?? appSettings.ui.consultantLauncherPosition ?? getDefaultConsultantLauncherPosition(),
+          ),
+    [
+      appSettings.ui.consultantLauncherPosition,
+      consultantDialogOpen,
+      consultantDialogPosition,
+      consultantDialogSize,
+      consultantLauncherOverride,
+    ],
+  )
+
+  const persistConsultantLauncherPosition = useCallback((position: ConsultantLauncherPosition) => {
+    void updateAppSettings({ consultantLauncherPosition: position })
+  }, [updateAppSettings])
+
+  const persistConsultantDialogSize = useCallback((size: ConsultantDialogSize) => {
+    void updateAppSettings({ consultantDialogSize: size })
+  }, [updateAppSettings])
+
+  const persistConsultantDialogPosition = useCallback((position: ConsultantDialogPosition) => {
+    void updateAppSettings({ consultantDialogPosition: position })
+  }, [updateAppSettings])
+
+  const syncLauncherToDialog = useCallback((
+    dialogPosition: ConsultantDialogPosition,
+    dialogSize: ConsultantDialogSize,
+  ) => {
+    const launcherPosition = getLauncherPositionForDialog(dialogPosition, dialogSize)
+    setConsultantLauncherOverride(launcherPosition)
+    persistConsultantLauncherPosition(launcherPosition)
+  }, [persistConsultantLauncherPosition])
+
+  const startConsultantDialogDrag = useCallback((
+    pointerId: number,
+    clientX: number,
+    clientY: number,
+    target: Element & { setPointerCapture(pointerId: number): void; releasePointerCapture(pointerId: number): void },
+    suppressClickOnFinish: boolean,
+  ) => {
+    dialogDragStateRef.current = {
+      pointerId,
+      startX: clientX,
+      startY: clientY,
+      originX: consultantDialogPosition.x,
+      originY: consultantDialogPosition.y,
+      moved: false,
+      lastPosition: consultantDialogPosition,
+    }
+
+    target.setPointerCapture(pointerId)
+
+    const finish = (nextPointerId: number) => {
+      if (dialogDragStateRef.current?.pointerId !== nextPointerId) {
+        return
+      }
+
+      target.releasePointerCapture(nextPointerId)
+      const lastPosition = dialogDragStateRef.current.lastPosition
+      const didMove = dialogDragStateRef.current.moved
+      dialogDragStateRef.current = null
+      window.removeEventListener('pointermove', onPointerMove)
+      window.removeEventListener('pointerup', onPointerUp)
+      window.removeEventListener('pointercancel', onPointerUp)
+      persistConsultantDialogPosition(lastPosition)
+      syncLauncherToDialog(lastPosition, consultantDialogSize)
+      if (suppressClickOnFinish && didMove) {
+        suppressLauncherClickRef.current = true
+      }
+    }
+
+    const onPointerMove = (moveEvent: PointerEvent) => {
+      const dragState = dialogDragStateRef.current
+      if (!dragState || dragState.pointerId !== moveEvent.pointerId) {
+        return
+      }
+
+      const nextPosition = clampConsultantDialogPosition({
+        x: dragState.originX + (moveEvent.clientX - dragState.startX),
+        y: dragState.originY + (moveEvent.clientY - dragState.startY),
+      }, consultantDialogSize)
+
+      if (!dragState.moved && (Math.abs(moveEvent.clientX - dragState.startX) + Math.abs(moveEvent.clientY - dragState.startY) > 6)) {
+        dragState.moved = true
+      }
+
+      dragState.lastPosition = nextPosition
+      setConsultantDialogPositionOverride(nextPosition)
+    }
+
+    const onPointerUp = (upEvent: PointerEvent) => finish(upEvent.pointerId)
+
+    window.addEventListener('pointermove', onPointerMove)
+    window.addEventListener('pointerup', onPointerUp)
+    window.addEventListener('pointercancel', onPointerUp)
+  }, [consultantDialogPosition, consultantDialogSize, persistConsultantDialogPosition, syncLauncherToDialog])
+
+  const handleConsultantLauncherPointerDown = useCallback<PointerEventHandler<HTMLButtonElement>>((event) => {
+    if (event.button !== 0) {
+      return
+    }
+
+    if (consultantDialogOpen) {
+      event.preventDefault()
+      startConsultantDialogDrag(event.pointerId, event.clientX, event.clientY, event.currentTarget, true)
+      return
+    }
+
+    dragStateRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: consultantLauncherPosition.x,
+      originY: consultantLauncherPosition.y,
+      moved: false,
+      lastPosition: consultantLauncherPosition,
+    }
+
+    const target = event.currentTarget
+    target.setPointerCapture(event.pointerId)
+
+    const finish = (pointerId: number) => {
+      if (dragStateRef.current?.pointerId !== pointerId) {
+        return
+      }
+
+      target.releasePointerCapture(pointerId)
+      const lastPosition = dragStateRef.current.lastPosition
+      const didMove = dragStateRef.current.moved
+      dragStateRef.current = null
+      window.removeEventListener('pointermove', onPointerMove)
+      window.removeEventListener('pointerup', onPointerUp)
+      window.removeEventListener('pointercancel', onPointerUp)
+
+      if (didMove) {
+        suppressLauncherClickRef.current = true
+        persistConsultantLauncherPosition(lastPosition)
+      }
+    }
+
+    const onPointerMove = (moveEvent: PointerEvent) => {
+      const dragState = dragStateRef.current
+      if (!dragState || dragState.pointerId !== moveEvent.pointerId) {
+        return
+      }
+
+      const deltaX = moveEvent.clientX - dragState.startX
+      const deltaY = moveEvent.clientY - dragState.startY
+      const nextPosition = clampConsultantLauncherPosition({
+        x: dragState.originX + deltaX,
+        y: dragState.originY + deltaY,
+      })
+
+      if (!dragState.moved && Math.abs(deltaX) + Math.abs(deltaY) > 6) {
+        dragState.moved = true
+      }
+
+      dragState.lastPosition = nextPosition
+      setConsultantLauncherOverride(nextPosition)
+    }
+
+    const onPointerUp = (upEvent: PointerEvent) => finish(upEvent.pointerId)
+
+    window.addEventListener('pointermove', onPointerMove)
+    window.addEventListener('pointerup', onPointerUp)
+    window.addEventListener('pointercancel', onPointerUp)
+  }, [consultantDialogOpen, consultantLauncherPosition, persistConsultantLauncherPosition, startConsultantDialogDrag])
+
+  const openConsultantWorkspace = useCallback(() => {
+    if (suppressLauncherClickRef.current) {
+      suppressLauncherClickRef.current = false
+      return
+    }
+
+    setConsultantDialogOpen((current) => {
+      if (current) {
+        syncLauncherToDialog(consultantDialogPosition, consultantDialogSize)
+        return false
+      }
+
+      const nextSize = consultantDialogSize
+      const anchoredPosition = clampConsultantDialogPosition({
+        x: consultantLauncherPosition.x + 56 - nextSize.width,
+        y: consultantLauncherPosition.y - nextSize.height - 10,
+      }, nextSize)
+
+      setConsultantDialogPositionOverride(anchoredPosition)
+      return true
+    })
+  }, [consultantDialogPosition, consultantDialogSize, consultantLauncherPosition, syncLauncherToDialog])
+
+  const openConsultantPanel = useCallback(() => {
+    syncLauncherToDialog(consultantDialogPosition, consultantDialogSize)
+    setConsultantDialogOpen(false)
+    setWorkspaceMode('consultant')
+  }, [consultantDialogPosition, consultantDialogSize, setWorkspaceMode, syncLauncherToDialog])
+
+  const closeConsultantDialog = useCallback(() => {
+    syncLauncherToDialog(consultantDialogPosition, consultantDialogSize)
+    setConsultantDialogOpen(false)
+  }, [consultantDialogPosition, consultantDialogSize, syncLauncherToDialog])
+
+  const handleConsultantResizePointerDown = useCallback<PointerEventHandler<HTMLButtonElement>>((event) => {
+    if (event.button !== 0) {
+      return
+    }
+
+    event.preventDefault()
+    event.stopPropagation()
+
+    const direction = (event.currentTarget.dataset.direction ?? 'bottom-left') as
+      | 'left'
+      | 'right'
+      | 'bottom'
+      | 'bottom-left'
+
+    resizeStateRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      direction,
+      originWidth: consultantDialogSize.width,
+      originHeight: consultantDialogSize.height,
+      originX: consultantDialogPosition.x,
+      originY: consultantDialogPosition.y,
+      lastSize: consultantDialogSize,
+      lastPosition: consultantDialogPosition,
+    }
+
+    const target = event.currentTarget
+    target.setPointerCapture(event.pointerId)
+
+    const finish = (pointerId: number) => {
+      if (resizeStateRef.current?.pointerId !== pointerId) {
+        return
+      }
+
+      target.releasePointerCapture(pointerId)
+      const lastSize = resizeStateRef.current.lastSize
+      const lastPosition = resizeStateRef.current.lastPosition
+      resizeStateRef.current = null
+      window.removeEventListener('pointermove', onPointerMove)
+      window.removeEventListener('pointerup', onPointerUp)
+      window.removeEventListener('pointercancel', onPointerUp)
+      persistConsultantDialogSize(lastSize)
+      persistConsultantDialogPosition(lastPosition)
+      syncLauncherToDialog(lastPosition, lastSize)
+    }
+
+    const onPointerMove = (moveEvent: PointerEvent) => {
+      const resizeState = resizeStateRef.current
+      if (!resizeState || resizeState.pointerId !== moveEvent.pointerId) {
+        return
+      }
+
+      const deltaX = moveEvent.clientX - resizeState.startX
+      const deltaY = moveEvent.clientY - resizeState.startY
+      let nextWidth = resizeState.originWidth
+      let nextHeight = resizeState.originHeight
+      let nextX = resizeState.originX
+
+      if (resizeState.direction === 'right') {
+        nextWidth = resizeState.originWidth + deltaX
+      } else if (resizeState.direction === 'left') {
+        nextWidth = resizeState.originWidth - deltaX
+        nextX = resizeState.originX + deltaX
+      } else if (resizeState.direction === 'bottom') {
+        nextHeight = resizeState.originHeight + deltaY
+      } else {
+        nextWidth = resizeState.originWidth - deltaX
+        nextHeight = resizeState.originHeight + deltaY
+        nextX = resizeState.originX + deltaX
+      }
+
+      const clampedWidth = clamp(nextWidth, 380, Math.max(380, window.innerWidth - 32))
+      const clampedHeight = clamp(nextHeight, 440, Math.max(440, window.innerHeight - 32))
+      if (resizeState.direction === 'left' || resizeState.direction === 'bottom-left') {
+        nextX = resizeState.originX + (resizeState.originWidth - clampedWidth)
+      }
+
+      const nextSize = clampConsultantDialogSize({
+        width: clampedWidth,
+        height: clampedHeight,
+      })
+      const nextPosition = clampConsultantDialogPosition({
+        x: nextX,
+        y: resizeState.originY,
+      }, nextSize)
+
+      resizeState.lastSize = nextSize
+      resizeState.lastPosition = nextPosition
+      setConsultantDialogSizeOverride(nextSize)
+      setConsultantDialogPositionOverride(nextPosition)
+    }
+
+    const onPointerUp = (upEvent: PointerEvent) => finish(upEvent.pointerId)
+
+    window.addEventListener('pointermove', onPointerMove)
+    window.addEventListener('pointerup', onPointerUp)
+    window.addEventListener('pointercancel', onPointerUp)
+  }, [consultantDialogPosition, consultantDialogSize, persistConsultantDialogPosition, persistConsultantDialogSize, syncLauncherToDialog])
+
+  const handleConsultantDialogPointerDown = useCallback<PointerEventHandler<HTMLDivElement>>((event) => {
+    if (event.button !== 0) {
+      return
+    }
+
+    const interactiveTarget = event.target as HTMLElement | null
+    if (interactiveTarget?.closest('button, textarea, input, a')) {
+      return
+    }
+
+    startConsultantDialogDrag(event.pointerId, event.clientX, event.clientY, event.currentTarget, false)
+  }, [startConsultantDialogDrag])
 
   const sharedWorkspaceProps = {
     projectMeta,
@@ -678,11 +1096,11 @@ export function App() {
               workspaceMode={workspaceMode}
               consultantBusy={consultantBusy}
               consultantMessages={consultantMessages}
-              consultantContextMode={consultantContextMode}
+              consultantContextSummary={consultantContextSummary}
+              consultantProactiveHint={consultantProactiveHint}
               busy={busy}
               settingsNavigate={settingsNavigate}
               onSetWorkspaceMode={setWorkspaceMode}
-              onSetConsultantContextMode={setConsultantContextMode}
               onSendConsultantMessage={sendConsultantMessage}
               onClearConsultantConversation={clearConsultantConversation}
               onOpenAppSettings={openAppSettings}
@@ -700,16 +1118,23 @@ export function App() {
         </div>
       </div>
 
-      <ConsultantDock
-        open={consultantDockOpen}
+      <ConsultantLauncher
+        open={consultantDialogOpen}
+        position={consultantLauncherPosition}
+        hasHint={Boolean(consultantProactiveHint) && !consultantDialogOpen && workspaceMode !== 'consultant'}
+        dialogPosition={consultantDialogPosition}
+        dialogSize={consultantDialogSize}
         settings={appSettings}
         messages={consultantMessages}
         busy={consultantBusy}
-        activeBoardName={activeBoard?.name ?? null}
-        contextMode={consultantContextMode}
-        onToggleOpen={() => setConsultantDockOpen((current) => !current)}
-        onOpenFullView={() => setWorkspaceMode('consultant')}
-        onChangeContextMode={setConsultantContextMode}
+        contextSummary={consultantContextSummary}
+        proactiveHint={consultantProactiveHint}
+        onOpen={openConsultantWorkspace}
+        onClose={closeConsultantDialog}
+        onOpenFullView={openConsultantPanel}
+        onPointerDown={handleConsultantLauncherPointerDown}
+        onDialogPointerDown={handleConsultantDialogPointerDown}
+        onResizePointerDown={handleConsultantResizePointerDown}
         onSend={(content) => void sendConsultantMessage(content)}
         onClear={clearConsultantConversation}
         onOpenSettings={openAppSettings}
@@ -723,4 +1148,90 @@ export function App() {
       />
     </div>
   )
+}
+
+function getDefaultConsultantLauncherPosition(): ConsultantLauncherPosition {
+  if (typeof window === 'undefined') {
+    return { x: 24, y: 120 }
+  }
+
+  return clampConsultantLauncherPosition({
+    x: window.innerWidth - 80,
+    y: window.innerHeight - 172,
+  })
+}
+
+function getLauncherPositionForDialog(
+  dialogPosition: ConsultantDialogPosition,
+  dialogSize: ConsultantDialogSize,
+): ConsultantLauncherPosition {
+  return clampConsultantLauncherPosition({
+    x: dialogPosition.x + dialogSize.width - 56,
+    y: dialogPosition.y + dialogSize.height + 10,
+  })
+}
+
+function getDefaultConsultantDialogSize(): ConsultantDialogSize {
+  if (typeof window === 'undefined') {
+    return { width: 460, height: 620 }
+  }
+
+  return clampConsultantDialogSize({
+    width: 460,
+    height: 620,
+  })
+}
+
+function getDefaultConsultantDialogPosition(size: ConsultantDialogSize): ConsultantDialogPosition {
+  if (typeof window === 'undefined') {
+    return { x: 24, y: 24 }
+  }
+
+  return clampConsultantDialogPosition({
+    x: window.innerWidth - size.width - 32,
+    y: Math.max(24, window.innerHeight - size.height - 120),
+  }, size)
+}
+
+function clampConsultantLauncherPosition(position: ConsultantLauncherPosition): ConsultantLauncherPosition {
+  if (typeof window === 'undefined') {
+    return position
+  }
+
+  const margin = 16
+  const size = 56
+
+  return {
+    x: clamp(position.x, margin, Math.max(margin, window.innerWidth - size - margin)),
+    y: clamp(position.y, margin, Math.max(margin, window.innerHeight - size - margin)),
+  }
+}
+
+function clampConsultantDialogSize(size: ConsultantDialogSize): ConsultantDialogSize {
+  if (typeof window === 'undefined') {
+    return size
+  }
+
+  return {
+    width: clamp(size.width, 380, Math.max(380, window.innerWidth - 32)),
+    height: clamp(size.height, 440, Math.max(440, window.innerHeight - 32)),
+  }
+}
+
+function clampConsultantDialogPosition(
+  position: ConsultantDialogPosition,
+  size: ConsultantDialogSize,
+): ConsultantDialogPosition {
+  if (typeof window === 'undefined') {
+    return position
+  }
+
+  return {
+    x: clamp(position.x, 16, Math.max(16, window.innerWidth - size.width - 16)),
+    y: clamp(position.y, 16, Math.max(16, window.innerHeight - size.height - 16)),
+  }
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max)
 }

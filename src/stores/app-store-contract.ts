@@ -2,7 +2,6 @@ import type { ArchiveFolder, ArchiveItem } from '@/types/archive'
 import type {
   AppSettings,
   AppSettingsUpdateInput,
-  ConsultantContextMode,
   ConsultantMessage,
 } from '@/types/ai'
 import type {
@@ -84,12 +83,10 @@ export type AppStore = {
   selectedBoardItemId: string | null
   selectedArchiveFolderId: string | null
   consultantMessages: ConsultantMessage[]
-  consultantContextMode: ConsultantContextMode
   workspaceMode: WorkspaceMode
   updateAppSettings(input: AppSettingsUpdateInput): Promise<void>
   updateProjectSettings(input: ProjectSettingsUpdateInput): Promise<void>
   sendConsultantMessage(content: string): Promise<void>
-  setConsultantContextMode(mode: ConsultantContextMode): void
   clearConsultantConversation(): void
   initialize(): Promise<void>
   refreshAll(): Promise<void>
