@@ -190,6 +190,7 @@ export function App() {
     boardIdForWindow,
     boardViewMode,
     detachedWorkspace,
+    mediaPathForWindow,
     savedLayouts,
     sceneDensity,
     setBoardViewMode,
@@ -1030,13 +1031,15 @@ export function App() {
   }
 
   if (detachedWorkspace) {
+    const isProPlayerWindow = detachedWorkspace === 'pro-player'
     return (
       <div className="flex h-screen min-h-0 flex-col overflow-hidden bg-[radial-gradient(circle_at_top,#1a1f2d_0%,#10131c_32%,#0b0d12_100%)] text-foreground">
-        {!outlineImmersive ? <div className="app-drag h-14 shrink-0 pl-24" /> : null}
-        <div className={cn('min-h-0 flex-1 overflow-hidden', outlineImmersive ? 'p-0' : 'p-4')}>
+        {!outlineImmersive && !isProPlayerWindow ? <div className="app-drag h-14 shrink-0 pl-24" /> : null}
+        <div className={cn('min-h-0 flex-1 overflow-hidden', outlineImmersive || isProPlayerWindow ? 'p-0' : 'p-4')}>
           <DetachedWorkspacePanel
             {...sharedWorkspaceProps}
             detachedWorkspace={detachedWorkspace}
+            mediaPathForWindow={mediaPathForWindow}
             outlineImmersive={outlineImmersive}
             detachedViewControl={!outlineImmersive ? detachedViewControl : null}
             onToggleOutlineImmersive={toggleOutlineImmersive}

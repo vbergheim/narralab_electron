@@ -31,6 +31,7 @@ export type WorkspaceMode =
   | 'bank'
   | 'notebook'
   | 'archive'
+  | 'pro-player'
   | 'consultant'
   | 'settings'
   | 'board-manager'

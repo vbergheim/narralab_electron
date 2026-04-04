@@ -11,6 +11,7 @@ import type {
   InspectorWorkspacePanelProps,
   NotebookWorkspacePanelProps,
   OutlineWorkspacePanelProps,
+  ProPlayerWorkspacePanelProps,
   SceneBankWorkspacePanelProps,
   TranscribeWorkspacePanelProps,
 } from '@/app/app-workspace-contract'
@@ -296,6 +297,21 @@ export function BoardManagerWorkspacePanel({
 
 export function InspectorWorkspacePanel({ inspectorContent }: InspectorWorkspacePanelProps) {
   return <Panel className="h-full overflow-y-auto overscroll-contain">{inspectorContent}</Panel>
+}
+
+export function ProPlayerWorkspacePanel({ mediaPath }: ProPlayerWorkspacePanelProps) {
+  return (
+    <Panel className="flex h-full items-center justify-center bg-panelMuted/20 p-6 text-center">
+      <div className="max-w-md">
+        <div className="text-sm font-semibold uppercase tracking-[0.16em] text-foreground">Player workspace removed</div>
+        <div className="mt-2 text-sm text-muted">
+          {mediaPath
+            ? `Media playback now opens directly in mpv: ${mediaPath}`
+            : 'Media playback now opens directly in mpv from Archive or other media actions.'}
+        </div>
+      </div>
+    </Panel>
+  )
 }
 
 export function TranscribeWorkspacePanel({

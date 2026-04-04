@@ -21,6 +21,7 @@ import type {
   TranscriptionTimestampInterval,
 } from '@/types/transcription'
 import type { SceneDensity } from '@/types/view'
+import type { MediaPlayerViewport } from '@/types/media-player'
 
 const sceneColors = new Set<SceneColor>([
   'charcoal',
@@ -48,6 +49,7 @@ const windowWorkspaces = new Set<WindowWorkspace>([
   'inspector',
   'notebook',
   'archive',
+  'pro-player',
   'board-manager',
   'transcribe',
 ])
@@ -56,6 +58,7 @@ const workspaceModes = new Set<NonNullable<GlobalUiState['workspaceMode']>>([
   'bank',
   'notebook',
   'archive',
+  'pro-player',
   'consultant',
   'settings',
   'board-manager',
@@ -151,6 +154,17 @@ export function parseSceneUpdateInput(value: unknown): SceneUpdateInput {
   if (input.synopsis !== undefined) next.synopsis = optionalString(input.synopsis, 'Scene synopsis') ?? ''
   if (input.shootDate !== undefined) next.shootDate = optionalString(input.shootDate, 'Scene shoot date') ?? ''
   if (input.shootBlock !== undefined) next.shootBlock = optionalString(input.shootBlock, 'Scene shoot block') ?? ''
+  if (input.shootDayPlace !== undefined) next.shootDayPlace = optionalString(input.shootDayPlace, 'Scene shoot day place') ?? ''
+  if (input.shootDayProduction !== undefined) next.shootDayProduction = optionalString(input.shootDayProduction, 'Scene shoot day production') ?? ''
+  if (input.shootDayDirector !== undefined) next.shootDayDirector = optionalString(input.shootDayDirector, 'Scene shoot day director') ?? ''
+  if (input.shootDayPhotographer !== undefined) next.shootDayPhotographer = optionalString(input.shootDayPhotographer, 'Scene shoot day photographer') ?? ''
+  if (input.shootDayParticipants !== undefined) next.shootDayParticipants = optionalString(input.shootDayParticipants, 'Scene shoot day participants') ?? ''
+  if (input.shootDayFolderName !== undefined) next.shootDayFolderName = optionalString(input.shootDayFolderName, 'Scene shoot day folder name') ?? ''
+  if (input.shootDayFileName !== undefined) next.shootDayFileName = optionalString(input.shootDayFileName, 'Scene shoot day file name') ?? ''
+  if (input.shootDayClipCount !== undefined) next.shootDayClipCount = optionalString(input.shootDayClipCount, 'Scene shoot day clip count') ?? ''
+  if (input.shootDayDescription !== undefined) next.shootDayDescription = optionalString(input.shootDayDescription, 'Scene shoot day description') ?? ''
+  if (input.shootDayStrongestMaterial !== undefined) next.shootDayStrongestMaterial = optionalString(input.shootDayStrongestMaterial, 'Scene shoot day strongest material') ?? ''
+  if (input.shootDayFollowUp !== undefined) next.shootDayFollowUp = optionalString(input.shootDayFollowUp, 'Scene shoot day follow up') ?? ''
   if (input.notes !== undefined) next.notes = optionalString(input.notes, 'Scene notes') ?? ''
   if (input.cameraNotes !== undefined) next.cameraNotes = optionalString(input.cameraNotes, 'Scene camera notes') ?? ''
   if (input.audioNotes !== undefined) next.audioNotes = optionalString(input.audioNotes, 'Scene audio notes') ?? ''
@@ -394,17 +408,32 @@ export function parseProjectChangeScopes(value: unknown): ProjectChangeScope[] {
 
 export function parseWindowContextUpdate(
   value: unknown,
-): Partial<Pick<WindowContext, 'boardId' | 'transcriptionItemId' | 'viewMode' | 'sceneDensity'>> {
+): Partial<Pick<WindowContext, 'boardId' | 'transcriptionItemId' | 'mediaPath' | 'viewMode' | 'sceneDensity'>> {
   const input = requireObject(value, 'Window context update')
-  const next: Partial<Pick<WindowContext, 'boardId' | 'transcriptionItemId' | 'viewMode' | 'sceneDensity'>> = {}
+  const next: Partial<Pick<WindowContext, 'boardId' | 'transcriptionItemId' | 'mediaPath' | 'viewMode' | 'sceneDensity'>> = {}
 
   if (input.boardId !== undefined) next.boardId = nullableString(input.boardId, 'Window board id') ?? null
   if (input.transcriptionItemId !== undefined) {
     next.transcriptionItemId = optionalNullableId(input.transcriptionItemId, 'Window transcription item id') ?? null
   }
+  if (input.mediaPath !== undefined) next.mediaPath = nullableString(input.mediaPath, 'Window media path') ?? null
   if (input.viewMode !== undefined) next.viewMode = requireBoardViewMode(input.viewMode, 'Window board view')
   if (input.sceneDensity !== undefined) next.sceneDensity = requireSceneDensity(input.sceneDensity, 'Scene density')
   return next
+}
+
+export function parseMediaPlayerViewport(value: unknown): MediaPlayerViewport | null {
+  if (value === null) {
+    return null
+  }
+
+  const input = requireObject(value, 'Media player viewport')
+  return {
+    x: requireFiniteNumber(input.x, 'Media player viewport x'),
+    y: requireFiniteNumber(input.y, 'Media player viewport y'),
+    width: requireFiniteNumber(input.width, 'Media player viewport width'),
+    height: requireFiniteNumber(input.height, 'Media player viewport height'),
+  }
 }
 
 function optionalNullableId(value: unknown, label: string): string | null | undefined {
@@ -430,6 +459,18 @@ export function parseGlobalUiStatePatch(value: unknown): Partial<GlobalUiState> 
   }
   if (input.selectedArchiveFolderId !== undefined) {
     next.selectedArchiveFolderId = optionalNullableId(input.selectedArchiveFolderId, 'Selected archive folder id') ?? null
+  }
+  if (input.selectedBoardId !== undefined) {
+    next.selectedBoardId = optionalNullableId(input.selectedBoardId, 'Selected board id') ?? null
+  }
+  if (input.selectedSceneId !== undefined) {
+    next.selectedSceneId = optionalNullableId(input.selectedSceneId, 'Selected scene id') ?? null
+  }
+  if (input.selectedSceneIds !== undefined) {
+    next.selectedSceneIds = requireStringArray(input.selectedSceneIds, 'Selected scene ids')
+  }
+  if (input.selectedBoardItemId !== undefined) {
+    next.selectedBoardItemId = optionalNullableId(input.selectedBoardItemId, 'Selected board item id') ?? null
   }
   if (input.selectedTranscriptionItemId !== undefined) {
     next.selectedTranscriptionItemId = optionalNullableId(input.selectedTranscriptionItemId, 'Selected transcription item id') ?? null
@@ -693,6 +734,10 @@ function requireSavedLayouts(value: unknown): SavedWindowLayout[] {
           id: requireString(record.id, `Saved layout window ${windowIndex + 1} id`),
           workspace: requireWindowWorkspace(record.workspace, `Saved layout window ${windowIndex + 1} workspace`),
           boardId: record.boardId === null ? null : optionalString(record.boardId, `Saved layout window ${windowIndex + 1} board id`) ?? null,
+          mediaPath:
+            record.mediaPath === null || record.mediaPath === undefined
+              ? null
+              : optionalString(record.mediaPath, `Saved layout window ${windowIndex + 1} media path`) ?? null,
           viewMode: requireBoardViewMode(record.viewMode, `Saved layout window ${windowIndex + 1} view mode`),
           sceneDensity: requireSceneDensity(record.sceneDensity, `Saved layout window ${windowIndex + 1} scene density`),
           bounds: {
@@ -766,6 +811,7 @@ export function requireTranscriptionItemUpdateInput(value: unknown): Transcripti
         : undefined,
     name: obj.name !== undefined ? requireString(obj.name, 'Item name') : undefined,
     content: obj.content !== undefined ? requireString(obj.content, 'Item content') : undefined,
+    highlights: obj.highlights !== undefined ? requireTranscriptHighlights(obj.highlights) : undefined,
   }
 }
 
@@ -775,4 +821,22 @@ function requireTranscriptionItemId(value: unknown, label: string): string {
     throw new Error(`${label} is not a valid transcription item ID`)
   }
   return id
+}
+
+function requireTranscriptHighlights(value: unknown): Array<{ start: number; end: number }> {
+  if (!Array.isArray(value)) {
+    throw new Error('Highlight ranges must be an array')
+  }
+  return value.map((entry, index) => {
+    const obj = requireObject(entry, `Highlight range ${index + 1}`)
+    const start = requireFiniteNumber(obj.start, `Highlight range ${index + 1} start`)
+    const end = requireFiniteNumber(obj.end, `Highlight range ${index + 1} end`)
+    if (!Number.isInteger(start) || !Number.isInteger(end)) {
+      throw new Error(`Highlight range ${index + 1} must use integer bounds`)
+    }
+    if (start < 0 || end < start) {
+      throw new Error(`Highlight range ${index + 1} must have valid bounds`)
+    }
+    return { start, end }
+  })
 }

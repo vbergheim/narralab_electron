@@ -12,6 +12,7 @@ type WorkspaceMode =
   | 'bank'
   | 'notebook'
   | 'archive'
+  | 'pro-player'
   | 'consultant'
   | 'settings'
   | 'board-manager'
@@ -42,6 +43,9 @@ export function buildConsultantContext(input: ConsultantContextInput): Consultan
     `Workspace: ${workspaceLabel(input.workspaceMode)}`,
     activeBoard ? `Active board: ${activeBoard.name}` : 'Active board: none',
     selectedScene ? `Focused scene: ${selectedScene.title || 'Untitled scene'}` : null,
+    input.workspaceMode === 'bank' && !selectedScene && input.selectedSceneIds.length === 0
+      ? `Focused scope: Entire scene bank (${input.scenes.length} scenes)`
+      : null,
     selectedItem && selectedItem.kind !== 'scene'
       ? `Focused block: ${selectedItem.kind} - ${trimLine(selectedItem.title || selectedItem.body, 80)}`
       : null,
@@ -54,6 +58,10 @@ export function buildConsultantContext(input: ConsultantContextInput): Consultan
 
   if (selectedScene) {
     focusedSections.push(buildSceneSection(selectedScene, tagMap))
+  }
+
+  if (input.workspaceMode === 'bank' && !selectedScene && input.selectedSceneIds.length === 0) {
+    focusedSections.push(buildSceneBankSection(input.scenes, tagMap))
   }
 
   if (activeBoard) {
@@ -169,6 +177,36 @@ function buildBoardSection(activeBoard: Board, sceneMap: Map<string, Scene>, tag
   return ['Active board outline:', ...lines].join('\n')
 }
 
+function buildSceneBankSection(scenes: Scene[], tagMap: Map<string, string>) {
+  const orderedScenes = [...scenes].sort((left, right) => left.sortOrder - right.sortOrder)
+  const categoryCounts = new Map<string, number>()
+
+  for (const scene of orderedScenes) {
+    const category = scene.category.trim()
+    if (!category) continue
+    categoryCounts.set(category, (categoryCounts.get(category) ?? 0) + 1)
+  }
+
+  const categorySummary = [...categoryCounts.entries()]
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .slice(0, 8)
+    .map(([category, count]) => `${category} (${count})`)
+    .join(', ')
+
+  const lines = orderedScenes.map((scene, index) => {
+    const tagNames = scene.tagIds.map((tagId) => tagMap.get(tagId)).filter(Boolean).join(', ') || '-'
+    return `${index + 1}. ${scene.title || 'Untitled'} | Synopsis: ${trimLine(scene.synopsis, 120) || '-'} | Category: ${scene.category || '-'} | Location: ${scene.location || '-'} | Tags: ${tagNames}`
+  })
+
+  return [
+    'Scene bank:',
+    `Total scenes: ${orderedScenes.length}`,
+    `Key scenes: ${orderedScenes.filter((scene) => scene.keyRating > 0).length}`,
+    `Categories: ${categorySummary || '-'}`,
+    ...lines,
+  ].join('\n')
+}
+
 function resolveActiveBoard(boards: Board[], activeBoardId: string | null) {
   return boards.find((board) => board.id === activeBoardId) ?? boards[0] ?? null
 }
@@ -183,6 +221,8 @@ function workspaceLabel(workspaceMode: WorkspaceMode) {
       return 'Notebook'
     case 'archive':
       return 'Archive'
+    case 'pro-player':
+      return 'Media Player'
     case 'consultant':
       return 'Consultant'
     case 'settings':

@@ -18,6 +18,7 @@ export function detachedLabel(workspace: WindowWorkspace) {
   if (workspace === 'inspector') return 'Inspector Window'
   if (workspace === 'notebook') return 'Notebook Window'
   if (workspace === 'archive') return 'Archive Window'
+  if (workspace === 'pro-player') return 'Media Player Window'
   if (workspace === 'transcribe') return 'Transcribe Window'
   return 'Outline Window'
 }
@@ -28,6 +29,7 @@ export function detachedTitle(workspace: WindowWorkspace) {
   if (workspace === 'inspector') return 'Inspector'
   if (workspace === 'notebook') return 'Notebook'
   if (workspace === 'archive') return 'Archive'
+  if (workspace === 'pro-player') return 'Media Player'
   if (workspace === 'transcribe') return 'Transcribe'
   return 'Outline'
 }

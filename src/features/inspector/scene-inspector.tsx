@@ -1,7 +1,7 @@
 import type { Dispatch, DragEvent, ReactNode, SetStateAction } from 'react'
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, FileText, Folder, PanelRightClose, Plus, Trash2, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, FileText, Folder, FolderOpen, PanelRightClose, Plus, Trash2, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { InlineNameEditor } from '@/components/ui/inline-name-editor'
@@ -23,6 +23,17 @@ type Draft = {
   synopsis: string
   shootDate: string
   shootBlock: string
+  shootDayPlace: string
+  shootDayProduction: string
+  shootDayDirector: string
+  shootDayPhotographer: string
+  shootDayParticipants: string
+  shootDayFolderName: string
+  shootDayFileName: string
+  shootDayClipCount: string
+  shootDayDescription: string
+  shootDayStrongestMaterial: string
+  shootDayFollowUp: string
   notes: string
   cameraNotes: string
   audioNotes: string
@@ -43,6 +54,8 @@ type Draft = {
   tags: string
 }
 
+const VIDEO_EXTENSIONS = new Set(['mp4', 'mov', 'm4v', 'avi', 'mxf', 'mkv', 'webm', 'ts', '3gp', 'braw'])
+
 type Props = {
   scene: Scene | null
   tags: Tag[]
@@ -54,6 +67,17 @@ type Props = {
     synopsis: string
     shootDate: string
     shootBlock: string
+    shootDayPlace: string
+    shootDayProduction: string
+    shootDayDirector: string
+    shootDayPhotographer: string
+    shootDayParticipants: string
+    shootDayFolderName: string
+    shootDayFileName: string
+    shootDayClipCount: string
+    shootDayDescription: string
+    shootDayStrongestMaterial: string
+    shootDayFollowUp: string
     notes: string
     cameraNotes: string
     audioNotes: string
@@ -181,20 +205,47 @@ export function SceneInspector({
         <InspectorSection title="Shoot Day" defaultCollapsed>
           <MetaGrid>
             <InspectorField label="Shoot date" compact>
-              <Input
-                value={draft.shootDate}
-                onChange={(event) => updateDraft(setDraft, 'shootDate', event.target.value)}
-                placeholder="2026-04-03"
-              />
+              <Input value={draft.shootDate} readOnly />
             </InspectorField>
-            <InspectorField label="Shoot block" compact>
-              <Input
-                value={draft.shootBlock}
-                onChange={(event) => updateDraft(setDraft, 'shootBlock', event.target.value)}
-                placeholder="Morning"
-              />
+            {draft.shootBlock ? (
+              <InspectorField label="Shoot block" compact>
+                <Input value={draft.shootBlock} readOnly />
+              </InspectorField>
+            ) : null}
+            <InspectorField label="Sted" compact>
+              <Input value={draft.shootDayPlace} readOnly />
+            </InspectorField>
+            <InspectorField label="Produksjon" compact>
+              <Input value={draft.shootDayProduction} readOnly />
+            </InspectorField>
+            <InspectorField label="Regi" compact>
+              <Input value={draft.shootDayDirector} readOnly />
+            </InspectorField>
+            <InspectorField label="Fotograf" compact>
+              <Input value={draft.shootDayPhotographer} readOnly />
+            </InspectorField>
+            <InspectorField label="Medvirk" compact>
+              <Input value={draft.shootDayParticipants} readOnly />
+            </InspectorField>
+            <InspectorField label="Mappenavn" compact>
+              <Input value={draft.shootDayFolderName} readOnly />
+            </InspectorField>
+            <InspectorField label="Filnavn" compact>
+              <Input value={draft.shootDayFileName} readOnly />
+            </InspectorField>
+            <InspectorField label="Antall klipp" compact>
+              <Input value={draft.shootDayClipCount} readOnly />
             </InspectorField>
           </MetaGrid>
+          <InspectorField label="Beskrivelse">
+            <Textarea value={draft.shootDayDescription} readOnly />
+          </InspectorField>
+          <InspectorField label="Sterkeste materiale">
+            <Textarea value={draft.shootDayStrongestMaterial} readOnly />
+          </InspectorField>
+          <InspectorField label="Følges opp">
+            <Textarea value={draft.shootDayFollowUp} readOnly />
+          </InspectorField>
         </InspectorSection>
 
         <InspectorSection title="Scene Log">
@@ -405,7 +456,11 @@ export function SceneInspector({
                         type="button"
                         className="flex min-w-0 flex-1 items-start gap-3 text-left"
                         onClick={() => {
-                          void window.narralab.project.revealPath(path)
+                          if (isVideoSourcePath(path)) {
+                            void window.narralab.mediaPlayer.open(path)
+                          } else {
+                            void window.narralab.project.revealPath(path)
+                          }
                         }}
                         title={path}
                       >
@@ -417,6 +472,21 @@ export function SceneInspector({
                           <div className="mt-0.5 break-all text-xs text-muted">{path}</div>
                         </div>
                       </button>
+                      {isVideoSourcePath(path) ? (
+                        <button
+                          type="button"
+                          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted transition hover:bg-panelMuted hover:text-foreground"
+                          onClick={(event) => {
+                            event.preventDefault()
+                            event.stopPropagation()
+                            void window.narralab.project.revealPath(path)
+                          }}
+                          aria-label={`Reveal ${pathLabel(path)} in Finder`}
+                          title="Reveal in Finder"
+                        >
+                          <FolderOpen className="h-4 w-4" />
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted transition hover:bg-panelMuted hover:text-foreground"
@@ -510,6 +580,7 @@ export function SceneInspector({
                   title="Transcript"
                   subtitle={previewTranscription.name}
                   text={previewTranscription.content}
+                  highlights={previewTranscription.highlights}
                   toolbarActions={
                     <>
                       <Button
@@ -561,6 +632,17 @@ function toDraft(scene: Scene, tags: Tag[]): Draft {
     synopsis: scene.synopsis,
     shootDate: scene.shootDate,
     shootBlock: scene.shootBlock,
+    shootDayPlace: scene.shootDayPlace,
+    shootDayProduction: scene.shootDayProduction,
+    shootDayDirector: scene.shootDayDirector,
+    shootDayPhotographer: scene.shootDayPhotographer,
+    shootDayParticipants: scene.shootDayParticipants,
+    shootDayFolderName: scene.shootDayFolderName,
+    shootDayFileName: scene.shootDayFileName,
+    shootDayClipCount: scene.shootDayClipCount,
+    shootDayDescription: scene.shootDayDescription,
+    shootDayStrongestMaterial: scene.shootDayStrongestMaterial,
+    shootDayFollowUp: scene.shootDayFollowUp,
     notes: scene.notes,
     cameraNotes: scene.cameraNotes,
     audioNotes: scene.audioNotes,
@@ -593,6 +675,17 @@ function toPayload(draft: Draft) {
     synopsis: draft.synopsis,
     shootDate: draft.shootDate,
     shootBlock: draft.shootBlock,
+    shootDayPlace: draft.shootDayPlace,
+    shootDayProduction: draft.shootDayProduction,
+    shootDayDirector: draft.shootDayDirector,
+    shootDayPhotographer: draft.shootDayPhotographer,
+    shootDayParticipants: draft.shootDayParticipants,
+    shootDayFolderName: draft.shootDayFolderName,
+    shootDayFileName: draft.shootDayFileName,
+    shootDayClipCount: draft.shootDayClipCount,
+    shootDayDescription: draft.shootDayDescription,
+    shootDayStrongestMaterial: draft.shootDayStrongestMaterial,
+    shootDayFollowUp: draft.shootDayFollowUp,
     notes: draft.notes,
     cameraNotes: draft.cameraNotes,
     audioNotes: draft.audioNotes,
@@ -660,6 +753,11 @@ function pathLabel(path: string) {
   const normalized = path.replace(/\\/g, '/')
   const parts = normalized.split('/').filter(Boolean)
   return parts.at(-1) ?? normalized
+}
+
+function isVideoSourcePath(filePath: string) {
+  const extension = filePath.split('.').pop()?.toLowerCase() ?? ''
+  return VIDEO_EXTENSIONS.has(extension)
 }
 
 function InspectorSection({

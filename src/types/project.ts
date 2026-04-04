@@ -1,4 +1,6 @@
 import type { ArchiveFolder, ArchiveFolderUpdateInput, ArchiveItem, ArchiveItemUpdateInput } from './archive'
+import type { MediaPlayerEvent, MediaPlayerState, MediaPlayerViewport } from './media-player'
+import type { MediaInspection } from './media'
 import type {
   AppSettings,
   AppSettingsUpdateInput,
@@ -71,6 +73,10 @@ export type NotebookDocument = {
 
 export type GlobalUiState = {
   activeBoardId: string | null
+  selectedBoardId: string | null
+  selectedSceneId: string | null
+  selectedSceneIds: string[]
+  selectedBoardItemId: string | null
   selectedArchiveFolderId: string | null
   selectedTranscriptionItemId: string | null
   workspaceMode:
@@ -78,6 +84,7 @@ export type GlobalUiState = {
     | 'bank'
     | 'notebook'
     | 'archive'
+    | 'pro-player'
     | 'consultant'
     | 'settings'
     | 'board-manager'
@@ -115,6 +122,7 @@ export type WindowContext = {
   workspace: WindowWorkspace | 'main'
   boardId: string | null
   transcriptionItemId: string | null
+  mediaPath: string | null
   viewMode: BoardViewMode
   sceneDensity: import('./view').SceneDensity
 }
@@ -282,6 +290,28 @@ export interface NarraLabApi {
       reveal(itemId: string): Promise<void>
     }
   }
+  media: {
+    inspect(paths: string[]): Promise<MediaInspection[]>
+    createPreviewProxy(path: string): Promise<MediaInspection>
+  }
+  mediaPlayer: {
+    open(path: string): Promise<MediaPlayerState>
+    openInCurrentWindow(path: string): Promise<MediaPlayerState>
+    play(): Promise<MediaPlayerState>
+    pause(): Promise<MediaPlayerState>
+    seek(seconds: number): Promise<MediaPlayerState>
+    seekRelative(seconds: number): Promise<MediaPlayerState>
+    setVolume(volume: number): Promise<MediaPlayerState>
+    toggleFullscreen(): Promise<MediaPlayerState>
+    setViewport(viewport: MediaPlayerViewport | null): Promise<MediaPlayerState>
+    detachCurrentWindow(): Promise<MediaPlayerState>
+    focus(): Promise<MediaPlayerState>
+    close(): Promise<MediaPlayerState>
+    install(): Promise<MediaPlayerState>
+    openInstallGuide(): Promise<MediaPlayerState>
+    getState(): Promise<MediaPlayerState>
+    subscribe(listener: (event: MediaPlayerEvent) => void): () => void
+  }
   scenes: {
     list(): Promise<Scene[]>
     create(): Promise<Scene>
@@ -336,10 +366,10 @@ export interface NarraLabApi {
     listContexts(): Promise<WindowContext[]>
     openWorkspace(
       workspace: WindowWorkspace,
-      options?: Partial<Pick<WindowContext, 'boardId' | 'transcriptionItemId' | 'viewMode' | 'sceneDensity'>>,
+      options?: Partial<Pick<WindowContext, 'boardId' | 'transcriptionItemId' | 'mediaPath' | 'viewMode' | 'sceneDensity'>>,
     ): Promise<WindowContext>
     updateContext(
-      input: Partial<Pick<WindowContext, 'boardId' | 'transcriptionItemId' | 'viewMode' | 'sceneDensity'>>,
+      input: Partial<Pick<WindowContext, 'boardId' | 'transcriptionItemId' | 'mediaPath' | 'viewMode' | 'sceneDensity'>>,
     ): Promise<WindowContext>
     getDragSession(): WindowDragSession
     readDragSession(): Promise<WindowDragSession>

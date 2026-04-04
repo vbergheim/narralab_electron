@@ -31,6 +31,17 @@ export type Scene = {
   synopsis: string
   shootDate: string
   shootBlock: string
+  shootDayPlace: string
+  shootDayProduction: string
+  shootDayDirector: string
+  shootDayPhotographer: string
+  shootDayParticipants: string
+  shootDayFolderName: string
+  shootDayFileName: string
+  shootDayClipCount: string
+  shootDayDescription: string
+  shootDayStrongestMaterial: string
+  shootDayFollowUp: string
   notes: string
   cameraNotes: string
   audioNotes: string

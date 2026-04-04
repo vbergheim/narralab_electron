@@ -10,6 +10,7 @@ export type WindowWorkspace =
   | 'inspector'
   | 'notebook'
   | 'archive'
+  | 'pro-player'
   | 'board-manager'
   | 'transcribe'
 
@@ -17,6 +18,7 @@ export type SavedWindowLayoutWindow = {
   id: string
   workspace: WindowWorkspace
   boardId: string | null
+  mediaPath: string | null
   viewMode: BoardViewMode
   sceneDensity: SceneDensity
   bounds: { x: number; y: number; width: number; height: number }

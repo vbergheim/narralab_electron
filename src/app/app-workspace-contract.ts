@@ -35,6 +35,7 @@ export type WorkspaceMode =
   | 'bank'
   | 'notebook'
   | 'archive'
+  | 'pro-player'
   | 'consultant'
   | 'settings'
   | 'board-manager'
@@ -135,6 +136,7 @@ export type SharedWorkspaceProps = {
 
 export type DetachedWorkspacePanelProps = SharedWorkspaceProps & {
   detachedWorkspace: WindowWorkspace
+  mediaPathForWindow: string | null
   outlineImmersive: boolean
   onToggleOutlineImmersive(): Promise<void> | void
   onChangeBoardViewMode(mode: BoardViewMode): void
@@ -154,6 +156,10 @@ export type MainWorkspacePanelProps = SharedWorkspaceProps & {
   onClearConsultantConversation(): void
   onOpenAppSettings(): void
   onChangeBoardViewMode(mode: BoardViewMode): void
+}
+
+export type ProPlayerWorkspacePanelProps = {
+  mediaPath: string | null
 }
 
 export type OutlineWorkspacePanelProps = Pick<

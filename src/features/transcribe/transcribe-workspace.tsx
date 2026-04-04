@@ -437,6 +437,25 @@ export function TranscribeWorkspace({
     [sortLibraryItems],
   )
 
+  const saveHighlights = useCallback(
+    (itemId: string, highlights: TranscriptionItem['highlights']) => {
+      updateLibraryItemLocally(itemId, { highlights })
+      void (async () => {
+        try {
+          const updatedItem = await window.narralab.transcription.library.items.update({
+            id: itemId,
+            highlights,
+          })
+          mergeLibraryItemsLocally([updatedItem])
+        } catch (error) {
+          console.error('Failed to save transcript highlights:', error)
+          void refreshLibrary()
+        }
+      })()
+    },
+    [mergeLibraryItemsLocally, refreshLibrary, updateLibraryItemLocally],
+  )
+
   const selectedItem = libraryItems.find(i => i.id === selectedItemId)
   const hasChanges = selectedItem ? libraryResultText !== selectedItem.content : false
   const libraryPaneStyle = {
@@ -452,6 +471,7 @@ export function TranscribeWorkspace({
         {selectedItem ? (
           <TranscriptPanel
             resultText={libraryResultText}
+            highlights={selectedItem.highlights}
             projectMeta={projectMeta}
             selectedItemId={selectedItemId}
             subtitle={selectedItem.name}
@@ -481,6 +501,10 @@ export function TranscribeWorkspace({
             onSaveTxt={() => void saveTxt(libraryResultText)}
             onDetach={undefined}
             onResultTextChange={setLibraryResultText}
+            onHighlightsChange={(next) => {
+              if (!selectedItemId) return
+              saveHighlights(selectedItemId, next)
+            }}
           />
         ) : selectedItemId ? (
           <LibraryEmptyState />
@@ -533,6 +557,7 @@ export function TranscribeWorkspace({
 
           <TranscriptPanel
             resultText={draftResultText}
+            highlights={[]}
             projectMeta={projectMeta}
             selectedItemId={null}
             subtitle={fileName ? `Draft · ${fileName}` : 'Draft transcript'}
@@ -545,6 +570,7 @@ export function TranscribeWorkspace({
             onSaveTxt={() => void saveTxt(draftResultText)}
             onDetach={undefined}
             onResultTextChange={setDraftResultText}
+            onHighlightsChange={undefined}
           />
         </div>
       ) : (
@@ -610,6 +636,7 @@ export function TranscribeWorkspace({
                 <div className="min-h-0 min-w-0 flex-1 overflow-hidden lg:h-full">
                   <TranscriptPanel
                     resultText={libraryResultText}
+                    highlights={selectedItem.highlights}
                     projectMeta={projectMeta}
                     selectedItemId={selectedItemId}
                     subtitle={selectedItem.name}
@@ -649,6 +676,10 @@ export function TranscribeWorkspace({
                       })()
                     }}
                     onResultTextChange={setLibraryResultText}
+                    onHighlightsChange={(next) => {
+                      if (!selectedItemId) return
+                      saveHighlights(selectedItemId, next)
+                    }}
                   />
                 </div>
 

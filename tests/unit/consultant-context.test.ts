@@ -33,6 +33,17 @@ function buildScene(id: string, overrides: Partial<Scene> = {}): Scene {
     synopsis: `Synopsis for ${id}`,
     shootDate: '',
     shootBlock: '',
+    shootDayPlace: '',
+    shootDayProduction: '',
+    shootDayDirector: '',
+    shootDayPhotographer: '',
+    shootDayParticipants: '',
+    shootDayFolderName: '',
+    shootDayFileName: '',
+    shootDayClipCount: '',
+    shootDayDescription: '',
+    shootDayStrongestMaterial: '',
+    shootDayFollowUp: '',
     notes: '',
     cameraNotes: '',
     audioNotes: '',
@@ -159,5 +170,48 @@ describe('consultant context', () => {
 
     expect(hint).not.toBeNull()
     expect(hint?.title).toBe('Flere scener er uferdige')
+  })
+
+  it('includes the whole scene bank when the scene bank workspace has no focused scene', () => {
+    const scenes = [
+      buildScene('scene-1', { title: 'Opening', synopsis: 'A quiet street before dawn.', category: 'Intro', location: 'Street' }),
+      buildScene('scene-2', { title: 'Kitchen', synopsis: 'Coffee and tension in the kitchen.', category: 'Observational', location: 'Apartment' }),
+    ]
+    const board = buildBoard([
+      {
+        id: 'item-1',
+        boardId: 'board-1',
+        kind: 'scene',
+        sceneId: scenes[0]!.id,
+        position: 0,
+        boardX: 0,
+        boardY: 0,
+        boardW: 300,
+        boardH: 132,
+        createdAt: scenes[0]!.createdAt,
+        updatedAt: scenes[0]!.updatedAt,
+      },
+    ])
+
+    const context = buildConsultantContext({
+      projectMeta,
+      projectSettings,
+      workspaceMode: 'bank',
+      boards: [board],
+      scenes,
+      tags: [],
+      activeBoardId: board.id,
+      selectedSceneId: null,
+      selectedSceneIds: [],
+      selectedBoardItemId: null,
+    })
+
+    expect(context.ambient).toContain('Workspace: Scene Bank')
+    expect(context.ambient).toContain('Focused scope: Entire scene bank (2 scenes)')
+    expect(context.focused).toContain('Scene bank:')
+    expect(context.focused).toContain('Total scenes: 2')
+    expect(context.focused).toContain('1. Opening')
+    expect(context.focused).toContain('2. Kitchen')
+    expect(context.focused).toContain('Active board outline:')
   })
 })

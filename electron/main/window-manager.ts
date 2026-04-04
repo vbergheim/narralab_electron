@@ -21,6 +21,10 @@ type BrowserFactory = (input: BrowserFactoryInput) => BrowserWindow
 
 const DEFAULT_GLOBAL_UI_STATE: GlobalUiState = {
   activeBoardId: null,
+  selectedBoardId: null,
+  selectedSceneId: null,
+  selectedSceneIds: [],
+  selectedBoardItemId: null,
   selectedArchiveFolderId: null,
   selectedTranscriptionItemId: null,
   workspaceMode: null,
@@ -49,6 +53,7 @@ export class WindowManager {
       workspace: 'main',
       boardId: null,
       transcriptionItemId: null,
+      mediaPath: null,
       viewMode: settings.ui.defaultBoardView,
       sceneDensity: settings.ui.defaultSceneDensity,
     }
@@ -67,7 +72,7 @@ export class WindowManager {
 
   updateContext(
     windowId: number,
-    input: Partial<Pick<WindowContext, 'boardId' | 'transcriptionItemId' | 'viewMode' | 'sceneDensity'>>,
+    input: Partial<Pick<WindowContext, 'boardId' | 'transcriptionItemId' | 'mediaPath' | 'viewMode' | 'sceneDensity'>>,
   ) {
     const record = this.windows.get(windowId)
     if (!record) {
@@ -89,7 +94,7 @@ export class WindowManager {
 
   async openWorkspace(
     workspace: WindowWorkspace,
-    options?: Partial<Pick<WindowContext, 'boardId' | 'transcriptionItemId' | 'viewMode' | 'sceneDensity'>>,
+    options?: Partial<Pick<WindowContext, 'boardId' | 'transcriptionItemId' | 'mediaPath' | 'viewMode' | 'sceneDensity'>>,
   ) {
     const settings = this.settingsService.getSettings()
     const browserWindow = this.browserFactory({
@@ -104,6 +109,7 @@ export class WindowManager {
       workspace,
       boardId: options?.boardId ?? this.globalUiState.activeBoardId ?? null,
       transcriptionItemId: options?.transcriptionItemId ?? null,
+      mediaPath: options?.mediaPath ?? null,
       viewMode: options?.viewMode ?? this.resolveDefaultBoardView(settings),
       sceneDensity: options?.sceneDensity ?? settings.ui.defaultSceneDensity,
     }
@@ -209,6 +215,7 @@ export class WindowManager {
             id: `${record.context.workspace}_${index}`,
             workspace: record.context.workspace as WindowWorkspace,
             boardId: record.context.boardId,
+            mediaPath: record.context.mediaPath,
             viewMode: record.context.viewMode,
             sceneDensity: record.context.sceneDensity,
             bounds,
@@ -247,6 +254,7 @@ export class WindowManager {
         workspace: layoutWindow.workspace,
         boardId: layoutWindow.boardId,
         transcriptionItemId: null,
+        mediaPath: layoutWindow.mediaPath ?? null,
         viewMode: layoutWindow.viewMode,
         sceneDensity: layoutWindow.sceneDensity,
       }
@@ -362,6 +370,7 @@ export class WindowManager {
       workspace: 'main',
       boardId: this.globalUiState.activeBoardId,
       transcriptionItemId: null,
+      mediaPath: null,
       viewMode: this.resolveDefaultBoardView(settings),
       sceneDensity: settings.ui.defaultSceneDensity,
     }
@@ -413,6 +422,7 @@ function clampBounds(
 
 function workspaceLabel(workspace: WindowWorkspace) {
   if (workspace === 'board-manager') return 'Board Manager'
+  if (workspace === 'pro-player') return 'Media Player'
   if (workspace === 'transcribe') return 'Transcribe'
   return workspace.charAt(0).toUpperCase() + workspace.slice(1)
 }

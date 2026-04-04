@@ -139,6 +139,11 @@ export type TranscriptionMainDiagnostics = {
 /** Same path-based model as Scene Bank (`SceneFolder`). */
 export type TranscriptionFolder = SceneFolder
 
+export type TranscriptHighlight = {
+  start: number
+  end: number
+}
+
 export type TranscriptionItem = {
   id: string
   /** Slash-separated folder path, same semantics as `Scene.folder` (empty = library root). */
@@ -146,6 +151,7 @@ export type TranscriptionItem = {
   sceneId: string | null
   name: string
   content: string
+  highlights: TranscriptHighlight[]
   sourceFilePath: string | null
   createdAt: string
   updatedAt: string
@@ -157,4 +163,5 @@ export type TranscriptionItemUpdateInput = {
   sceneId?: string | null
   name?: string
   content?: string
+  highlights?: TranscriptHighlight[]
 }

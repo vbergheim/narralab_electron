@@ -112,6 +112,9 @@ export function getWorkspaceSummary({
   if (workspaceMode === 'archive') {
     return `${archiveItemsCount} files in archive`
   }
+  if (workspaceMode === 'pro-player') {
+    return 'Dedicated media playback window'
+  }
   if (workspaceMode === 'board-manager') {
     return `${boardsCount} boards, ${boardFoldersCount} folders`
   }

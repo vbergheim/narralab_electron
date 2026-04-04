@@ -64,11 +64,11 @@ export class ProjectExchangeService {
 
       const insertScene = db.prepare(`
         INSERT INTO scenes (
-          id, sort_order, title, synopsis, shoot_date, shoot_block, notes, camera_notes, audio_notes, color, status, is_key_scene, folder, category,
+          id, sort_order, title, synopsis, shoot_date, shoot_block, shoot_day_place, shoot_day_production, shoot_day_director, shoot_day_photographer, shoot_day_participants, shoot_day_folder_name, shoot_day_file_name, shoot_day_clip_count, shoot_day_description, shoot_day_strongest_material, shoot_day_follow_up, notes, camera_notes, audio_notes, color, status, is_key_scene, folder, category,
           estimated_duration, actual_duration, location, characters,
           function, source_reference, quote_moment, quality, source_paths, created_at, updated_at
         ) VALUES (
-          @id, @sortOrder, @title, @synopsis, @shootDate, @shootBlock, @notes, @cameraNotes, @audioNotes, @color, @status, @keyRating, @folder, @category,
+          @id, @sortOrder, @title, @synopsis, @shootDate, @shootBlock, @shootDayPlace, @shootDayProduction, @shootDayDirector, @shootDayPhotographer, @shootDayParticipants, @shootDayFolderName, @shootDayFileName, @shootDayClipCount, @shootDayDescription, @shootDayStrongestMaterial, @shootDayFollowUp, @notes, @cameraNotes, @audioNotes, @color, @status, @keyRating, @folder, @category,
           @estimatedDuration, @actualDuration, @location, @characters,
           @function, @sourceReference, @quoteMoment, @quality, @sourcePaths, @createdAt, @updatedAt
         )
@@ -103,6 +103,17 @@ export class ProjectExchangeService {
           sortOrder: scene.sortOrder ?? index,
           shootDate: scene.shootDate ?? '',
           shootBlock: scene.shootBlock ?? '',
+          shootDayPlace: scene.shootDayPlace ?? '',
+          shootDayProduction: scene.shootDayProduction ?? '',
+          shootDayDirector: scene.shootDayDirector ?? '',
+          shootDayPhotographer: scene.shootDayPhotographer ?? '',
+          shootDayParticipants: scene.shootDayParticipants ?? '',
+          shootDayFolderName: scene.shootDayFolderName ?? '',
+          shootDayFileName: scene.shootDayFileName ?? '',
+          shootDayClipCount: scene.shootDayClipCount ?? '',
+          shootDayDescription: scene.shootDayDescription ?? '',
+          shootDayStrongestMaterial: scene.shootDayStrongestMaterial ?? '',
+          shootDayFollowUp: scene.shootDayFollowUp ?? '',
           folder: scene.folder ?? '',
           cameraNotes: scene.cameraNotes ?? '',
           audioNotes: scene.audioNotes ?? '',
@@ -306,6 +317,17 @@ function normalizeSnapshotScene(scene: Scene) {
     ...scene,
     shootDate: typeof scene.shootDate === 'string' ? scene.shootDate : '',
     shootBlock: typeof scene.shootBlock === 'string' ? scene.shootBlock : '',
+    shootDayPlace: typeof scene.shootDayPlace === 'string' ? scene.shootDayPlace : '',
+    shootDayProduction: typeof scene.shootDayProduction === 'string' ? scene.shootDayProduction : '',
+    shootDayDirector: typeof scene.shootDayDirector === 'string' ? scene.shootDayDirector : '',
+    shootDayPhotographer: typeof scene.shootDayPhotographer === 'string' ? scene.shootDayPhotographer : '',
+    shootDayParticipants: typeof scene.shootDayParticipants === 'string' ? scene.shootDayParticipants : '',
+    shootDayFolderName: typeof scene.shootDayFolderName === 'string' ? scene.shootDayFolderName : '',
+    shootDayFileName: typeof scene.shootDayFileName === 'string' ? scene.shootDayFileName : '',
+    shootDayClipCount: typeof scene.shootDayClipCount === 'string' ? scene.shootDayClipCount : '',
+    shootDayDescription: typeof scene.shootDayDescription === 'string' ? scene.shootDayDescription : '',
+    shootDayStrongestMaterial: typeof scene.shootDayStrongestMaterial === 'string' ? scene.shootDayStrongestMaterial : '',
+    shootDayFollowUp: typeof scene.shootDayFollowUp === 'string' ? scene.shootDayFollowUp : '',
     sourceReference: sourcePaths[0] ?? (typeof scene.sourceReference === 'string' ? scene.sourceReference : ''),
     cameraNotes: typeof scene.cameraNotes === 'string' ? scene.cameraNotes : '',
     audioNotes: typeof scene.audioNotes === 'string' ? scene.audioNotes : '',

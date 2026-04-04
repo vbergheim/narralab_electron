@@ -28,6 +28,7 @@ import { cn } from '@/lib/cn'
 import type { ProjectMeta } from '@/types/project'
 import type { Scene } from '@/types/scene'
 import type {
+  TranscriptHighlight,
   TranscriptionLanguage,
   TranscriptionModelCatalogEntry,
   TranscriptionModelId,
@@ -498,13 +499,13 @@ function LinkedScenePicker({
 
   useEffect(() => {
     if (!isOpen) {
-      setQuery('')
       return
     }
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setIsOpen(false)
+        setQuery('')
       }
     }
 
@@ -515,6 +516,7 @@ function LinkedScenePicker({
   const selectScene = (sceneId: string | null) => {
     onSelectScene(sceneId)
     setIsOpen(false)
+    setQuery('')
   }
 
   const pickerStyle = {
@@ -565,7 +567,10 @@ function LinkedScenePicker({
         ? createPortal(
             <div
               className="fixed inset-0 z-[200] bg-black/45 backdrop-blur-sm"
-              onClick={() => setIsOpen(false)}
+              onClick={() => {
+                setIsOpen(false)
+                setQuery('')
+              }}
             >
               <div
                 className="fixed inset-4 z-[201] flex min-h-0 items-center justify-center"
@@ -604,7 +609,10 @@ function LinkedScenePicker({
                           size="sm"
                           type="button"
                           className="h-8 w-8 p-0"
-                          onClick={() => setIsOpen(false)}
+                          onClick={() => {
+                            setIsOpen(false)
+                            setQuery('')
+                          }}
                           aria-label="Close scene picker"
                         >
                           <X className="h-4 w-4" />
@@ -701,6 +709,7 @@ function formatScenePickerMeta(scene: Scene) {
 
 export function TranscriptPanel({
   resultText,
+  highlights,
   projectMeta,
   selectedItemId,
   subtitle,
@@ -713,8 +722,10 @@ export function TranscriptPanel({
   onSaveTxt,
   onDetach,
   onResultTextChange,
+  onHighlightsChange,
 }: {
   resultText: string
+  highlights?: TranscriptHighlight[]
   projectMeta: ProjectMeta | null
   selectedItemId: string | null
   subtitle?: string | null
@@ -727,6 +738,7 @@ export function TranscriptPanel({
   onSaveTxt(): void
   onDetach?(): void
   onResultTextChange(value: string): void
+  onHighlightsChange?(value: TranscriptHighlight[]): void
 }) {
   return (
     <TranscriptViewerPanel
@@ -734,7 +746,9 @@ export function TranscriptPanel({
       subtitle={subtitle ?? null}
       text={resultText}
       editable
+      highlights={highlights}
       onTextChange={onResultTextChange}
+      onHighlightsChange={onHighlightsChange}
       placeholder="Transcript will appear here when the job completes…"
       onDetach={selectedItemId ? onDetach : undefined}
       toolbarActions={

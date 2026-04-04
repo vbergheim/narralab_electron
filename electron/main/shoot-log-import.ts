@@ -70,6 +70,17 @@ type ParsedSceneRow = {
   sceneRef: string
   shootDate: string
   shootBlock: string
+  shootDayPlace: string
+  shootDayProduction: string
+  shootDayDirector: string
+  shootDayPhotographer: string
+  shootDayParticipants: string
+  shootDayFolderName: string
+  shootDayFileName: string
+  shootDayClipCount: string
+  shootDayDescription: string
+  shootDayStrongestMaterial: string
+  shootDayFollowUp: string
   sortOrder: number | null
   title: string
   synopsis: string
@@ -104,6 +115,22 @@ type ParsedShootLog = {
   beats: ParsedBeatRow[]
   skippedRowCount: number
   errors: ShootLogImportError[]
+}
+
+type ShootDayMetadata = {
+  shootDate: string
+  shootBlock: string
+  shootDayPlace: string
+  shootDayProduction: string
+  shootDayDirector: string
+  shootDayPhotographer: string
+  shootDayParticipants: string
+  shootDayFolderName: string
+  shootDayFileName: string
+  shootDayClipCount: string
+  shootDayDescription: string
+  shootDayStrongestMaterial: string
+  shootDayFollowUp: string
 }
 
 export async function importShootLogWorkbook(db: ProjectDatabase, filePath: string): Promise<ShootLogImportResult> {
@@ -328,6 +355,17 @@ function parseMachineShootLogWorkbook(
       sceneRef,
       shootDate,
       shootBlock: cells.shoot_block,
+      shootDayPlace: '',
+      shootDayProduction: '',
+      shootDayDirector: '',
+      shootDayPhotographer: '',
+      shootDayParticipants: '',
+      shootDayFolderName: '',
+      shootDayFileName: '',
+      shootDayClipCount: '',
+      shootDayDescription: '',
+      shootDayStrongestMaterial: '',
+      shootDayFollowUp: '',
       sortOrder,
       title,
       synopsis,
@@ -455,6 +493,17 @@ function parseOpptaksloggShootLogWorkbook(
       sceneRef,
       shootDate: meta.shootDate,
       shootBlock: meta.shootBlock,
+      shootDayPlace: meta.shootDayPlace,
+      shootDayProduction: meta.shootDayProduction,
+      shootDayDirector: meta.shootDayDirector,
+      shootDayPhotographer: meta.shootDayPhotographer,
+      shootDayParticipants: meta.shootDayParticipants,
+      shootDayFolderName: meta.shootDayFolderName,
+      shootDayFileName: meta.shootDayFileName,
+      shootDayClipCount: meta.shootDayClipCount,
+      shootDayDescription: meta.shootDayDescription,
+      shootDayStrongestMaterial: meta.shootDayStrongestMaterial,
+      shootDayFollowUp: meta.shootDayFollowUp,
       sortOrder,
       title,
       synopsis,
@@ -562,38 +611,31 @@ function rowHasMachineSceneHeaders(sheet: Worksheet) {
 
 function scanOpptaksloggLabelPairs(sheet: Worksheet) {
   const fields = new Map<string, string>()
-  let firstBeskrivelse = ''
 
   const maxRow = Math.min(sheet.rowCount, 30)
   for (let rowNumber = 1; rowNumber <= maxRow; rowNumber += 1) {
     const row = sheet.getRow(rowNumber)
-    const collectPair = (labelCol: number, valueCol: number) => {
-      const labelRaw = readCellValue(row.getCell(labelCol).value).trim()
-      const valueRaw = readCellValue(row.getCell(valueCol).value).trim()
-      if (!labelRaw || !valueRaw) {
-        return
+    const maxColumn = Math.max(row.cellCount, 20)
+    for (let column = 1; column <= maxColumn; column += 1) {
+      const labelRaw = readCellValue(row.getCell(column).value).trim()
+      if (!labelRaw || !labelRaw.endsWith(':')) {
+        continue
       }
-      if (!/:$/.test(labelRaw)) {
-        return
+
+      const key = normalizeOpptaksloggLabelKey(labelRaw)
+      if (!key || fields.has(key)) {
+        continue
       }
-      const key = labelRaw.replace(/:+\s*$/, '').trim().toLowerCase()
-      if (key === 'beskrivelse') {
-        if (!firstBeskrivelse) {
-          firstBeskrivelse = valueRaw
+
+      for (let valueColumn = column + 1; valueColumn <= maxColumn + 4; valueColumn += 1) {
+        const valueRaw = readCellValue(row.getCell(valueColumn).value).trim()
+        if (!valueRaw || valueRaw.endsWith(':')) {
+          continue
         }
-        return
-      }
-      if (!fields.has(key)) {
         fields.set(key, valueRaw)
+        break
       }
     }
-
-    collectPair(2, 3)
-    collectPair(5, 6)
-  }
-
-  if (firstBeskrivelse) {
-    fields.set('__beskrivelse__', firstBeskrivelse)
   }
 
   return fields
@@ -602,7 +644,7 @@ function scanOpptaksloggLabelPairs(sheet: Worksheet) {
 function parseOpptaksloggMetadata(
   scenesSheet: Worksheet,
   errors: ShootLogImportError[],
-): { shootDate: string; shootBlock: string } | null {
+): ShootDayMetadata | null {
   const fields = scanOpptaksloggLabelPairs(scenesSheet)
   const dateRaw = fields.get('dato') ?? ''
   const shootDate = parseFlexibleDate(dateRaw)
@@ -618,7 +660,31 @@ function parseOpptaksloggMetadata(
   return {
     shootDate,
     shootBlock: '',
+    shootDayPlace: fields.get('sted') ?? '',
+    shootDayProduction: fields.get('produksjon') ?? '',
+    shootDayDirector: fields.get('regi') ?? '',
+    shootDayPhotographer: fields.get('fotograf') ?? '',
+    shootDayParticipants: fields.get('medvirk') ?? fields.get('medvirkende') ?? '',
+    shootDayFolderName: fields.get('mappenavn') ?? '',
+    shootDayFileName: fields.get('filnavn') ?? '',
+    shootDayClipCount: fields.get('antall klipp') ?? '',
+    shootDayDescription: fields.get('beskrivelse') ?? '',
+    shootDayStrongestMaterial: fields.get('sterkeste materiale') ?? '',
+    shootDayFollowUp: fields.get('folges opp') ?? '',
   }
+}
+
+function normalizeOpptaksloggLabelKey(raw: string) {
+  return raw
+    .trim()
+    .replace(/:+\s*$/, '')
+    .replace(/[æÆ]/g, 'ae')
+    .replace(/[øØ]/g, 'o')
+    .replace(/[åÅ]/g, 'a')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
 }
 
 function parseFlexibleDate(raw: string): string | null {
@@ -827,11 +893,11 @@ function appendParsedShootLog(db: ProjectDatabase, parsed: ParsedShootLog) {
 
   const insertScene = db.prepare(`
     INSERT INTO scenes (
-      id, sort_order, title, synopsis, shoot_date, shoot_block, notes, camera_notes, audio_notes, color, status, is_key_scene, folder, category,
+      id, sort_order, title, synopsis, shoot_date, shoot_block, shoot_day_place, shoot_day_production, shoot_day_director, shoot_day_photographer, shoot_day_participants, shoot_day_folder_name, shoot_day_file_name, shoot_day_clip_count, shoot_day_description, shoot_day_strongest_material, shoot_day_follow_up, notes, camera_notes, audio_notes, color, status, is_key_scene, folder, category,
       estimated_duration, actual_duration, location, characters,
       function, source_reference, quote_moment, quality, source_paths, created_at, updated_at
     ) VALUES (
-      @id, @sortOrder, @title, @synopsis, @shootDate, @shootBlock, @notes, @cameraNotes, @audioNotes, @color, @status, @keyRating, @folder, @category,
+      @id, @sortOrder, @title, @synopsis, @shootDate, @shootBlock, @shootDayPlace, @shootDayProduction, @shootDayDirector, @shootDayPhotographer, @shootDayParticipants, @shootDayFolderName, @shootDayFileName, @shootDayClipCount, @shootDayDescription, @shootDayStrongestMaterial, @shootDayFollowUp, @notes, @cameraNotes, @audioNotes, @color, @status, @keyRating, @folder, @category,
       @estimatedDuration, @actualDuration, @location, @characters,
       @function, @sourceReference, @quoteMoment, @quality, @sourcePaths, @createdAt, @updatedAt
     )
@@ -867,6 +933,17 @@ function appendParsedShootLog(db: ProjectDatabase, parsed: ParsedShootLog) {
         synopsis: scene.synopsis,
         shootDate: scene.shootDate,
         shootBlock: scene.shootBlock,
+        shootDayPlace: scene.shootDayPlace,
+        shootDayProduction: scene.shootDayProduction,
+        shootDayDirector: scene.shootDayDirector,
+        shootDayPhotographer: scene.shootDayPhotographer,
+        shootDayParticipants: scene.shootDayParticipants,
+        shootDayFolderName: scene.shootDayFolderName,
+        shootDayFileName: scene.shootDayFileName,
+        shootDayClipCount: scene.shootDayClipCount,
+        shootDayDescription: scene.shootDayDescription,
+        shootDayStrongestMaterial: scene.shootDayStrongestMaterial,
+        shootDayFollowUp: scene.shootDayFollowUp,
         notes: scene.notes,
         cameraNotes: scene.cameraNotes,
         audioNotes: scene.audioNotes,

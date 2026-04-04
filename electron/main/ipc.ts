@@ -6,6 +6,7 @@ import type { ArchiveFolderUpdateInput, ArchiveItemUpdateInput } from '@/types/a
 import type { TagType } from '@/types/tag'
 
 import { ipcMain } from 'electron'
+import { BrowserWindow } from 'electron'
 
 import { AIConsultantService } from './ai-consultant-service'
 import { AppSettingsService } from './app-settings-service'
@@ -29,6 +30,7 @@ import {
   parseSceneUpdateInput,
   parseTagUpsertInput,
   parseGlobalUiStatePatch,
+  parseMediaPlayerViewport,
   parseNotebookDocument,
   parseWindowContextUpdate,
   parseWindowDragSession,
@@ -40,6 +42,8 @@ import {
 } from './ipc-validators'
 import { ProjectService } from './project-service'
 import { TranscriptionService } from './transcription-service'
+import { MediaService } from './media-service'
+import { MediaPlayerService } from './media-player-service'
 import { WindowManager } from './window-manager'
 
 export function registerIpc(
@@ -49,6 +53,12 @@ export function registerIpc(
   windowManager: WindowManager,
 ) {
   const transcriptionService = new TranscriptionService(settingsService, projectService)
+  const mediaService = new MediaService()
+  const mediaPlayerService = new MediaPlayerService((event) => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      window.webContents.send('media-player:event', event)
+    }
+  })
   const notifyChange = (...scopes: ProjectChangeScope[]) => windowManager.notifyProjectChanged(scopes)
 
   ipcMain.handle('project:create', async (_, requestedPath?: string | null) => {
@@ -156,6 +166,47 @@ export function registerIpc(
   ipcMain.handle('archive:items:reveal', (_, itemId: string) =>
     projectService.revealArchiveItem(requireString(itemId, 'Archive item id')),
   )
+  ipcMain.handle('media:inspect', (_, paths: string[]) =>
+    mediaService.inspectSources(requireStringArray(paths, 'Media paths')),
+  )
+  ipcMain.handle('media:createPreviewProxy', (_, filePath: string) =>
+    mediaService.createPreviewProxy(requireString(filePath, 'Media path')),
+  )
+  ipcMain.handle('mediaPlayer:open', (_, filePath: string) =>
+    mediaPlayerService.open(requireString(filePath, 'Media player path')),
+  )
+  ipcMain.handle('mediaPlayer:openInCurrentWindow', (event, filePath: string) => {
+    const browserWindow = BrowserWindow.fromWebContents(event.sender)
+    if (!browserWindow) {
+      throw new Error('Player window not found.')
+    }
+    return mediaPlayerService.openInWindow(browserWindow, requireString(filePath, 'Media player path'))
+  })
+  ipcMain.handle('mediaPlayer:play', () => mediaPlayerService.play())
+  ipcMain.handle('mediaPlayer:pause', () => mediaPlayerService.pause())
+  ipcMain.handle('mediaPlayer:seek', (_, seconds: number) => mediaPlayerService.seek(Number(seconds)))
+  ipcMain.handle('mediaPlayer:seekRelative', (_, seconds: number) => mediaPlayerService.seekRelative(Number(seconds)))
+  ipcMain.handle('mediaPlayer:setVolume', (_, volume: number) => mediaPlayerService.setVolume(Number(volume)))
+  ipcMain.handle('mediaPlayer:toggleFullscreen', () => mediaPlayerService.toggleFullscreen())
+  ipcMain.handle('mediaPlayer:setViewport', (event, viewport: unknown) => {
+    const browserWindow = BrowserWindow.fromWebContents(event.sender)
+    if (!browserWindow) {
+      throw new Error('Player window not found.')
+    }
+    return mediaPlayerService.setViewport(browserWindow, parseMediaPlayerViewport(viewport))
+  })
+  ipcMain.handle('mediaPlayer:detachCurrentWindow', (event) => {
+    const browserWindow = BrowserWindow.fromWebContents(event.sender)
+    if (!browserWindow) {
+      throw new Error('Player window not found.')
+    }
+    return mediaPlayerService.detachWindow(browserWindow)
+  })
+  ipcMain.handle('mediaPlayer:focus', () => mediaPlayerService.focus())
+  ipcMain.handle('mediaPlayer:close', () => mediaPlayerService.close())
+  ipcMain.handle('mediaPlayer:install', () => mediaPlayerService.install())
+  ipcMain.handle('mediaPlayer:openInstallGuide', () => mediaPlayerService.openInstallGuide())
+  ipcMain.handle('mediaPlayer:getState', () => mediaPlayerService.getState())
 
   ipcMain.handle('scenes:list', () => projectService.listScenes())
   ipcMain.handle('scenes:create', () => {

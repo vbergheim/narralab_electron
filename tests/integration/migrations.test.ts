@@ -98,6 +98,8 @@ describe('runMigrations', () => {
 
       const scene = db.prepare(`
         SELECT
+          shoot_day_place AS shootDayPlace,
+          shoot_day_description AS shootDayDescription,
           source_reference AS sourceReference,
           quote_moment AS quoteMoment,
           quality,
@@ -105,12 +107,16 @@ describe('runMigrations', () => {
         FROM scenes
         WHERE id = 'scene_1'
       `).get() as {
+        shootDayPlace: string
+        shootDayDescription: string
         sourceReference: string
         quoteMoment: string
         quality: string
         sourcePaths: string
       }
 
+      expect(scene.shootDayPlace).toBe('')
+      expect(scene.shootDayDescription).toBe('')
       expect(scene.sourceReference).toBe('legacy/source.mov')
       expect(scene.quoteMoment).toBe('')
       expect(scene.quality).toBe('')

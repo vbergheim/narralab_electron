@@ -13,12 +13,18 @@ import {
   FolderOpen,
   LibraryBig,
   Plus,
+  PanelRightClose,
   Search,
+  FolderOpen as RevealFolder,
 } from 'lucide-react'
 
+import { CollapsedRail } from '@/app/app-shell-controls'
 import { Button } from '@/components/ui/button'
 import { ContextMenu, type ContextMenuItem } from '@/components/ui/context-menu'
 import { InlineEditActions, InlineEditScope, InlineNameEditor } from '@/components/ui/inline-name-editor'
+import { ProPlayerPanel } from '@/features/media-player/pro-player-panel'
+import { useProPlayerController } from '@/features/media-player/use-pro-player-controller'
+import { formatFileSize, inferMediaPreviewKind } from '@/features/media-player/media-player-utils'
 import { Input } from '@/components/ui/input'
 import { Panel } from '@/components/ui/panel'
 import { usePersistedStringArray } from '@/hooks/use-persisted-string-array'
@@ -26,6 +32,7 @@ import { cn } from '@/lib/cn'
 import { sceneColors } from '@/lib/constants'
 import { computeListSelection, ensureContextSelection } from '@/lib/selection'
 import type { ArchiveFolder, ArchiveItem } from '@/types/archive'
+import type { MediaPanelSource } from '@/types/media-player'
 
 type Props = {
   folders: ArchiveFolder[]
@@ -69,6 +76,8 @@ export function ArchiveWorkspace({
   const [menuState, setMenuState] = useState<{ itemId: string; x: number; y: number } | null>(null)
   const [folderMenuState, setFolderMenuState] = useState<{ folderId: string; folderName: string; x: number; y: number } | null>(null)
   const [selectedFolderIds, setSelectedFolderIds] = useState<string[]>([])
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
+  const [mediaPreviewCollapsed, setMediaPreviewCollapsed] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const folderSelectionAnchorRef = useRef<number | null>(null)
   const folderNodes = useMemo(() => buildArchiveFolderTree(folders, items), [folders, items])
@@ -94,6 +103,47 @@ export function ArchiveWorkspace({
     )
   }, [filteredItems, folderById, searchQuery])
   const activeFolder = selectedFolderId ? folderById.get(selectedFolderId) ?? null : null
+  const effectiveSelectedItemId = useMemo(() => {
+    if (visibleItems.length === 0) return null
+    return visibleItems.some((item) => item.id === selectedItemId) ? selectedItemId : (visibleItems[0]?.id ?? null)
+  }, [selectedItemId, visibleItems])
+  const selectedItem = useMemo(
+    () => visibleItems.find((item) => item.id === effectiveSelectedItemId) ?? null,
+    [effectiveSelectedItemId, visibleItems],
+  )
+  const selectedMediaSource = useMemo<MediaPanelSource | null>(() => {
+    if (!selectedItem) return null
+    return {
+      id: selectedItem.id,
+      name: selectedItem.name,
+      filePath: selectedItem.filePath,
+      exists: selectedItem.exists,
+      fileSize: selectedItem.fileSize,
+      extension: selectedItem.extension,
+      kindLabel: selectedItem.kind,
+      previewKind: inferMediaPreviewKind(
+        {
+          previewKind:
+            selectedItem.kind === 'video' || selectedItem.kind === 'audio' || selectedItem.kind === 'image'
+              ? selectedItem.kind
+              : 'other',
+          extension: selectedItem.extension,
+        },
+        null,
+      ),
+    }
+  }, [selectedItem])
+
+  const {
+    inspection: mediaInspection,
+    loading: mediaLoading,
+    mediaPlayerState,
+    mediaPlayerError,
+    previewError,
+    proxyGenerating,
+    setPreviewError,
+    createPreviewProxy,
+  } = useProPlayerController(selectedMediaSource)
 
   const menuItems = useMemo<ContextMenuItem[]>(() => {
     if (!menuState) return []
@@ -494,57 +544,131 @@ export function ArchiveWorkspace({
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4">
-          {visibleItems.length === 0 ? (
-            <div className="flex h-full items-center justify-center">
-              <div className="max-w-md rounded-3xl border border-dashed border-border/90 bg-panelMuted/30 px-8 py-10 text-center">
-                <div className="text-lg font-semibold text-foreground">
-                  {searchQuery.trim() ? 'No matches' : 'Drop documents here'}
-                </div>
-                <div className="mt-2 text-sm text-muted">
-                  {searchQuery.trim()
-                    ? 'Try a different search, or clear the query.'
-                    : 'PDFs, Word docs, spreadsheets, images, audio or video can all live here as local references.'}
+        <div
+          className={cn(
+            'grid min-h-0 flex-1 gap-4 px-4 py-4 lg:items-stretch',
+            mediaPreviewCollapsed ? 'lg:grid-cols-[minmax(0,1.25fr)_56px]' : 'lg:grid-cols-[minmax(0,1.25fr)_380px]',
+          )}
+        >
+          <div className="min-h-0 overflow-y-auto overscroll-contain">
+            {visibleItems.length === 0 ? (
+              <div className="flex h-full items-center justify-center">
+                <div className="max-w-md rounded-3xl border border-dashed border-border/90 bg-panelMuted/30 px-8 py-10 text-center">
+                  <div className="text-lg font-semibold text-foreground">
+                    {searchQuery.trim() ? 'No matches' : 'Drop documents here'}
+                  </div>
+                  <div className="mt-2 text-sm text-muted">
+                    {searchQuery.trim()
+                      ? 'Try a different search, or clear the query.'
+                      : 'PDFs, Word docs, spreadsheets, images, audio or video can all live here as local references.'}
+                  </div>
                 </div>
               </div>
+            ) : (
+              <div className="space-y-2">
+                {visibleItems.map((item) => {
+                  return (
+                    <div
+                      key={item.id}
+                      draggable
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => {
+                        setSelectedItemId(item.id)
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          setSelectedItemId(item.id)
+                        }
+                      }}
+                      onDragStart={(event) => {
+                        event.stopPropagation()
+                        setDraggedItemId(item.id)
+                        event.dataTransfer.setData('application/x-narralab-archive-item', item.id)
+                        event.dataTransfer.setData('text/plain', item.id)
+                        event.dataTransfer.effectAllowed = 'move'
+                      }}
+                      onDragEnd={() => setDraggedItemId(null)}
+                      onDoubleClick={(event) => {
+                        event.stopPropagation()
+                        void onOpenItem(item.id)
+                      }}
+                      onContextMenu={(event) => {
+                        setSelectedItemId(item.id)
+                        openArchiveMenu(event, item.id, setMenuState)
+                      }}
+                      className={cn(
+                        'flex w-full items-center gap-3 rounded-2xl border bg-panelMuted/45 px-3 py-2.5 text-left transition',
+                        effectiveSelectedItemId === item.id
+                          ? 'border-accent/60 bg-accent/10 ring-2 ring-accent/15'
+                          : 'border-border hover:border-accent/30 hover:bg-panelMuted',
+                      )}
+                    >
+                      <div className="shrink-0 text-muted">{archiveIconFor(item.kind)}</div>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate font-medium text-foreground">{item.name}</div>
+                        <div className="mt-1 flex min-w-0 items-center gap-2 text-[11px] text-muted">
+                          <span className="truncate">{item.extension ? item.extension.toUpperCase() : item.kind}</span>
+                          <span aria-hidden="true">•</span>
+                          <span className="truncate">{item.exists ? formatFileSize(item.fileSize) : 'Missing'}</span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="ml-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-transparent text-muted transition hover:border-border hover:bg-panelMuted hover:text-foreground"
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          void onRevealItem(item.id)
+                        }}
+                        title="Reveal in Finder"
+                        aria-label="Reveal in Finder"
+                      >
+                        <RevealFolder className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          {mediaPreviewCollapsed ? (
+            <div className="min-h-0 overflow-hidden">
+              <CollapsedRail side="right" title="Preview" onExpand={() => setMediaPreviewCollapsed(false)} />
             </div>
           ) : (
-            <div className="space-y-2">
-              {visibleItems.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  draggable
-                  onDragStart={(event) => {
-                    event.stopPropagation()
-                    setDraggedItemId(item.id)
-                    event.dataTransfer.setData('application/x-narralab-archive-item', item.id)
-                    event.dataTransfer.setData('text/plain', item.id)
-                    event.dataTransfer.effectAllowed = 'move'
-                  }}
-                  onDragEnd={() => setDraggedItemId(null)}
-                  onDoubleClick={() => onOpenItem(item.id)}
-                  onContextMenu={(event) => openArchiveMenu(event, item.id, setMenuState)}
-                  className="flex w-full items-center gap-3 rounded-2xl border border-border bg-panelMuted/45 px-4 py-3 text-left transition hover:border-accent/30 hover:bg-panelMuted"
-                >
-                  <div className="shrink-0 text-muted">{archiveIconFor(item.kind)}</div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <div className="truncate font-medium text-foreground">{item.name}</div>
-                      <span className="shrink-0 rounded-full border border-border/70 bg-panel px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-muted">
-                        {folderLabelForItem(item, folderById)}
-                      </span>
-                    </div>
-                    <div className="mt-1 truncate text-xs text-muted">{item.filePath}</div>
-                  </div>
-                  <div className="shrink-0 text-right text-xs text-muted">
-                    <div>{item.extension ? item.extension.toUpperCase() : item.kind}</div>
-                    <div className={cn(item.exists ? 'text-muted' : 'text-red-200')}>
-                      {item.exists ? formatFileSize(item.fileSize) : 'Missing'}
-                    </div>
-                  </div>
-                </button>
-              ))}
+            <div className="min-h-0 overflow-y-auto overscroll-contain">
+              <div className="flex h-full min-h-0 flex-col rounded-3xl border border-border/80 bg-panel">
+                <div className="flex items-center justify-between gap-2 border-b border-border/70 px-3 py-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Media Preview</div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-8 rounded-xl p-0 text-muted hover:bg-panelMuted hover:text-foreground"
+                    onClick={() => setMediaPreviewCollapsed(true)}
+                    aria-label="Collapse media preview"
+                    title="Collapse media preview"
+                  >
+                    <PanelRightClose className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+                  <ProPlayerPanel
+                    source={selectedMediaSource}
+                    inspection={mediaInspection}
+                    loading={mediaLoading}
+                    mediaPlayerState={mediaPlayerState}
+                    mediaPlayerError={mediaPlayerError}
+                    previewError={previewError}
+                    proxyGenerating={proxyGenerating}
+                    onCreatePreviewProxy={() => void createPreviewProxy()}
+                    onPreviewError={setPreviewError}
+                  />
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -784,27 +908,12 @@ function archiveIconFor(kind: ArchiveItem['kind']) {
   }
 }
 
-function formatFileSize(size: number) {
-  if (size >= 1024 * 1024 * 1024) return `${(size / (1024 * 1024 * 1024)).toFixed(1)} GB`
-  if (size >= 1024 * 1024) return `${(size / (1024 * 1024)).toFixed(1)} MB`
-  if (size >= 1024) return `${Math.round(size / 1024)} KB`
-  return `${size} B`
-}
-
 function colorHex(color: ArchiveFolder['color']) {
   return sceneColors.find((entry) => entry.value === color)?.hex ?? '#607086'
 }
 
 function formatFolderLabel(label: string) {
   return label.toLocaleUpperCase('nb-NO')
-}
-
-function folderLabelForItem(item: ArchiveItem, folderById: Map<string, ArchiveFolder>) {
-  if (!item.folderId) {
-    return 'Loose'
-  }
-
-  return folderById.get(item.folderId)?.name ?? 'Folder'
 }
 
 function buildArchiveFolderTree(folders: ArchiveFolder[], items: ArchiveItem[]) {
@@ -882,7 +991,7 @@ function isArchiveFolderDescendantOrSelf(
 }
 
 function openArchiveMenu(
-  event: MouseEvent<HTMLButtonElement>,
+  event: MouseEvent<HTMLDivElement>,
   itemId: string,
   setMenuState: (state: { itemId: string; x: number; y: number }) => void,
 ) {

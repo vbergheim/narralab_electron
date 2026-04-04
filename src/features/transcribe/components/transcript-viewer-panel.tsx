@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Panel } from '@/components/ui/panel'
 import { Textarea } from '@/components/ui/textarea'
+import type { TranscriptHighlight } from '@/types/transcription'
 
 type ViewMode = 'preview' | 'edit'
 
@@ -15,7 +16,9 @@ export function TranscriptViewerPanel({
   editable = false,
   placeholder = 'Transcript will appear here…',
   emptyText = 'Empty transcript.',
+  highlights,
   onTextChange,
+  onHighlightsChange,
   onDetach,
   toolbarActions,
 }: {
@@ -25,17 +28,20 @@ export function TranscriptViewerPanel({
   editable?: boolean
   placeholder?: string
   emptyText?: string
+  highlights?: TranscriptHighlight[]
   onTextChange?(value: string): void
+  onHighlightsChange?(value: TranscriptHighlight[]): void
   onDetach?(): void
   toolbarActions?: ReactNode
 }) {
   const [mode, setMode] = useState<ViewMode>('preview')
   const [searchQuery, setSearchQuery] = useState('')
   const [searchMatchIndex, setSearchMatchIndex] = useState(0)
-  const [pinnedHighlightTerms, setPinnedHighlightTerms] = useState<string[]>([])
+  const [localHighlights, setLocalHighlights] = useState<TranscriptHighlight[]>([])
   const [highlightMode, setHighlightMode] = useState(false)
   const contentRef = useRef<HTMLDivElement | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const resolvedHighlights = highlights ?? localHighlights
 
   const searchRanges = useMemo(() => findTranscriptMatchRanges(text, searchQuery), [searchQuery, text])
   const normalizedSearchMatchIndex = useMemo(() => {
@@ -46,22 +52,9 @@ export function TranscriptViewerPanel({
 
   const highlightedContent = useMemo(
     () =>
-      renderHighlightedTranscript(text, searchRanges, normalizedSearchMatchIndex, pinnedHighlightTerms),
-    [text, searchRanges, normalizedSearchMatchIndex, pinnedHighlightTerms],
+      renderHighlightedTranscript(text, searchRanges, normalizedSearchMatchIndex, resolvedHighlights),
+    [text, searchRanges, normalizedSearchMatchIndex, resolvedHighlights],
   )
-
-  useEffect(() => {
-    if (searchRanges.length === 0) {
-      if (searchMatchIndex !== 0) {
-        setSearchMatchIndex(0)
-      }
-      return
-    }
-
-    if (searchMatchIndex !== normalizedSearchMatchIndex) {
-      setSearchMatchIndex(normalizedSearchMatchIndex)
-    }
-  }, [normalizedSearchMatchIndex, searchMatchIndex, searchRanges.length])
 
   useEffect(() => {
     if (normalizedSearchMatchIndex < 0 || !contentRef.current || mode !== 'preview') return
@@ -71,23 +64,28 @@ export function TranscriptViewerPanel({
     target?.scrollIntoView({ block: 'center', behavior: 'smooth' })
   }, [highlightedContent, mode, normalizedSearchMatchIndex])
 
-  const addHighlightTerm = (selectedText: string) => {
-    const normalized = normalizeHighlightedText(selectedText)
-    if (!normalized) return
-    setPinnedHighlightTerms((current) =>
-      current.some((entry) => entry.toLocaleLowerCase() === normalized.toLocaleLowerCase())
-        ? current
-        : [...current, normalized],
+  const toggleHighlightRange = (nextRange: TranscriptHighlight | null) => {
+    if (!nextRange || nextRange.start === nextRange.end) return
+    const exists = resolvedHighlights.some(
+      (entry) => entry.start === nextRange.start && entry.end === nextRange.end,
     )
+    const next = exists
+      ? resolvedHighlights.filter((entry) => !(entry.start === nextRange.start && entry.end === nextRange.end))
+      : [...resolvedHighlights, nextRange].sort((left, right) => left.start - right.start || left.end - right.end)
+    if (onHighlightsChange) {
+      onHighlightsChange(next)
+      return
+    }
+    setLocalHighlights(next)
   }
 
   const captureSelectionHighlight = () => {
     if (!highlightMode) return
-    const selectedText =
+    const selectedRange =
       mode === 'edit'
-        ? readTextareaSelection(textareaRef.current, text)
-        : readPreviewSelection(contentRef.current)
-    addHighlightTerm(selectedText)
+        ? readTextareaSelectionRange(textareaRef.current)
+        : readPreviewSelectionRange(contentRef.current)
+    toggleHighlightRange(selectedRange)
   }
 
   return (
@@ -177,21 +175,9 @@ export function TranscriptViewerPanel({
             {searchRanges.length > 0 ? `${normalizedSearchMatchIndex + 1} / ${searchRanges.length}` : '0 / 0'}
           </div>
         </div>
-        {pinnedHighlightTerms.length > 0 ? (
-          <div className="mt-3 flex flex-wrap gap-2">
-            {pinnedHighlightTerms.map((term) => (
-              <button
-                key={term}
-                type="button"
-                className="rounded-full border border-amber-300/30 bg-amber-300/10 px-2.5 py-1 text-[11px] font-medium text-amber-100 transition hover:bg-amber-300/15"
-                onClick={() =>
-                  setPinnedHighlightTerms((current) => current.filter((entry) => entry !== term))
-                }
-                title="Remove highlight"
-              >
-                {term}
-              </button>
-            ))}
+        {highlightMode ? (
+          <div className="mt-2 text-[11px] text-muted">
+            Select text to toggle a saved yellow highlight.
           </div>
         ) : null}
       </div>
@@ -222,24 +208,29 @@ export function TranscriptViewerPanel({
   )
 }
 
-function readTextareaSelection(textarea: HTMLTextAreaElement | null, text: string) {
-  if (!textarea) return ''
+function readTextareaSelectionRange(textarea: HTMLTextAreaElement | null): TranscriptHighlight | null {
+  if (!textarea) return null
   const { selectionStart, selectionEnd } = textarea
-  if (selectionStart === selectionEnd) return ''
-  return text.slice(selectionStart, selectionEnd)
+  if (selectionStart === selectionEnd) return null
+  return { start: selectionStart, end: selectionEnd }
 }
 
-function readPreviewSelection(container: HTMLElement | null) {
-  if (!container || typeof window === 'undefined') return ''
+function readPreviewSelectionRange(container: HTMLElement | null): TranscriptHighlight | null {
+  if (!container || typeof window === 'undefined') return null
   const selection = window.getSelection()
-  if (!selection || selection.rangeCount === 0) return ''
+  if (!selection || selection.rangeCount === 0) return null
   const range = selection.getRangeAt(0)
-  if (!container.contains(range.commonAncestorContainer)) return ''
-  return selection.toString()
-}
+  if (!container.contains(range.commonAncestorContainer) || range.collapsed) return null
 
-function normalizeHighlightedText(value: string) {
-  return value.replace(/\s+/g, ' ').trim()
+  const prefix = document.createRange()
+  prefix.selectNodeContents(container)
+  prefix.setEnd(range.startContainer, range.startOffset)
+  const start = prefix.toString().length
+
+  const selectedText = range.toString()
+  if (!selectedText) return null
+
+  return { start, end: start + selectedText.length }
 }
 
 function findTranscriptMatchRanges(text: string, query: string) {
@@ -264,11 +255,10 @@ function renderHighlightedTranscript(
   text: string,
   searchMatches: Array<{ start: number; end: number }>,
   activeMatchIndex: number,
-  pinnedTerms: string[],
+  highlights: TranscriptHighlight[],
 ) {
-  const pinRanges = pinnedTerms.flatMap((term) => findTranscriptMatchRanges(text, term))
   const ranges = [
-    ...pinRanges.map((match) => ({ ...match, priority: 1 as const, style: 'pin' as const, matchIndex: -1 })),
+    ...highlights.map((match) => ({ ...match, priority: 1 as const, style: 'pin' as const, matchIndex: -1 })),
     ...searchMatches.map((match, index) => ({
       ...match,
       priority: index === activeMatchIndex ? 3 as const : 2 as const,
@@ -324,5 +314,5 @@ function highlightClassName(style: 'pin' | 'search' | 'search-active') {
     return 'rounded bg-accent/25 px-0.5 text-foreground'
   }
 
-  return 'rounded bg-amber-300/20 px-0.5 text-amber-50'
+  return 'rounded bg-amber-300/70 px-0.5 font-medium text-amber-950'
 }

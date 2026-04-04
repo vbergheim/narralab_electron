@@ -41,6 +41,7 @@ function createBrowserWindow(input: {
     | 'inspector'
     | 'notebook'
     | 'archive'
+    | 'pro-player'
     | 'board-manager'
     | 'transcribe'
   bounds?: { x: number; y: number; width: number; height: number }

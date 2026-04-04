@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3'
 
-const SCHEMA_VERSION = 15
+const SCHEMA_VERSION = 16
 
 export function runMigrations(db: Database.Database) {
   db.exec(`
@@ -16,6 +16,17 @@ export function runMigrations(db: Database.Database) {
       synopsis TEXT NOT NULL DEFAULT '',
       shoot_date TEXT NOT NULL DEFAULT '',
       shoot_block TEXT NOT NULL DEFAULT '',
+      shoot_day_place TEXT NOT NULL DEFAULT '',
+      shoot_day_production TEXT NOT NULL DEFAULT '',
+      shoot_day_director TEXT NOT NULL DEFAULT '',
+      shoot_day_photographer TEXT NOT NULL DEFAULT '',
+      shoot_day_participants TEXT NOT NULL DEFAULT '',
+      shoot_day_folder_name TEXT NOT NULL DEFAULT '',
+      shoot_day_file_name TEXT NOT NULL DEFAULT '',
+      shoot_day_clip_count TEXT NOT NULL DEFAULT '',
+      shoot_day_description TEXT NOT NULL DEFAULT '',
+      shoot_day_strongest_material TEXT NOT NULL DEFAULT '',
+      shoot_day_follow_up TEXT NOT NULL DEFAULT '',
       notes TEXT NOT NULL DEFAULT '',
       camera_notes TEXT NOT NULL DEFAULT '',
       audio_notes TEXT NOT NULL DEFAULT '',
@@ -138,6 +149,17 @@ export function runMigrations(db: Database.Database) {
   ensureColumn(db, 'scenes', 'sort_order', 'INTEGER NOT NULL DEFAULT 0')
   ensureColumn(db, 'scenes', 'shoot_date', "TEXT NOT NULL DEFAULT ''")
   ensureColumn(db, 'scenes', 'shoot_block', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn(db, 'scenes', 'shoot_day_place', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn(db, 'scenes', 'shoot_day_production', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn(db, 'scenes', 'shoot_day_director', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn(db, 'scenes', 'shoot_day_photographer', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn(db, 'scenes', 'shoot_day_participants', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn(db, 'scenes', 'shoot_day_folder_name', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn(db, 'scenes', 'shoot_day_file_name', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn(db, 'scenes', 'shoot_day_clip_count', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn(db, 'scenes', 'shoot_day_description', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn(db, 'scenes', 'shoot_day_strongest_material', "TEXT NOT NULL DEFAULT ''")
+  ensureColumn(db, 'scenes', 'shoot_day_follow_up', "TEXT NOT NULL DEFAULT ''")
   ensureColumn(db, 'scenes', 'folder', "TEXT NOT NULL DEFAULT ''")
   ensureColumn(db, 'scenes', 'camera_notes', "TEXT NOT NULL DEFAULT ''")
   ensureColumn(db, 'scenes', 'audio_notes', "TEXT NOT NULL DEFAULT ''")
@@ -151,6 +173,7 @@ export function runMigrations(db: Database.Database) {
   ensureColumn(db, 'boards', 'sort_order', 'INTEGER NOT NULL DEFAULT 0')
   ensureColumn(db, 'archive_folders', 'color', "TEXT NOT NULL DEFAULT 'slate'")
   ensureColumn(db, 'archive_folders', 'parent_id', 'TEXT')
+  ensureColumn(db, 'transcription_items', 'highlight_terms', `TEXT NOT NULL DEFAULT '[]'`)
   ensureArchiveFolderHierarchy(db)
   ensureArchiveItemsForeignKey(db)
   ensureSceneBeatsTable(db)

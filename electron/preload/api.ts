@@ -62,6 +62,34 @@ export function createNarraLabApi(
         reveal: (itemId) => ipcRenderer.invoke('archive:items:reveal', itemId),
       },
     },
+    media: {
+      inspect: (paths) => ipcRenderer.invoke('media:inspect', paths),
+      createPreviewProxy: (path) => ipcRenderer.invoke('media:createPreviewProxy', path),
+    },
+    mediaPlayer: {
+      open: (path) => ipcRenderer.invoke('mediaPlayer:open', path),
+      openInCurrentWindow: (path) => ipcRenderer.invoke('mediaPlayer:openInCurrentWindow', path),
+      play: () => ipcRenderer.invoke('mediaPlayer:play'),
+      pause: () => ipcRenderer.invoke('mediaPlayer:pause'),
+      seek: (seconds) => ipcRenderer.invoke('mediaPlayer:seek', seconds),
+      seekRelative: (seconds) => ipcRenderer.invoke('mediaPlayer:seekRelative', seconds),
+      setVolume: (volume) => ipcRenderer.invoke('mediaPlayer:setVolume', volume),
+      toggleFullscreen: () => ipcRenderer.invoke('mediaPlayer:toggleFullscreen'),
+      setViewport: (viewport) => ipcRenderer.invoke('mediaPlayer:setViewport', viewport),
+      detachCurrentWindow: () => ipcRenderer.invoke('mediaPlayer:detachCurrentWindow'),
+      focus: () => ipcRenderer.invoke('mediaPlayer:focus'),
+      close: () => ipcRenderer.invoke('mediaPlayer:close'),
+      install: () => ipcRenderer.invoke('mediaPlayer:install'),
+      openInstallGuide: () => ipcRenderer.invoke('mediaPlayer:openInstallGuide'),
+      getState: () => ipcRenderer.invoke('mediaPlayer:getState'),
+      subscribe: (listener) => {
+        const handler = (...args: unknown[]) => listener(args[1] as Parameters<typeof listener>[0])
+        ipcRenderer.on('media-player:event', handler)
+        return () => {
+          ipcRenderer.removeListener('media-player:event', handler)
+        }
+      },
+    },
     scenes: {
       list: () => ipcRenderer.invoke('scenes:list'),
       create: () => ipcRenderer.invoke('scenes:create'),

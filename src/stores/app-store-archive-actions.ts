@@ -82,6 +82,16 @@ export function createArchiveActions(
 
     async openArchiveItem(itemId) {
       try {
+        const item = (await window.narralab.archive.items.list()).find((entry) => entry.id === itemId)
+        if (!item) {
+          throw new Error('Archive item not found')
+        }
+
+        if (isPlayableArchiveItem(item)) {
+          await window.narralab.mediaPlayer.open(item.filePath)
+          return
+        }
+
         await window.narralab.archive.items.open(itemId)
       } catch (error) {
         set({ error: toMessage(error) })
@@ -101,4 +111,13 @@ export function createArchiveActions(
       void window.narralab.windows.updateGlobalUiState({ selectedArchiveFolderId: folderId })
     },
   }
+}
+
+function isPlayableArchiveItem(item: { kind: string; extension: string }) {
+  if (item.kind === 'video' || item.kind === 'audio') {
+    return true
+  }
+
+  const extension = item.extension.toLowerCase()
+  return ['mp4', 'mov', 'm4v', 'avi', 'mxf', 'mkv', 'webm', 'ts', '3gp', 'braw', 'mp3', 'wav', 'm4a', 'aac', 'flac', 'aiff'].includes(extension)
 }

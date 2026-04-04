@@ -118,6 +118,10 @@ export function useWindowRuntime(input: UseWindowRuntimeInput) {
     detachedWorkspace && windowContext?.boardId
       ? windowContext.boardId
       : activeBoardId
+  const mediaPathForWindow =
+    detachedWorkspace && windowContext?.mediaPath
+      ? windowContext.mediaPath
+      : null
 
   useEffect(() => {
     const detachedWindowId = windowContext?.role === 'detached' ? windowContext.windowId : null
@@ -148,6 +152,7 @@ export function useWindowRuntime(input: UseWindowRuntimeInput) {
     boardIdForWindow,
     boardViewMode,
     detachedWorkspace,
+    mediaPathForWindow,
     savedLayouts,
     sceneDensity,
     setBoardViewMode,

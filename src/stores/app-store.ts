@@ -94,11 +94,23 @@ export const useAppStore = create<AppStore>((set, get) => ({
       selectedSceneIds: [],
       selectedBoardItemId: null,
     })
-    void window.narralab.windows.updateGlobalUiState({ activeBoardId: boardId })
+    void window.narralab.windows.updateGlobalUiState({
+      activeBoardId: boardId,
+      selectedBoardId: boardId,
+      selectedSceneId: null,
+      selectedSceneIds: [],
+      selectedBoardItemId: null,
+    })
   },
 
   selectScene(sceneId, boardItemId = null) {
     set({
+      selectedBoardId: null,
+      selectedSceneId: sceneId,
+      selectedSceneIds: sceneId ? [sceneId] : [],
+      selectedBoardItemId: boardItemId,
+    })
+    void window.narralab.windows.updateGlobalUiState({
       selectedBoardId: null,
       selectedSceneId: sceneId,
       selectedSceneIds: sceneId ? [sceneId] : [],
@@ -120,10 +132,27 @@ export const useAppStore = create<AppStore>((set, get) => ({
         selectedBoardItemId: null,
       }
     })
+    const state = get()
+    const exists = state.selectedSceneIds.includes(sceneId)
+    const selectedSceneIds = exists
+      ? state.selectedSceneIds.filter((id) => id !== sceneId)
+      : [...state.selectedSceneIds, sceneId]
+    void window.narralab.windows.updateGlobalUiState({
+      selectedBoardId: null,
+      selectedSceneIds,
+      selectedSceneId: selectedSceneIds[0] ?? null,
+      selectedBoardItemId: null,
+    })
   },
 
   setSceneSelection(sceneIds) {
     set({
+      selectedBoardId: null,
+      selectedSceneIds: sceneIds,
+      selectedSceneId: sceneIds[0] ?? null,
+      selectedBoardItemId: null,
+    })
+    void window.narralab.windows.updateGlobalUiState({
       selectedBoardId: null,
       selectedSceneIds: sceneIds,
       selectedSceneId: sceneIds[0] ?? null,
@@ -136,6 +165,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
       selectedBoardId: null,
       selectedSceneIds: [],
       selectedSceneId: null,
+      selectedBoardItemId: null,
+    })
+    void window.narralab.windows.updateGlobalUiState({
+      selectedBoardId: null,
+      selectedSceneIds: [],
+      selectedSceneId: null,
+      selectedBoardItemId: null,
     })
   },
 
@@ -151,6 +187,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
   applyGlobalUiState(input) {
     set((state) => ({
       activeBoardId: input.activeBoardId ?? state.activeBoardId,
+      selectedBoardId: input.selectedBoardId ?? state.selectedBoardId,
+      selectedSceneId: input.selectedSceneId ?? state.selectedSceneId,
+      selectedSceneIds: input.selectedSceneIds ?? state.selectedSceneIds,
+      selectedBoardItemId: input.selectedBoardItemId ?? state.selectedBoardItemId,
       selectedArchiveFolderId: input.selectedArchiveFolderId ?? state.selectedArchiveFolderId,
       workspaceMode: input.workspaceMode ?? state.workspaceMode,
     }))

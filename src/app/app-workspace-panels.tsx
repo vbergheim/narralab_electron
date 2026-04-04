@@ -9,6 +9,7 @@ import {
   InspectorWorkspacePanel,
   NotebookWorkspacePanel,
   OutlineWorkspacePanel,
+  ProPlayerWorkspacePanel,
   SceneBankWorkspacePanel,
   TranscribeWorkspacePanel,
 } from '@/app/app-workspace-renderers'
@@ -40,6 +41,7 @@ export function DetachedWorkspacePanel({
   boardBlockKindsForProject,
   inspectorContent,
   detachedWorkspace,
+  mediaPathForWindow,
   outlineImmersive,
   onCreateProject,
   onOpenProject,
@@ -102,6 +104,10 @@ export function DetachedWorkspacePanel({
   onOpenTranscribeSettings,
   detachedViewControl,
 }: DetachedWorkspacePanelProps) {
+  if (detachedWorkspace === 'pro-player') {
+    return <ProPlayerWorkspacePanel mediaPath={mediaPathForWindow} />
+  }
+
   if (!projectMeta) {
     return <WelcomePanel onCreate={onCreateProject} onOpen={onOpenProject} />
   }

@@ -249,8 +249,8 @@ export class ArchiveRepository {
 function inferArchiveKind(filePath: string): ArchiveItemKind {
   const extension = path.extname(filePath).replace('.', '').toLowerCase()
   if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'heic', 'svg'].includes(extension)) return 'image'
-  if (['mp3', 'wav', 'm4a', 'aiff'].includes(extension)) return 'audio'
-  if (['mp4', 'mov', 'm4v', 'avi'].includes(extension)) return 'video'
+  if (['mp3', 'wav', 'm4a', 'aiff', 'aac', 'flac'].includes(extension)) return 'audio'
+  if (['mp4', 'mov', 'm4v', 'avi', 'mxf', 'mkv', 'webm', 'ts', '3gp', 'braw'].includes(extension)) return 'video'
   if (extension === 'pdf') return 'pdf'
   if (['csv', 'xlsx', 'xls', 'numbers'].includes(extension)) return 'spreadsheet'
   if (['txt', 'md', 'doc', 'docx', 'rtf', 'pages'].includes(extension)) return 'document'
